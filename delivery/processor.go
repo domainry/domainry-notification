@@ -3,6 +3,7 @@ package delivery
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -23,6 +24,7 @@ type ProcessorDependencies struct {
 	Plans      PlanStore
 	Renderer   Renderer
 	Dispatcher Dispatcher
+	Policy     PolicyEvaluator
 	Clock      notification.Clock
 	WorkerID   string
 }
@@ -33,16 +35,17 @@ type Processor struct {
 	plans      PlanStore
 	renderer   Renderer
 	dispatcher Dispatcher
+	policy     PolicyEvaluator
 	clock      notification.Clock
 	workerID   string
 }
 
 func NewProcessor(dependencies ProcessorDependencies) (*Processor, error) {
 	dependencies.WorkerID = strings.TrimSpace(dependencies.WorkerID)
-	if dependencies.Plans == nil || dependencies.Renderer == nil || dependencies.Dispatcher == nil || dependencies.Clock == nil || dependencies.WorkerID == "" {
+	if dependencies.Plans == nil || dependencies.Renderer == nil || dependencies.Dispatcher == nil || dependencies.Policy == nil || dependencies.Clock == nil || dependencies.WorkerID == "" {
 		return nil, fmt.Errorf("notification delivery processor dependencies are required")
 	}
-	return &Processor{plans: dependencies.Plans, renderer: dependencies.Renderer, dispatcher: dependencies.Dispatcher, clock: dependencies.Clock, workerID: dependencies.WorkerID}, nil
+	return &Processor{plans: dependencies.Plans, renderer: dependencies.Renderer, dispatcher: dependencies.Dispatcher, policy: dependencies.Policy, clock: dependencies.Clock, workerID: dependencies.WorkerID}, nil
 }
 
 func (p *Processor) ProcessDue(ctx context.Context, limit int) (int, error) {
@@ -163,6 +166,13 @@ func (p *Processor) processDigest(ctx context.Context, candidates []Plan, now ti
 }
 
 func (p *Processor) dispatch(ctx context.Context, plan Plan, now time.Time) (DispatchReceipt, error) {
+	decision, err := p.policy.EvaluateDelivery(ctx, Evaluation{
+		WorkspaceID: plan.WorkspaceID, TemplateKey: plan.TemplateKey, Channel: plan.Channel,
+		Recipients: append([]notification.UserID(nil), plan.RecipientUserIDs...), DedupeKey: plan.DedupeKey,
+	})
+	if err != nil {
+		return DispatchReceipt{}, err
+	}
 	content, err := p.renderer.Render(ctx, template.RenderRequest{
 		WorkspaceID: plan.WorkspaceID, TemplateKey: plan.TemplateKey, Locale: plan.Locale,
 		Recipients: append([]notification.UserID(nil), plan.RecipientUserIDs...), Variables: cloneVariables(plan.Variables),
@@ -171,11 +181,40 @@ func (p *Processor) dispatch(ctx context.Context, plan Plan, now time.Time) (Dis
 	if err != nil {
 		return DispatchReceipt{}, err
 	}
+	fallbacks, err := p.renderFallbacks(ctx, plan, content, decision)
+	if err != nil {
+		return DispatchReceipt{}, err
+	}
 	return p.dispatcher.Dispatch(ctx, DispatchRequest{
 		WorkspaceID: plan.WorkspaceID, PlanID: plan.ID, EventID: plan.EventID, Channel: plan.Channel,
 		ConnectorKey: plan.ConnectorKey, ConnectionKey: plan.ConnectionKey, Operation: plan.Operation,
-		DeduplicationKey: plan.ID, Content: content, CreatedAt: now,
+		DeduplicationKey: plan.ID, Content: content, Decision: decision, Fallbacks: fallbacks, CreatedAt: now,
 	})
+}
+
+func (p *Processor) renderFallbacks(ctx context.Context, plan Plan, content template.Rendered, decision Decision) ([]DispatchFallback, error) {
+	result := make([]DispatchFallback, 0, len(content.Fallbacks))
+	for _, fallback := range content.Fallbacks {
+		rendered, err := p.renderer.Render(ctx, template.RenderRequest{
+			WorkspaceID: plan.WorkspaceID, TemplateKey: fallback.TemplateKey, Locale: plan.Locale,
+			Recipients: append([]notification.UserID(nil), plan.RecipientUserIDs...), Variables: cloneVariables(plan.Variables),
+			Metadata: map[string]any{"notification_event_id": plan.EventID, "notification_channel_plan_id": plan.ID, "dedupe_key": plan.DedupeKey},
+		})
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, DispatchFallback{ConnectorKey: fallback.ConnectorKey, ConnectionKey: fallback.ConnectionKey, Operation: fallback.Operation, Content: rendered})
+	}
+	priority := func(channel string) int {
+		for index, candidate := range decision.FallbackOrder {
+			if candidate == channel {
+				return index
+			}
+		}
+		return len(decision.FallbackOrder) + 1
+	}
+	sort.SliceStable(result, func(i, j int) bool { return priority(result[i].Content.Channel) < priority(result[j].Content.Channel) })
+	return result, nil
 }
 
 func (p *Processor) recordFailure(ctx context.Context, plan Plan, now time.Time) error {

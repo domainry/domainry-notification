@@ -20,7 +20,18 @@ type DispatchRequest struct {
 	Operation        string
 	DeduplicationKey string
 	Content          template.Rendered
+	Decision         Decision
+	Fallbacks        []DispatchFallback
 	CreatedAt        time.Time
+}
+
+// DispatchFallback is a pre-rendered immutable fallback hop. Integration may
+// execute it after a provider failure without consulting mutable templates.
+type DispatchFallback struct {
+	ConnectorKey  string
+	ConnectionKey string
+	Operation     string
+	Content       template.Rendered
 }
 
 // DispatchReceipt records acceptance by the dispatch boundary, not provider
