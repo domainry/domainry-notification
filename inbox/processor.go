@@ -1,0 +1,168 @@
+package inbox
+
+import (
+	"context"
+	"fmt"
+	"strings"
+	"time"
+
+	"github.com/domainry/domainry-notification"
+	"github.com/domainry/domainry-notification/template"
+)
+
+const (
+	eventLeaseDuration = 30 * time.Second
+	maximumAttempts    = 8
+)
+
+type AudienceResolver interface {
+	ResolveAudience(context.Context, string, Event) ([]notification.UserID, error)
+}
+
+type RecipientLocaleResolver interface {
+	RecipientLocale(context.Context, notification.WorkspaceID, notification.UserID) (string, error)
+}
+
+// Processor claims durable events, resolves dynamic audiences, and atomically
+// materializes inbox items and channel plans through EventStore.
+type Processor struct {
+	events          EventStore
+	clock           notification.Clock
+	workerID        string
+	audiences       AudienceResolver
+	recipientLocale RecipientLocaleResolver
+}
+
+func NewProcessor(events EventStore, clock notification.Clock, workerID string, audiences AudienceResolver, recipientLocale RecipientLocaleResolver) (*Processor, error) {
+	workerID = strings.TrimSpace(workerID)
+	if events == nil || clock == nil || workerID == "" {
+		return nil, fmt.Errorf("notification inbox processor dependencies are required")
+	}
+	return &Processor{events: events, clock: clock, workerID: workerID, audiences: audiences, recipientLocale: recipientLocale}, nil
+}
+
+func (p *Processor) ProcessDue(ctx context.Context, limit int) (int, error) {
+	if limit <= 0 || limit > 100 {
+		limit = 25
+	}
+	now := p.clock.Now().UTC()
+	events, err := p.events.ListDue(ctx, notification.Timestamp(now), limit)
+	if err != nil {
+		return 0, err
+	}
+	processed := 0
+	for _, event := range events {
+		completed, processErr := p.processAt(ctx, event.WorkspaceID, event.ID, now)
+		if processErr != nil {
+			return processed, processErr
+		}
+		if completed {
+			processed++
+		}
+	}
+	return processed, nil
+}
+
+func (p *Processor) Process(ctx context.Context, workspaceID notification.WorkspaceID, eventID string) (bool, error) {
+	return p.processAt(ctx, workspaceID, strings.TrimSpace(eventID), p.clock.Now().UTC())
+}
+
+func (p *Processor) processAt(ctx context.Context, workspaceID notification.WorkspaceID, eventID string, now time.Time) (bool, error) {
+	claimed, found, err := p.events.Claim(ctx, workspaceID, eventID, p.workerID, notification.Timestamp(now), notification.Timestamp(now.Add(eventLeaseDuration)))
+	if err != nil || !found {
+		return false, err
+	}
+	if materializeErr := p.materialize(ctx, claimed); materializeErr != nil {
+		if retryErr := p.recordFailure(ctx, claimed, materializeErr, now); retryErr != nil {
+			return false, retryErr
+		}
+		return false, nil
+	}
+	return true, nil
+}
+
+func (p *Processor) materialize(ctx context.Context, event Event) error {
+	recipients := append([]notification.UserID(nil), event.RecipientUserIDs...)
+	for _, resolverKey := range event.AudienceResolverKeys {
+		if p.audiences == nil {
+			return unavailable("backend.notification.inbox_audience_resolver_unavailable", nil)
+		}
+		resolved, err := p.audiences.ResolveAudience(ctx, resolverKey, event)
+		if err != nil {
+			return unavailable("backend.notification.inbox_audience_resolution_failed", err)
+		}
+		recipients = append(recipients, resolved...)
+	}
+	recipients = uniqueUsers(recipients)
+	if len(recipients) == 0 || len(recipients) > recipientLimit {
+		return unavailable("backend.notification.inbox_audience_resolution_empty", nil)
+	}
+	event.RecipientUserIDs = recipients
+	for index := range event.ChannelPlans {
+		event.ChannelPlans[index].RecipientUserIDs = append([]notification.UserID(nil), recipients...)
+	}
+	items := make([]Item, 0, len(recipients))
+	for _, recipient := range recipients {
+		locale := ""
+		if p.recipientLocale != nil {
+			var err error
+			locale, err = p.recipientLocale.RecipientLocale(ctx, event.WorkspaceID, recipient)
+			if err != nil {
+				return err
+			}
+		}
+		items = append(items, itemFromEvent(event, recipient, locale))
+	}
+	return p.events.Materialize(ctx, event, items)
+}
+
+func (p *Processor) recordFailure(ctx context.Context, event Event, cause error, now time.Time) error {
+	updatedAt := notification.Timestamp(now)
+	stage, code := "materialization", "backend.notification.inbox_materialization_failed"
+	if causeCode := notification.ErrorCode(cause); strings.HasPrefix(causeCode, "backend.notification.inbox_audience_") {
+		stage, code = "audience_resolution", causeCode
+	}
+	if event.AttemptCount+1 >= maximumAttempts {
+		return p.events.Fail(ctx, event, stage, code, updatedAt)
+	}
+	next := notification.Timestamp(now.Add(retryDelay(event.AttemptCount + 1)))
+	return p.events.Retry(ctx, event, stage, code, next, updatedAt)
+}
+
+func retryDelay(attempt int) time.Duration {
+	if attempt < 1 {
+		attempt = 1
+	}
+	if attempt > 6 {
+		attempt = 6
+	}
+	return time.Duration(1<<(attempt-1)) * time.Minute
+}
+
+func itemFromEvent(event Event, recipient notification.UserID, locale string) Item {
+	identity := event.ID
+	if event.GroupKey != "" {
+		identity = "group:" + event.GroupKey
+	}
+	snapshot := snapshotForLocale(event, locale)
+	return Item{
+		ID: stableID(event.WorkspaceID.String(), string(event.Surface), recipient.String(), identity), WorkspaceID: event.WorkspaceID, RecipientUserID: recipient, Surface: event.Surface,
+		EventID: event.ID, EventType: event.EventType, Source: event.Source, Category: event.Category, Severity: event.Severity,
+		Title: snapshot.Title, Body: snapshot.Body, Facts: append([]template.Fact(nil), snapshot.Facts...), Actions: append([]ActionRef(nil), snapshot.Actions...),
+		TemplateKey: snapshot.TemplateKey, TemplateVersion: snapshot.TemplateVersion, TemplateLocale: snapshot.TemplateLocale, TemplateContentHash: snapshot.TemplateContentHash,
+		SubjectType: event.SubjectType, SubjectID: event.SubjectID, SubjectVersion: event.SubjectVersion,
+		ActionState: event.ActionState, AlertState: event.AlertState, GroupKey: event.GroupKey, OccurrenceCount: 1,
+		FirstOccurredAt: event.OccurredAt, LastOccurredAt: event.OccurredAt, ExpiresAt: event.ExpiresAt,
+		CreatedAt: event.CreatedAt, UpdatedAt: event.UpdatedAt,
+	}
+}
+
+func snapshotForLocale(event Event, requested string) Snapshot {
+	requested = normalizeLocale(requested)
+	for locale, snapshot := range event.LocalizedSnapshots {
+		if strings.EqualFold(normalizeLocale(locale), requested) {
+			return snapshot
+		}
+	}
+	return event.Snapshot
+}
