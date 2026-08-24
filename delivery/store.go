@@ -12,7 +12,7 @@ type PolicyStore interface {
 	ListRecipientPreferences(context.Context, notification.WorkspaceID) ([]RecipientPreference, error)
 	GetRecipientPreference(context.Context, notification.WorkspaceID, notification.UserID) (RecipientPreference, bool, error)
 	SaveRecipientPreference(context.Context, notification.WorkspaceID, RecipientPreference) (RecipientPreference, error)
-	Reserve(context.Context, notification.WorkspaceID, Reservation, int, int) error
+	ReserveBatch(context.Context, notification.WorkspaceID, []Reservation, int, int) error
 }
 
 type PlanStore interface {

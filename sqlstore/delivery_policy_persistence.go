@@ -137,13 +137,9 @@ func (s *Store) SaveRecipientPreference(ctx context.Context, workspaceID notific
 	return value, nil
 }
 
-func (s *Store) Reserve(ctx context.Context, workspaceID notification.WorkspaceID, reservation delivery.Reservation, hourlyLimit, dedupeWindowSeconds int) error {
-	if workspaceID == "" || strings.TrimSpace(reservation.ID) == "" || reservation.RecipientKey == "" || hourlyLimit < 1 {
-		return fmt.Errorf("notification delivery reservation and positive hourly limit are required")
-	}
-	createdAt, err := time.Parse(time.RFC3339Nano, reservation.CreatedAt)
-	if err != nil {
-		return fmt.Errorf("parse notification delivery reservation timestamp: %w", err)
+func (s *Store) ReserveBatch(ctx context.Context, workspaceID notification.WorkspaceID, reservations []delivery.Reservation, hourlyLimit, dedupeWindowSeconds int) error {
+	if workspaceID == "" || len(reservations) == 0 || hourlyLimit < 1 {
+		return fmt.Errorf("notification delivery reservations and positive hourly limit are required")
 	}
 	ctx = s.workspaceScope.Context(ctx, workspaceID)
 	tx, err := s.database.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelSerializable})
@@ -151,33 +147,42 @@ func (s *Store) Reserve(ctx context.Context, workspaceID notification.WorkspaceI
 		return err
 	}
 	defer tx.Rollback()
-	var count int
-	frequency := "SELECT COUNT(*) FROM " + s.dialect.Table("notification_delivery_reservations") + " WHERE " + s.dialect.Identifier("workspace_id") + " = " + s.dialect.Placeholder(1) +
-		" AND " + s.dialect.Identifier("recipient_key") + " = " + s.dialect.Placeholder(2) + " AND " + s.dialect.Identifier("channel") + " = " + s.dialect.Placeholder(3) +
-		" AND " + s.dialect.Identifier("created_at") + " >= " + s.dialect.Placeholder(4)
-	if err := tx.QueryRowContext(ctx, frequency, workspaceID.String(), reservation.RecipientKey.String(), reservation.Channel, notification.Timestamp(createdAt.Add(-time.Hour))).Scan(&count); err != nil {
-		return err
-	}
-	if count >= hourlyLimit {
-		return delivery.ErrFrequencyExceeded
-	}
-	if strings.TrimSpace(reservation.DedupeKey) != "" && dedupeWindowSeconds > 0 {
-		dedupe := "SELECT COUNT(*) FROM " + s.dialect.Table("notification_delivery_reservations") + " WHERE " + s.dialect.Identifier("workspace_id") + " = " + s.dialect.Placeholder(1) +
-			" AND " + s.dialect.Identifier("recipient_key") + " = " + s.dialect.Placeholder(2) + " AND " + s.dialect.Identifier("template_key") + " = " + s.dialect.Placeholder(3) +
-			" AND " + s.dialect.Identifier("channel") + " = " + s.dialect.Placeholder(4) + " AND " + s.dialect.Identifier("dedupe_key") + " = " + s.dialect.Placeholder(5) +
-			" AND " + s.dialect.Identifier("created_at") + " >= " + s.dialect.Placeholder(6)
-		if err := tx.QueryRowContext(ctx, dedupe, workspaceID.String(), reservation.RecipientKey.String(), reservation.TemplateKey, reservation.Channel,
-			reservation.DedupeKey, notification.Timestamp(createdAt.Add(-time.Duration(dedupeWindowSeconds)*time.Second))).Scan(&count); err != nil {
+	for _, reservation := range reservations {
+		if strings.TrimSpace(reservation.ID) == "" || reservation.RecipientKey == "" {
+			return fmt.Errorf("notification delivery reservation identity is required")
+		}
+		createdAt, parseErr := time.Parse(time.RFC3339Nano, reservation.CreatedAt)
+		if parseErr != nil {
+			return fmt.Errorf("parse notification delivery reservation timestamp: %w", parseErr)
+		}
+		var count int
+		frequency := "SELECT COUNT(*) FROM " + s.dialect.Table("notification_delivery_reservations") + " WHERE " + s.dialect.Identifier("workspace_id") + " = " + s.dialect.Placeholder(1) +
+			" AND " + s.dialect.Identifier("recipient_key") + " = " + s.dialect.Placeholder(2) + " AND " + s.dialect.Identifier("channel") + " = " + s.dialect.Placeholder(3) +
+			" AND " + s.dialect.Identifier("created_at") + " >= " + s.dialect.Placeholder(4)
+		if err := tx.QueryRowContext(ctx, frequency, workspaceID.String(), reservation.RecipientKey.String(), reservation.Channel, notification.Timestamp(createdAt.Add(-time.Hour))).Scan(&count); err != nil {
 			return err
 		}
-		if count > 0 {
-			return delivery.ErrDuplicate
+		if count >= hourlyLimit {
+			return delivery.ErrFrequencyExceeded
 		}
-	}
-	_, err = tx.ExecContext(ctx, s.dialect.Insert("notification_delivery_reservations", []string{"id", "workspace_id", "recipient_key", "template_key", "channel", "dedupe_key", "created_at"}),
-		reservation.ID, workspaceID.String(), reservation.RecipientKey.String(), reservation.TemplateKey, reservation.Channel, reservation.DedupeKey, reservation.CreatedAt)
-	if err != nil {
-		return fmt.Errorf("insert notification delivery reservation: %w", err)
+		if strings.TrimSpace(reservation.DedupeKey) != "" && dedupeWindowSeconds > 0 {
+			dedupe := "SELECT COUNT(*) FROM " + s.dialect.Table("notification_delivery_reservations") + " WHERE " + s.dialect.Identifier("workspace_id") + " = " + s.dialect.Placeholder(1) +
+				" AND " + s.dialect.Identifier("recipient_key") + " = " + s.dialect.Placeholder(2) + " AND " + s.dialect.Identifier("template_key") + " = " + s.dialect.Placeholder(3) +
+				" AND " + s.dialect.Identifier("channel") + " = " + s.dialect.Placeholder(4) + " AND " + s.dialect.Identifier("dedupe_key") + " = " + s.dialect.Placeholder(5) +
+				" AND " + s.dialect.Identifier("created_at") + " >= " + s.dialect.Placeholder(6)
+			if err := tx.QueryRowContext(ctx, dedupe, workspaceID.String(), reservation.RecipientKey.String(), reservation.TemplateKey, reservation.Channel,
+				reservation.DedupeKey, notification.Timestamp(createdAt.Add(-time.Duration(dedupeWindowSeconds)*time.Second))).Scan(&count); err != nil {
+				return err
+			}
+			if count > 0 {
+				return delivery.ErrDuplicate
+			}
+		}
+		_, err = tx.ExecContext(ctx, s.dialect.Insert("notification_delivery_reservations", []string{"id", "workspace_id", "recipient_key", "template_key", "channel", "dedupe_key", "created_at"}),
+			reservation.ID, workspaceID.String(), reservation.RecipientKey.String(), reservation.TemplateKey, reservation.Channel, reservation.DedupeKey, reservation.CreatedAt)
+		if err != nil {
+			return fmt.Errorf("insert notification delivery reservation: %w", err)
+		}
 	}
 	return tx.Commit()
 }

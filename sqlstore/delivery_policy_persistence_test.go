@@ -42,23 +42,37 @@ func TestDeliveryPolicyAndRecipientPreferencePersistence(t *testing.T) {
 func TestDeliveryReservationEnforcesFrequencyAndDedupe(t *testing.T) {
 	_, store := migratedStore(t)
 	reservation := delivery.Reservation{ID: "reservation-1", RecipientKey: "user-1", TemplateKey: "workflow.failed", Channel: "email", DedupeKey: "run-1", CreatedAt: "2026-08-24T01:00:00.000000000Z"}
-	if err := store.Reserve(t.Context(), "workspace-1", reservation, 2, 300); err != nil {
+	if err := store.ReserveBatch(t.Context(), "workspace-1", []delivery.Reservation{reservation}, 2, 300); err != nil {
 		t.Fatal(err)
 	}
 	duplicate := reservation
 	duplicate.ID, duplicate.CreatedAt = "reservation-2", "2026-08-24T01:01:00.000000000Z"
-	if err := store.Reserve(t.Context(), "workspace-1", duplicate, 2, 300); !errors.Is(err, delivery.ErrDuplicate) {
+	if err := store.ReserveBatch(t.Context(), "workspace-1", []delivery.Reservation{duplicate}, 2, 300); !errors.Is(err, delivery.ErrDuplicate) {
 		t.Fatalf("duplicate err=%v", err)
 	}
 	second := reservation
 	second.ID, second.DedupeKey, second.CreatedAt = "reservation-3", "run-2", "2026-08-24T01:02:00.000000000Z"
-	if err := store.Reserve(t.Context(), "workspace-1", second, 2, 300); err != nil {
+	if err := store.ReserveBatch(t.Context(), "workspace-1", []delivery.Reservation{second}, 2, 300); err != nil {
 		t.Fatal(err)
 	}
 	third := reservation
 	third.ID, third.DedupeKey, third.CreatedAt = "reservation-4", "run-3", "2026-08-24T01:03:00.000000000Z"
-	if err := store.Reserve(t.Context(), "workspace-1", third, 2, 300); !errors.Is(err, delivery.ErrFrequencyExceeded) {
+	if err := store.ReserveBatch(t.Context(), "workspace-1", []delivery.Reservation{third}, 2, 300); !errors.Is(err, delivery.ErrFrequencyExceeded) {
 		t.Fatalf("frequency err=%v", err)
+	}
+}
+
+func TestDeliveryReservationBatchRollsBackPartialRecipients(t *testing.T) {
+	db, store := migratedStore(t)
+	first := delivery.Reservation{ID: "reservation-1", RecipientKey: "user-1", TemplateKey: "workflow.failed", Channel: "email", DedupeKey: "run-1", CreatedAt: "2026-08-24T01:00:00.000000000Z"}
+	second := first
+	second.ID, second.CreatedAt = "reservation-2", "2026-08-24T01:01:00.000000000Z"
+	if err := store.ReserveBatch(t.Context(), "workspace-1", []delivery.Reservation{first, second}, 20, 300); !errors.Is(err, delivery.ErrDuplicate) {
+		t.Fatalf("err=%v", err)
+	}
+	var count int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM notification_delivery_reservations`).Scan(&count); err != nil || count != 0 {
+		t.Fatalf("count=%d err=%v", count, err)
 	}
 }
 
