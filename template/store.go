@@ -9,6 +9,7 @@ var (
 	ErrRecordConflict      = errors.New("notification template record changed")
 	ErrRecordNotFound      = errors.New("notification template record not found")
 	ErrPublicationConflict = errors.New("notification publication request changed")
+	ErrPublicationNotFound = errors.New("notification publication request not found")
 )
 
 // Store is the durable boundary for template records, immutable versions, and
