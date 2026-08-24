@@ -31,14 +31,27 @@ type Processor struct {
 	workerID        string
 	audiences       AudienceResolver
 	recipientLocale RecipientLocaleResolver
+	notifier        WorkNotifier
 }
 
-func NewProcessor(events EventStore, clock notification.Clock, workerID string, audiences AudienceResolver, recipientLocale RecipientLocaleResolver) (*Processor, error) {
-	workerID = strings.TrimSpace(workerID)
-	if events == nil || clock == nil || workerID == "" {
+type ProcessorDependencies struct {
+	Events          EventStore
+	Clock           notification.Clock
+	WorkerID        string
+	Audiences       AudienceResolver
+	RecipientLocale RecipientLocaleResolver
+	WorkNotifier    WorkNotifier
+}
+
+func NewProcessor(dependencies ProcessorDependencies) (*Processor, error) {
+	dependencies.WorkerID = strings.TrimSpace(dependencies.WorkerID)
+	if dependencies.Events == nil || dependencies.Clock == nil || dependencies.WorkerID == "" {
 		return nil, fmt.Errorf("notification inbox processor dependencies are required")
 	}
-	return &Processor{events: events, clock: clock, workerID: workerID, audiences: audiences, recipientLocale: recipientLocale}, nil
+	return &Processor{
+		events: dependencies.Events, clock: dependencies.Clock, workerID: dependencies.WorkerID,
+		audiences: dependencies.Audiences, recipientLocale: dependencies.RecipientLocale, notifier: dependencies.WorkNotifier,
+	}, nil
 }
 
 func (p *Processor) ProcessDue(ctx context.Context, limit int) (int, error) {
@@ -113,7 +126,15 @@ func (p *Processor) materialize(ctx context.Context, event Event) error {
 		}
 		items = append(items, itemFromEvent(event, recipient, locale))
 	}
-	return p.events.Materialize(ctx, event, items)
+	if err := p.events.Materialize(ctx, event, items); err != nil {
+		return err
+	}
+	if p.notifier != nil {
+		for _, plan := range event.ChannelPlans {
+			p.notifier.Notify(ctx, notification.Work{Kind: notification.WorkChannelPlan, WorkspaceID: plan.WorkspaceID, TaskID: plan.ID})
+		}
+	}
+	return nil
 }
 
 func (p *Processor) recordFailure(ctx context.Context, event Event, cause error, now time.Time) error {

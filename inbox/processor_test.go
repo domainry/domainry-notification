@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/domainry/domainry-notification"
+	"github.com/domainry/domainry-notification/delivery"
 	"github.com/domainry/domainry-notification/inbox"
 )
 
@@ -60,12 +61,17 @@ func (localeResolver) RecipientLocale(_ context.Context, _ notification.Workspac
 }
 
 func TestProcessorResolvesAudienceAndMaterializesLocalizedItems(t *testing.T) {
+	wakeups := &notifier{}
 	store := &eventStore{event: inbox.Event{
 		ID: "event-1", WorkspaceID: "workspace-1", Surface: "business_workspace", RecipientUserIDs: []notification.UserID{"explicit-user"}, AudienceResolverKeys: []string{"workflow_task_assignee"},
 		Snapshot: inbox.Snapshot{Title: "English", Body: "Body"}, LocalizedSnapshots: map[string]inbox.Snapshot{"zh-CN": {Title: "中文", Body: "正文"}},
-		OccurredAt: "2026-08-24T00:00:00.000000000Z", CreatedAt: "2026-08-24T00:00:00.000000000Z", UpdatedAt: "2026-08-24T00:00:00.000000000Z",
+		ChannelPlans: []delivery.Plan{{ID: "plan-1", WorkspaceID: "workspace-1"}},
+		OccurredAt:   "2026-08-24T00:00:00.000000000Z", CreatedAt: "2026-08-24T00:00:00.000000000Z", UpdatedAt: "2026-08-24T00:00:00.000000000Z",
 	}}
-	processor, err := inbox.NewProcessor(store, fixedClock{value: time.Date(2026, 8, 24, 1, 0, 0, 0, time.UTC)}, "worker-1", audienceResolver{}, localeResolver{})
+	processor, err := inbox.NewProcessor(inbox.ProcessorDependencies{
+		Events: store, Clock: fixedClock{value: time.Date(2026, 8, 24, 1, 0, 0, 0, time.UTC)}, WorkerID: "worker-1",
+		Audiences: audienceResolver{}, RecipientLocale: localeResolver{}, WorkNotifier: wakeups,
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -80,6 +86,9 @@ func TestProcessorResolvesAudienceAndMaterializesLocalizedItems(t *testing.T) {
 		if item.RecipientUserID == "resolved-user" && item.Title != "中文" {
 			t.Fatalf("localized item=%+v", item)
 		}
+	}
+	if len(wakeups.work) != 1 || wakeups.work[0].Kind != notification.WorkChannelPlan || wakeups.work[0].TaskID != "plan-1" {
+		t.Fatalf("wakeups=%+v", wakeups.work)
 	}
 }
 
