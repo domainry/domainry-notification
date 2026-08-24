@@ -7,7 +7,8 @@ import (
 )
 
 // Intent is the only producer-facing message. Producers provide typed facts;
-// copy, routes, and provider payloads are compiled inside this module.
+// copy and routes are compiled inside this module. Provider payloads remain a
+// Connector responsibility downstream of delivery.Dispatcher.
 type Intent struct {
 	ID                   string                   `json:"id"`
 	WorkspaceID          notification.WorkspaceID `json:"workspace_id"`

@@ -79,7 +79,6 @@ type Rendered struct {
 	Facts               []Fact            `json:"facts,omitempty"`
 	Actions             []Action          `json:"actions,omitempty"`
 	ProviderTemplate    *ProviderTemplate `json:"provider_template,omitempty"`
-	ProviderPayload     map[string]any    `json:"provider_payload,omitempty"`
 	TemplateKey         string            `json:"template_key"`
 	TemplateVersion     int               `json:"template_version"`
 	TemplateLocale      string            `json:"template_locale"`

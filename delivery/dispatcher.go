@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/domainry/domainry-notification"
+	"github.com/domainry/domainry-notification/template"
 )
 
 // DispatchRequest is the immutable boundary between notification channel
@@ -18,7 +19,7 @@ type DispatchRequest struct {
 	ConnectionKey    string
 	Operation        string
 	DeduplicationKey string
-	Payload          map[string]any
+	Content          template.Rendered
 	CreatedAt        time.Time
 }
 

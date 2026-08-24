@@ -53,6 +53,10 @@ dispatch request through its `Dispatcher` interface. The host adapter writes it 
 Outbox. Integration and Connector providers own provider execution, credentials,
 provider retries, callbacks, and delivery ledgers.
 
+The dispatch request carries provider-neutral rendered content. Connector-owned
+code compiles Slack blocks, Feishu cards, Teams adaptive cards, WhatsApp payloads,
+and equivalent provider formats; this module does not contain provider switches.
+
 ## Registration boundary
 
 The module owns event-type, audience-resolver, action-authorizer, and provider-
