@@ -1,17 +1,20 @@
-package notification
+package notification_test
 
 import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/domainry/domainry-notification/sqlstore"
 )
 
 func TestOwnedTablesAreCanonicalAndSorted(t *testing.T) {
-	if !slices.IsSorted(OwnedTables[:]) {
-		t.Fatalf("notification table ownership must remain sorted: %v", OwnedTables)
+	tables := sqlstore.OwnedTables()
+	if !slices.IsSorted(tables) {
+		t.Fatalf("notification table ownership must remain sorted: %v", tables)
 	}
 	seen := map[string]bool{}
-	for _, table := range OwnedTables {
+	for _, table := range tables {
 		if table != strings.TrimSpace(table) || !strings.HasPrefix(table, "notification_") || seen[table] {
 			t.Fatalf("invalid notification-owned table %q", table)
 		}

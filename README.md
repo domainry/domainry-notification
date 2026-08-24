@@ -14,7 +14,8 @@ The module owns:
 - recipient preferences, delivery policy, frequency reservations and channel plans;
 - notification workers and transport-neutral application services.
 
-The initial durable table contract is exposed by `notification.OwnedTables`.
+The durable table contract is exposed by `sqlstore.OwnedTables()` because table
+ownership is a persistence concern, not part of the root domain API.
 
 ## Host boundary
 
@@ -31,5 +32,5 @@ Plane Integration aggregate.
 make check
 ```
 
-The repository currently contains the extraction boundary and ownership
-contract. Plane source will be migrated in dependency-closed increments.
+See [ARCHITECTURE.md](ARCHITECTURE.md) for package naming, dependency direction,
+transaction ownership, and the Integration/Connector boundary.

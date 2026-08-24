@@ -5,3 +5,5 @@
 - Plane composes this module through public contracts; Plane identity, workspace authorization, audit, transaction coordination, secrets, and Connector execution remain host capabilities.
 - Notification owns notification domain semantics, its durable state, workers, and transport-neutral application services.
 - Do not copy Plane packages wholesale. Migrate one dependency-closed slice at a time and replace Plane-internal types with module-owned values or explicit host ports.
+- Define host interfaces in the capability package that consumes them. Do not create generic top-level `port`, `contract`, `service`, `model`, or `repository` packages.
+- Keep schema migrations with `sqlstore`; do not expose persistence ownership from the root domain package.

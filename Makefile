@@ -1,4 +1,4 @@
-.PHONY: fmt-check test vet boundary check
+.PHONY: fmt-check test vet boundary architecture check
 
 fmt-check:
 	@files="$$(find . -name '*.go' -not -path './.git/*' -print | xargs gofmt -l)"; \
@@ -20,4 +20,12 @@ boundary:
 		exit 1; \
 	fi
 
-check: fmt-check test vet boundary
+architecture:
+	@for package in application contract model repository service port migration common util runtime; do \
+		if [ -d "$$package" ] && find "$$package" -type f | grep -q .; then \
+			printf 'forbidden generic top-level package: %s\n' "$$package" >&2; \
+			exit 1; \
+		fi; \
+	done
+
+check: fmt-check test vet boundary architecture
