@@ -81,7 +81,7 @@ func migratedStore(t *testing.T) (*sql.DB, *sqlstore.Store) {
 		}
 	}
 	dialect, _ := sqlstore.NewDialect(sqlstore.SQLite, "", "")
-	store, err := sqlstore.New(sqlstore.Config{Database: db, Dialect: dialect, WorkspaceScope: passthroughScope{}, QueueScopes: &queueScopes{}})
+	store, err := sqlstore.New(sqlstore.Config{Database: db, Dialect: dialect, WorkspaceScope: passthroughScope{}, QueueScopes: &queueScopes{}, Clock: storeClock{}})
 	if err != nil {
 		t.Fatal(err)
 	}

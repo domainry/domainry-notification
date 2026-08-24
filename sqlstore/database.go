@@ -50,6 +50,7 @@ type Config struct {
 	Dialect        Dialect
 	WorkspaceScope WorkspaceScope
 	QueueScopes    QueueScopeIndex
+	Clock          notification.Clock
 }
 
 type Store struct {
@@ -57,11 +58,12 @@ type Store struct {
 	dialect        Dialect
 	workspaceScope WorkspaceScope
 	queueScopes    QueueScopeIndex
+	clock          notification.Clock
 }
 
 func New(config Config) (*Store, error) {
-	if config.Database == nil || config.Dialect == nil || config.WorkspaceScope == nil || config.QueueScopes == nil {
+	if config.Database == nil || config.Dialect == nil || config.WorkspaceScope == nil || config.QueueScopes == nil || config.Clock == nil {
 		return nil, ErrIncompleteConfig
 	}
-	return &Store{database: config.Database, dialect: config.Dialect, workspaceScope: config.WorkspaceScope, queueScopes: config.QueueScopes}, nil
+	return &Store{database: config.Database, dialect: config.Dialect, workspaceScope: config.WorkspaceScope, queueScopes: config.QueueScopes, clock: config.Clock}, nil
 }

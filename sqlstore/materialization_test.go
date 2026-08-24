@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/domainry/domainry-notification"
 	"github.com/domainry/domainry-notification/delivery"
@@ -18,6 +19,10 @@ type passthroughScope struct{}
 func (passthroughScope) Context(ctx context.Context, _ notification.WorkspaceID) context.Context {
 	return ctx
 }
+
+type storeClock struct{ value time.Time }
+
+func (c storeClock) Now() time.Time { return c.value }
 
 type queueScopes struct{ registrations []notification.Work }
 
@@ -94,7 +99,7 @@ func materializationStore(t *testing.T) (*sql.DB, *sqlstore.Store, *queueScopes)
 	}
 	dialect, _ := sqlstore.NewDialect(sqlstore.SQLite, "", "")
 	scopes := &queueScopes{}
-	store, err := sqlstore.New(sqlstore.Config{Database: db, Dialect: dialect, WorkspaceScope: passthroughScope{}, QueueScopes: scopes})
+	store, err := sqlstore.New(sqlstore.Config{Database: db, Dialect: dialect, WorkspaceScope: passthroughScope{}, QueueScopes: scopes, Clock: storeClock{value: time.Date(2026, 8, 24, 1, 0, 0, 0, time.UTC)}})
 	if err != nil {
 		t.Fatal(err)
 	}
