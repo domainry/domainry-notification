@@ -35,6 +35,12 @@ notification never imports subpackages
 The host owns authentication and translates its principal into explicit
 workspace, actor, recipient, and surface values before invoking this module.
 
+`inbox.MailboxManager` accepts that already-authorized query scope and owns
+mailbox behavior. `inbox.ActionResolver` only resolves catalog-backed semantic
+actions into host route input. Team and delegated views are read-only; the host
+must authorize the referenced business resource after resolution and before
+navigation or execution.
+
 ## Transaction boundary
 
 Notification events may be inserted inside a source owner's existing database
@@ -84,3 +90,6 @@ The module owns event-type, audience-resolver, action-authorizer, and provider-
 capability registries. Definitions tied to Workflow, Report, Automation, Record,
 Scheduler, or Integration are registered by those owners during host composition;
 they are not built into this module.
+
+See `MIGRATION.md` for the Plane composition map, cutover order, compatibility
+matrix, and rollback boundary.

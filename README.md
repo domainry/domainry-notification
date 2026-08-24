@@ -47,3 +47,5 @@ so RLS and workspace retirement apply only where appropriate.
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for package naming, dependency direction,
 transaction ownership, and the Integration/Connector boundary.
+See [MIGRATION.md](MIGRATION.md) for the concrete Plane adapter map and safe
+incremental cutover sequence.
