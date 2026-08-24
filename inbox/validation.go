@@ -213,9 +213,13 @@ func (v *Validator) ValidateSavedView(value SavedView) (SavedView, error) {
 	if reportingID == "" {
 		reportingID = "saved-view-report"
 	}
+	reportingIDs, delegatedIDs := []notification.UserID{reportingID}, []notification.UserID(nil)
+	if value.Scope == ScopeDelegated {
+		reportingIDs, delegatedIDs = nil, []notification.UserID{reportingID}
+	}
 	query, err := v.ValidateQuery(Query{
 		WorkspaceID: "saved-view", ViewerUserID: "saved-view", Surface: firstSurface(v.configuration), Scope: value.Scope,
-		RecipientUserID: value.TeamMemberID, ReportingUserIDs: []notification.UserID{reportingID}, Mailbox: value.Mailbox,
+		RecipientUserID: value.TeamMemberID, ReportingUserIDs: reportingIDs, DelegatedUserIDs: delegatedIDs, Mailbox: value.Mailbox,
 		Query: value.Query, Categories: value.Categories, Sources: value.Sources, Severities: value.Severities,
 		ActionStates: value.ActionStates, From: value.From, To: value.To, Limit: 1,
 	})

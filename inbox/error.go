@@ -18,6 +18,10 @@ func conflict(code string, params ...string) error {
 	return inboxError(notification.ErrorConflict, code, nil, params...)
 }
 
+func forbidden(code string, params ...string) error {
+	return inboxError(notification.ErrorForbidden, code, nil, params...)
+}
+
 func unavailable(code string, cause error, params ...string) error {
 	return inboxError(notification.ErrorUnavailable, code, cause, params...)
 }
