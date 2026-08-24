@@ -1,22 +1,25 @@
 package inbox
 
-import "github.com/domainry/domainry-notification/template"
+import (
+	"github.com/domainry/domainry-notification"
+	"github.com/domainry/domainry-notification/template"
+)
 
 type EventType struct {
-	Key               string              `json:"key"`
-	Source            string              `json:"source"`
-	Category          string              `json:"category"`
-	DefaultSeverity   string              `json:"default_severity"`
-	Surfaces          []string            `json:"surfaces"`
-	MandatoryInApp    bool                `json:"mandatory_in_app"`
-	TemplateKey       string              `json:"template_key"`
-	DefaultLocale     string              `json:"default_locale"`
-	Locales           map[string]Content  `json:"locales"`
-	Variables         []template.Variable `json:"variables,omitempty"`
-	Actions           []ActionDescriptor  `json:"actions,omitempty"`
-	AudienceResolvers []string            `json:"audience_resolvers,omitempty"`
-	Version           int                 `json:"version"`
-	Status            string              `json:"status"`
+	Key               string                 `json:"key"`
+	Source            string                 `json:"source"`
+	Category          string                 `json:"category"`
+	DefaultSeverity   string                 `json:"default_severity"`
+	Surfaces          []notification.Surface `json:"surfaces"`
+	MandatoryInApp    bool                   `json:"mandatory_in_app"`
+	TemplateKey       string                 `json:"template_key"`
+	DefaultLocale     string                 `json:"default_locale"`
+	Locales           map[string]Content     `json:"locales"`
+	Variables         []template.Variable    `json:"variables,omitempty"`
+	Actions           []ActionDescriptor     `json:"actions,omitempty"`
+	AudienceResolvers []string               `json:"audience_resolvers,omitempty"`
+	Version           int                    `json:"version"`
+	Status            string                 `json:"status"`
 }
 
 type Content struct {
@@ -57,7 +60,7 @@ type RuleChannel struct {
 	DigestMaximumItems       int    `json:"digest_maximum_items,omitempty"`
 }
 
-type Catalog struct {
+type GovernanceCatalog struct {
 	EventTypes []EventType `json:"event_types"`
 	Rules      []Rule      `json:"rules"`
 }
