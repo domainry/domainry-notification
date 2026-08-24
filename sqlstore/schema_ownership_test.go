@@ -1,0 +1,45 @@
+package sqlstore_test
+
+import (
+	"slices"
+	"testing"
+
+	"github.com/domainry/domainry-notification/sqlstore"
+)
+
+func TestSchemaOwnershipSeparatesSystemAndWorkspaceState(t *testing.T) {
+	ownership := sqlstore.SchemaOwnership()
+	if len(ownership) != 14 {
+		t.Fatalf("owned table count=%d", len(ownership))
+	}
+	system := []string{}
+	workspace := []string{}
+	for _, table := range ownership {
+		switch table.Scope {
+		case sqlstore.SystemData:
+			system = append(system, table.Name)
+		case sqlstore.WorkspaceData:
+			workspace = append(workspace, table.Name)
+		default:
+			t.Fatalf("table %q has unknown scope %q", table.Name, table.Scope)
+		}
+	}
+	wantSystem := []string{
+		"notification_delivery_policy",
+		"notification_template_publication_locks",
+		"notification_template_publication_requests",
+		"notification_template_records",
+		"notification_template_versions",
+	}
+	if !slices.Equal(system, wantSystem) {
+		t.Fatalf("system tables=%v", system)
+	}
+	if len(workspace) != 9 {
+		t.Fatalf("workspace tables=%v", workspace)
+	}
+	flat := sqlstore.OwnedTables()
+	flat[0] = "mutated"
+	if sqlstore.OwnedTables()[0] == "mutated" {
+		t.Fatal("owned table inventory leaked mutable state")
+	}
+}

@@ -43,6 +43,19 @@ using a minimal executor. The host owns commit, rollback, and after-commit worke
 wakeups. This preserves current same-database atomicity without importing Plane's
 transaction or worker packages.
 
+## Schema tenancy
+
+The module owns fourteen tables, but they do not share one tenancy model.
+Template records, template versions, publication requests, publication locks,
+and the default delivery policy are system-scoped configuration. Events,
+failures, channel plans, recipient preferences, delivery reservations, inbox
+items, alert groups, delegations, and saved views are workspace-scoped data.
+
+`sqlstore.SchemaOwnership` is the authoritative machine-readable inventory.
+Only workspace-scoped tables participate in host RLS and workspace-retirement
+workflows. A table must not be moved between scopes as a naming-only refactor;
+that is a data migration and authorization change.
+
 When separately deployed, source owners can replace that adapter with their own
 transactional outbox while retaining the same notification intent.
 
