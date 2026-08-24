@@ -2,7 +2,9 @@ package delivery
 
 import "github.com/domainry/domainry-notification"
 
-// Policy controls workspace-level delivery behavior.
+// Policy is the system default for notification delivery behavior. Recipient
+// preferences are workspace-scoped overrides; a future workspace policy would
+// require an explicit workspace identity and schema migration.
 type Policy struct {
 	Enabled                bool     `json:"enabled"`
 	QuietHoursEnabled      bool     `json:"quiet_hours_enabled"`
