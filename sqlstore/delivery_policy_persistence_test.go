@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/domainry/domainry-notification/delivery"
 	"github.com/domainry/domainry-notification/sqlstore"
@@ -81,7 +82,7 @@ func migratedStore(t *testing.T) (*sql.DB, *sqlstore.Store) {
 		}
 	}
 	dialect, _ := sqlstore.NewDialect(sqlstore.SQLite, "", "")
-	store, err := sqlstore.New(sqlstore.Config{Database: db, Dialect: dialect, WorkspaceScope: passthroughScope{}, QueueScopes: &queueScopes{}, Clock: storeClock{}})
+	store, err := sqlstore.New(sqlstore.Config{Database: db, Dialect: dialect, WorkspaceScope: passthroughScope{}, QueueScopes: &queueScopes{}, Clock: storeClock{value: time.Date(2026, 8, 24, 2, 0, 0, 0, time.UTC)}})
 	if err != nil {
 		t.Fatal(err)
 	}
