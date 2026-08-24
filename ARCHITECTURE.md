@@ -56,6 +56,14 @@ Only workspace-scoped tables participate in host RLS and workspace-retirement
 workflows. A table must not be moved between scopes as a naming-only refactor;
 that is a data migration and authorization change.
 
+`sqlstore.SchemaMigrations` is the authoritative ordered DDL history. The host
+executes it with its existing migration ledger; notification does not create a
+parallel migration-history table. A fresh deployment applies version 1. An
+existing Plane database must first prove that all owned tables, columns,
+indexes, and compatible types already exist, then baseline version 1 without
+executing it. Table prefixes and PostgreSQL schemas are physical deployment
+configuration and never change logical ownership names.
+
 When separately deployed, source owners can replace that adapter with their own
 transactional outbox while retaining the same notification intent.
 

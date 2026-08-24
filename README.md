@@ -12,10 +12,12 @@ The module owns:
 - durable notification events and failure history;
 - recipient inbox items, delegations, alert groups and saved views;
 - recipient preferences, delivery policy, frequency reservations and channel plans;
-- notification workers and transport-neutral application services.
+- durable-work processors and transport-neutral application services; the host
+  retains worker scheduling, lifecycle, and wakeup transport.
 
-The durable table contract is exposed by `sqlstore.OwnedTables()` because table
-ownership is a persistence concern, not part of the root domain API.
+The durable table contract and tenancy classification are exposed by
+`sqlstore.SchemaOwnership()` because table ownership is a persistence concern,
+not part of the root domain API.
 
 ## Host boundary
 
@@ -31,6 +33,17 @@ Plane Integration aggregate.
 ```sh
 make check
 ```
+
+## Database schema
+
+`sqlstore.SchemaMigrations` returns ordered SQL statements for SQLite,
+PostgreSQL, or MySQL. Apply them through the host's migration runner. Fresh
+databases start at version 1; databases that already contain Plane's
+notification tables must verify schema compatibility before recording the
+version-1 baseline. Do not execute the base migration over an existing schema.
+
+`sqlstore.SchemaOwnership` identifies system-scoped and workspace-scoped tables
+so RLS and workspace retirement apply only where appropriate.
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for package naming, dependency direction,
 transaction ownership, and the Integration/Connector boundary.
