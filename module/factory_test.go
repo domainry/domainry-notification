@@ -65,8 +65,34 @@ func (identityBindingStub) Authorization() identitysdk.Authorization   { return 
 func (identityBindingStub) Close(context.Context) error                { return nil }
 
 type testHost struct {
+	database   *sql.DB
+	dialect    modulehost.Dialect
+	migrations *testMigrationRegistrar
+}
+
+type testMigrationRegistrar struct {
 	database *sql.DB
-	dialect  modulehost.Dialect
+	applied  bool
+}
+
+func (testMigrationRegistrar) Driver() string { return "sqlite" }
+func (testMigrationRegistrar) Schema() string { return "" }
+func (r *testMigrationRegistrar) ApplyOwnedMigrations(ctx context.Context, owner string, migrations []modulehost.SchemaMigration) error {
+	if owner != "notification" {
+		return context.Canceled
+	}
+	if r.applied {
+		return nil
+	}
+	for _, migration := range migrations {
+		for _, statement := range migration.Statements {
+			if _, err := r.database.ExecContext(ctx, statement); err != nil {
+				return err
+			}
+		}
+	}
+	r.applied = true
+	return nil
 }
 
 func (h testHost) Database() modulehost.Database           { return h.database }
@@ -85,6 +111,9 @@ func (testHost) AudienceResolver() modulehost.AudienceResolver                  
 func (testHost) DeliveryGateway() modulehost.DeliveryGateway                     { return testGateway{} }
 func (testHost) DeliveryMetrics() modulehost.DeliveryMetrics                     { return nil }
 func (testHost) ProviderTemplateValidator() modulehost.ProviderTemplateValidator { return nil }
+func (h testHost) Migrations() modulehost.MigrationRegistrar {
+	return h.migrations
+}
 
 func newTestHost(t *testing.T) testHost {
 	t.Helper()
@@ -97,19 +126,8 @@ func newTestHost(t *testing.T) testHost {
 	if err != nil {
 		t.Fatal(err)
 	}
-	migrations, err := sqlstore.SchemaMigrations(sqlstore.SQLite, "", "")
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, migration := range migrations {
-		for _, statement := range migration.Statements {
-			if _, err := database.ExecContext(t.Context(), statement); err != nil {
-				t.Fatalf("apply migration: %v", err)
-			}
-		}
-	}
 	t.Cleanup(func() { _ = database.Close() })
-	return testHost{database: database, dialect: dialect}
+	return testHost{database: database, dialect: dialect, migrations: &testMigrationRegistrar{database: database}}
 }
 
 func TestModuleFactoryContractAndBorrowedDatabaseLifecycle(t *testing.T) {

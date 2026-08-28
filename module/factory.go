@@ -51,6 +51,25 @@ func (f *Factory) openHosted(ctx context.Context, application notificationsdk.Ap
 	if host == nil || host.Database() == nil || host.Dialect() == nil || host.WorkspaceScope() == nil || host.QueueScopes() == nil || host.Identity() == nil || host.Clock() == nil || strings.TrimSpace(host.WorkerID()) == "" || host.WorkNotifier() == nil || host.RecipientDirectory() == nil || host.DeliveryGateway() == nil {
 		return nil, fmt.Errorf("notification Module host is incomplete")
 	}
+	if mode == notificationsdk.DeploymentModeModule {
+		migrationHost, ok := host.(modulehost.MigrationHost)
+		if !ok || migrationHost.Migrations() == nil {
+			return nil, fmt.Errorf("notification Module migration host is required")
+		}
+		registrar := migrationHost.Migrations()
+		migrations, err := sqlstore.SchemaMigrations(sqlstore.Driver(registrar.Driver()), registrar.Schema(), "")
+		if err != nil {
+			return nil, err
+		}
+		owned := sqlstore.OwnedTables()
+		hostMigrations := make([]modulehost.SchemaMigration, len(migrations))
+		for index, migration := range migrations {
+			hostMigrations[index] = modulehost.SchemaMigration{Version: migration.Version, Name: migration.Name, Statements: append([]string(nil), migration.Statements...), BaselineTables: append([]string(nil), owned...)}
+		}
+		if err := registrar.ApplyOwnedMigrations(ctx, "notification", hostMigrations); err != nil {
+			return nil, fmt.Errorf("apply Notification Module migrations: %w", err)
+		}
+	}
 	store, err := sqlstore.New(sqlstore.Config{Database: host.Database(), Dialect: host.Dialect(), WorkspaceScope: workspaceScopeAdapter{host.WorkspaceScope()}, QueueScopes: queueScopeAdapter{host.QueueScopes()}, Clock: host.Clock()})
 	if err != nil {
 		return nil, err
