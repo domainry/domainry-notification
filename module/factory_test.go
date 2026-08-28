@@ -183,7 +183,8 @@ func TestModuleSystemMigrationExportsAndIdempotentlyReconcilesExactApplication(t
 	if _, err := host.database.Exec(`INSERT INTO notification_retention_archive (id, workspace_id, policy_key, policy_version, job_id, source_table, resource_id, payload_hash, payload_json, archived_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, "archive", "workspace", "notification.history.v1", "1", "job", "notification_events", "event", "hash", `{}`, "now"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := host.database.Exec(`INSERT INTO notification_events (id, workspace_id, source, source_event_id, status, payload_json, lease_owner, occurred_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, "leased-event", "workspace", "test", "source", "processing", `{}`, "worker", "now", "now", "now"); err != nil {
+	const snapshotPayload = `{"recipient_user_ids":["user"],"snapshot":{"title":"Frozen title","body":"Frozen body","template_key":"report.completed","template_version":7,"template_content_hash":"sha256"}}`
+	if _, err := host.database.Exec(`INSERT INTO notification_events (id, workspace_id, source, source_event_id, status, payload_json, lease_owner, occurred_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, "leased-event", "workspace", "test", "source", "processing", snapshotPayload, "worker", "now", "now", "now"); err != nil {
 		t.Fatal(err)
 	}
 	command := contract.NotificationMigrationCommand{MigrationID: "migration", At: time.Date(2026, 8, 29, 2, 0, 0, 0, time.UTC)}
@@ -306,6 +307,13 @@ func TestModuleSystemMigrationExportsAndIdempotentlyReconcilesExactApplication(t
 	repeated, err := target.Import(t.Context(), exported.Bundle)
 	if err != nil || !repeated.AlreadyPresent || repeated.Fingerprint != receipt.Fingerprint {
 		t.Fatalf("repeated receipt=%+v err=%v", repeated, err)
+	}
+	var importedSnapshot string
+	if err := targetHost.database.QueryRow(`SELECT payload_json FROM notification_events WHERE workspace_id = ? AND id = ?`, "workspace", "leased-event").Scan(&importedSnapshot); err != nil {
+		t.Fatal(err)
+	}
+	if importedSnapshot != snapshotPayload {
+		t.Fatalf("recipient snapshot changed during migration: %s", importedSnapshot)
 	}
 	transition := contract.NotificationMigrationCommand{MigrationID: command.MigrationID, BundleFingerprint: exported.Bundle.Fingerprint, At: command.At.Add(time.Minute)}
 	if status, err := target.Activate(t.Context(), transition); err != nil || status.State != contract.NotificationMigrationCutover || status.Role != sqlstore.MigrationRoleTarget {
