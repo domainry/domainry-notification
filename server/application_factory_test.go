@@ -40,6 +40,7 @@ type applicationIdentityStub struct{ identitysdk.Binding }
 type applicationAuthenticationStub struct{ identitysdk.Authentication }
 type applicationTokensStub struct{ identitysdk.TokenVerifier }
 type applicationAuthorizationStub struct{ identitysdk.Authorization }
+type applicationPrincipalResolverStub struct{ identitysdk.PrincipalResolver }
 
 func (applicationIdentityStub) Authentication() identitysdk.Authentication {
 	return applicationAuthenticationStub{}
@@ -48,7 +49,18 @@ func (applicationIdentityStub) Tokens() identitysdk.TokenVerifier { return appli
 func (applicationIdentityStub) Authorization() identitysdk.Authorization {
 	return applicationAuthorizationStub{}
 }
+func (applicationIdentityStub) Principals() identitysdk.PrincipalResolver {
+	return applicationPrincipalResolverStub{}
+}
 func (applicationIdentityStub) Directory() identitysdk.Directory { return directoryStub{} }
+
+func (applicationPrincipalResolverStub) Resolve(_ context.Context, request identitysdk.PrincipalResolutionRequest) (identitysdk.PrincipalResolution, error) {
+	bundle := identitysdk.AccessBundle{FunctionGrants: []identitysdk.FunctionGrant{{Resource: "*", Action: "*", Effect: identitysdk.EffectAllow}}}
+	return identitysdk.PrincipalResolution{
+		Principal:    identitysdk.Principal{Known: true, WorkspaceID: string(request.Application.WorkspaceID), UserID: string(request.SubjectID), AccessBundle: &bundle},
+		AccessBundle: bundle,
+	}, nil
+}
 
 type applicationGatewayStub struct{}
 

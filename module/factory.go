@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	identitysdk "github.com/domainry/domainry-identity-sdk"
 	identityprincipal "github.com/domainry/domainry-identity-sdk/authorization/principal"
 	"github.com/domainry/domainry-notification"
 	notificationsdk "github.com/domainry/domainry-notification-sdk"
@@ -48,7 +49,7 @@ func (f *Factory) openHosted(ctx context.Context, application notificationsdk.Ap
 	if mode != notificationsdk.DeploymentModeModule && mode != notificationsdk.DeploymentModeSaaS {
 		return nil, fmt.Errorf("notification deployment mode %q is unsupported", mode)
 	}
-	if host == nil || host.Database() == nil || host.Dialect() == nil || host.WorkspaceScope() == nil || host.QueueScopes() == nil || host.Identity() == nil || host.Clock() == nil || strings.TrimSpace(host.WorkerID()) == "" || host.WorkNotifier() == nil || host.RecipientDirectory() == nil || host.DeliveryGateway() == nil {
+	if host == nil || host.Database() == nil || host.Dialect() == nil || host.WorkspaceScope() == nil || host.QueueScopes() == nil || host.Identity() == nil || host.Identity().Principals() == nil || host.Clock() == nil || strings.TrimSpace(host.WorkerID()) == "" || host.WorkNotifier() == nil || host.RecipientDirectory() == nil || host.DeliveryGateway() == nil {
 		return nil, fmt.Errorf("notification Module host is incomplete")
 	}
 	if mode == notificationsdk.DeploymentModeModule {
@@ -133,7 +134,21 @@ func (f *Factory) openHosted(ctx context.Context, application notificationsdk.Ap
 		return nil, err
 	}
 	notifier := workNotifierAdapter{host.WorkNotifier()}
-	publicationProcessor, err := template.NewPublicationProcessor(template.PublicationProcessorDependencies{Store: store, Manager: templateManager, Clock: host.Clock(), WorkerID: host.WorkerID(), WorkNotifier: notifier})
+	publicationProcessor, err := template.NewPublicationProcessor(template.PublicationProcessorDependencies{
+		Store: store, Manager: templateManager, Clock: host.Clock(), WorkerID: host.WorkerID(), WorkNotifier: notifier,
+		AuthorizeResumed: func(ctx context.Context, actor string) (bool, error) {
+			resolution, err := host.Identity().Principals().Resolve(ctx, identitysdk.PrincipalResolutionRequest{
+				Application: identitysdk.ApplicationScope{TenantID: identitysdk.TenantID(application.TenantID), WorkspaceID: identitysdk.WorkspaceID(application.WorkspaceID), ApplicationKey: identitysdk.ApplicationKey(application.ApplicationKey)},
+				SubjectID:   identitysdk.SubjectID(strings.TrimSpace(actor)),
+			})
+			if err != nil {
+				return false, err
+			}
+			principal := resolution.Principal
+			principal.AccessBundle = &resolution.AccessBundle
+			return principal.Known && principal.WorkspaceID == application.WorkspaceID && principal.UserID == strings.TrimSpace(actor) && principal.HasPermission("notification_publication.approve"), nil
+		},
+	})
 	if err != nil {
 		return nil, err
 	}

@@ -2,6 +2,7 @@ package template_test
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -220,7 +221,8 @@ func TestPublicationProcessorApprovesClaimsAndPublishesSnapshot(t *testing.T) {
 	notifier := &workNotifier{}
 	processor, err := template.NewPublicationProcessor(template.PublicationProcessorDependencies{
 		Store: store, Manager: manager, Clock: publicationClock{now: now}, WorkerID: "worker-1", WorkNotifier: notifier,
-		NewRequestID: func() (string, error) { return "request-1", nil },
+		NewRequestID:     func() (string, error) { return "request-1", nil },
+		AuthorizeResumed: func(context.Context, string) (bool, error) { return true, nil },
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -255,7 +257,8 @@ func TestPublicationProcessorRejectsSelfApprovalAndSupersedesChangedCandidate(t 
 	record, _ := manager.SaveDraft(t.Context(), draft.Key, draft, "", "requester")
 	processor, _ := template.NewPublicationProcessor(template.PublicationProcessorDependencies{
 		Store: store, Manager: manager, Clock: publicationClock{now: time.Now()}, WorkerID: "worker-1",
-		NewRequestID: func() (string, error) { return "request-1", nil },
+		NewRequestID:     func() (string, error) { return "request-1", nil },
+		AuthorizeResumed: func(context.Context, string) (bool, error) { return true, nil },
 	})
 	request, _ := processor.Request(t.Context(), draft.Key, "", record.UpdatedAt, "requester")
 	if _, err := processor.Approve(t.Context(), request.ID, "requester"); notification.ErrorCode(err) != "backend.notification.publication_self_approval_forbidden" {
@@ -277,5 +280,54 @@ func TestPublicationProcessorRejectsSelfApprovalAndSupersedesChangedCandidate(t 
 	finished := store.requests[approved.ID]
 	if finished.Status != template.PublicationSuperseded || !strings.Contains(finished.Failure, "candidate_changed") {
 		t.Fatalf("finished=%+v", finished)
+	}
+}
+
+func TestPublicationProcessorReauthorizesReviewerBeforeResumedPublish(t *testing.T) {
+	tests := []struct {
+		name        string
+		allowed     bool
+		authorErr   error
+		wantStatus  template.PublicationStatus
+		wantFailure string
+	}{
+		{name: "revoked", allowed: false, wantStatus: template.PublicationFailed, wantFailure: "backend.notification.publication_authorization_revoked"},
+		{name: "identity unavailable", authorErr: errors.New("identity unavailable"), wantStatus: template.PublicationPublishing},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			validator := emailValidator(t)
+			engine, _ := template.NewEngine("en-US", nil, validator, nil)
+			store := newManagementStore()
+			manager, _ := template.NewManager(template.ManagerDependencies{Store: store, Engine: engine, Validator: validator})
+			draft := validEmailTemplate()
+			draft.Status = "draft"
+			record, _ := manager.SaveDraft(t.Context(), draft.Key, draft, "", "requester")
+			seenActor := ""
+			processor, err := template.NewPublicationProcessor(template.PublicationProcessorDependencies{
+				Store: store, Manager: manager, Clock: publicationClock{now: time.Now()}, WorkerID: "worker-1",
+				NewRequestID: func() (string, error) { return "request-1", nil },
+				AuthorizeResumed: func(_ context.Context, actor string) (bool, error) {
+					seenActor = actor
+					return test.allowed, test.authorErr
+				},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			request, _ := processor.Request(t.Context(), draft.Key, "", record.UpdatedAt, "requester")
+			approved, _ := processor.Approve(t.Context(), request.ID, "reviewer")
+			processed, err := processor.Process(t.Context(), approved.ID)
+			if err != nil || !processed || seenActor != "reviewer" {
+				t.Fatalf("processed=%v actor=%q err=%v", processed, seenActor, err)
+			}
+			finished := store.requests[approved.ID]
+			if finished.Status != test.wantStatus || finished.Failure != test.wantFailure {
+				t.Fatalf("finished=%+v", finished)
+			}
+			if stored := store.records[draft.Key]; stored.Published != nil {
+				t.Fatalf("publication must not proceed without current reviewer authorization: %+v", stored)
+			}
+		})
 	}
 }

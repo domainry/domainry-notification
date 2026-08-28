@@ -58,12 +58,22 @@ func (testGateway) Dispatch(context.Context, modulehost.DeliveryRequest) (module
 type tokenVerifierStub struct{ identitysdk.TokenVerifier }
 type authenticationStub struct{ identitysdk.Authentication }
 type authorizationStub struct{ identitysdk.Authorization }
+type principalResolverStub struct{ identitysdk.PrincipalResolver }
 type identityBindingStub struct{ identitysdk.Binding }
 
 func (identityBindingStub) Tokens() identitysdk.TokenVerifier          { return tokenVerifierStub{} }
 func (identityBindingStub) Authentication() identitysdk.Authentication { return authenticationStub{} }
 func (identityBindingStub) Authorization() identitysdk.Authorization   { return authorizationStub{} }
+func (identityBindingStub) Principals() identitysdk.PrincipalResolver  { return principalResolverStub{} }
 func (identityBindingStub) Close(context.Context) error                { return nil }
+
+func (principalResolverStub) Resolve(_ context.Context, request identitysdk.PrincipalResolutionRequest) (identitysdk.PrincipalResolution, error) {
+	bundle := identitysdk.AccessBundle{FunctionGrants: []identitysdk.FunctionGrant{{Resource: "*", Action: "*", Effect: identitysdk.EffectAllow}}}
+	return identitysdk.PrincipalResolution{
+		Principal:    identitysdk.Principal{Known: true, WorkspaceID: string(request.Application.WorkspaceID), UserID: string(request.SubjectID), AccessBundle: &bundle},
+		AccessBundle: bundle,
+	}, nil
+}
 
 type testHost struct {
 	database   *sql.DB

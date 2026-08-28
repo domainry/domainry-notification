@@ -20,36 +20,40 @@ type PublicationWorkNotifier interface {
 	Notify(context.Context, notification.Work)
 }
 
+type ResumedPublicationAuthorizer func(context.Context, string) (bool, error)
+
 type PublicationProcessorDependencies struct {
-	Store        Store
-	Manager      *Manager
-	Clock        notification.Clock
-	WorkerID     string
-	WorkNotifier PublicationWorkNotifier
-	NewRequestID func() (string, error)
+	Store            Store
+	Manager          *Manager
+	Clock            notification.Clock
+	WorkerID         string
+	WorkNotifier     PublicationWorkNotifier
+	NewRequestID     func() (string, error)
+	AuthorizeResumed ResumedPublicationAuthorizer
 }
 
 // PublicationProcessor owns approval and durable asynchronous publication.
 // It does not own administrator authorization or worker scheduling.
 type PublicationProcessor struct {
-	store    Store
-	manager  *Manager
-	clock    notification.Clock
-	workerID string
-	notifier PublicationWorkNotifier
-	newID    func() (string, error)
+	store            Store
+	manager          *Manager
+	clock            notification.Clock
+	workerID         string
+	notifier         PublicationWorkNotifier
+	newID            func() (string, error)
+	authorizeResumed ResumedPublicationAuthorizer
 }
 
 func NewPublicationProcessor(dependencies PublicationProcessorDependencies) (*PublicationProcessor, error) {
 	dependencies.WorkerID = strings.TrimSpace(dependencies.WorkerID)
-	if dependencies.Store == nil || dependencies.Manager == nil || dependencies.Clock == nil || dependencies.WorkerID == "" {
+	if dependencies.Store == nil || dependencies.Manager == nil || dependencies.Clock == nil || dependencies.WorkerID == "" || dependencies.AuthorizeResumed == nil {
 		return nil, fmt.Errorf("notification publication processor dependencies are required")
 	}
 	if dependencies.NewRequestID == nil {
 		dependencies.NewRequestID = publicationRequestID
 	}
 	return &PublicationProcessor{store: dependencies.Store, manager: dependencies.Manager, clock: dependencies.Clock, workerID: dependencies.WorkerID,
-		notifier: dependencies.WorkNotifier, newID: dependencies.NewRequestID}, nil
+		notifier: dependencies.WorkNotifier, newID: dependencies.NewRequestID, authorizeResumed: dependencies.AuthorizeResumed}, nil
 }
 
 func PublicationCandidateHash(value Template) string {
@@ -242,6 +246,17 @@ func (p *PublicationProcessor) QueueStats(ctx context.Context, limit int) (int, 
 }
 
 func (p *PublicationProcessor) publishClaimed(ctx context.Context, request PublicationRequest) (PublicationRequest, error) {
+	allowed, err := p.authorizeResumed(ctx, request.ReviewedBy)
+	if err != nil {
+		return PublicationRequest{}, err
+	}
+	if !allowed {
+		value, finishErr := p.finish(ctx, request, PublicationFailed, 0, "backend.notification.publication_authorization_revoked")
+		if finishErr != nil {
+			return PublicationRequest{}, finishErr
+		}
+		return value, notification.NewError(notification.ErrorForbidden, "backend.notification.publication_authorization_revoked", nil, map[string]any{"publication_id": request.ID})
+	}
 	record, found, err := p.store.Get(ctx, request.TemplateKey)
 	if err != nil {
 		return PublicationRequest{}, err
