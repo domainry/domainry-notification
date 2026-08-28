@@ -1,0 +1,292 @@
+package sqlstore
+
+import (
+	"context"
+	"crypto/sha256"
+	"database/sql"
+	"encoding/hex"
+	"encoding/json"
+	"fmt"
+	"slices"
+	"sort"
+	"strings"
+)
+
+const PortableFormatV1 = "domainry-notification-portable-v1"
+
+type PortableScope struct {
+	TenantID       string `json:"tenant_id"`
+	WorkspaceID    string `json:"workspace_id"`
+	ApplicationKey string `json:"application_key"`
+}
+
+type PortableBundle struct {
+	FormatVersion string          `json:"format_version"`
+	Source        PortableScope   `json:"source"`
+	Tables        []PortableTable `json:"tables"`
+	Fingerprint   string          `json:"fingerprint"`
+}
+
+type PortableTable struct {
+	Name    string              `json:"name"`
+	Columns []string            `json:"columns"`
+	Rows    [][]json.RawMessage `json:"rows"`
+}
+
+type PortableInventory struct {
+	Tables       map[string]int `json:"tables"`
+	Rows         int            `json:"rows"`
+	ActiveLeases int            `json:"active_leases"`
+	Fingerprint  string         `json:"fingerprint"`
+}
+
+type PortableImportReceipt struct {
+	FormatVersion  string `json:"format_version"`
+	Fingerprint    string `json:"fingerprint"`
+	Rows           int    `json:"rows"`
+	AlreadyPresent bool   `json:"already_present"`
+}
+
+func ExportPortable(ctx context.Context, database Queryer, dialect Dialect, scope PortableScope) (PortableBundle, PortableInventory, error) {
+	if database == nil || dialect == nil || strings.TrimSpace(scope.TenantID) == "" || strings.TrimSpace(scope.WorkspaceID) == "" || strings.TrimSpace(scope.ApplicationKey) == "" {
+		return PortableBundle{}, PortableInventory{}, fmt.Errorf("notification portable export dependencies and scope are required")
+	}
+	ownership := ownershipByTable()
+	bundle := PortableBundle{FormatVersion: PortableFormatV1, Source: scope, Tables: make([]PortableTable, 0, len(baseSchemaTables))}
+	inventory := PortableInventory{Tables: map[string]int{}}
+	for _, definition := range baseSchemaTables {
+		columns := make([]string, len(definition.columns))
+		quoted := make([]string, len(definition.columns))
+		for index, column := range definition.columns {
+			columns[index], quoted[index] = column.name, dialect.Identifier(column.name)
+		}
+		statement := "SELECT " + strings.Join(quoted, ", ") + " FROM " + dialect.Table(definition.name)
+		args := []any{}
+		if ownership[definition.name] == WorkspaceData {
+			statement += " WHERE " + dialect.Identifier("workspace_id") + " = " + dialect.Placeholder(1)
+			args = append(args, scope.WorkspaceID)
+		}
+		rows, err := database.QueryContext(ctx, statement, args...)
+		if err != nil {
+			return PortableBundle{}, PortableInventory{}, fmt.Errorf("export notification table %s: %w", definition.name, err)
+		}
+		table := PortableTable{Name: definition.name, Columns: columns, Rows: [][]json.RawMessage{}}
+		for rows.Next() {
+			values := make([]any, len(columns))
+			destinations := make([]any, len(columns))
+			for index := range values {
+				destinations[index] = &values[index]
+			}
+			if err := rows.Scan(destinations...); err != nil {
+				_ = rows.Close()
+				return PortableBundle{}, PortableInventory{}, err
+			}
+			encoded := make([]json.RawMessage, len(values))
+			for index, value := range values {
+				if bytes, ok := value.([]byte); ok {
+					value = string(bytes)
+				}
+				raw, marshalErr := json.Marshal(value)
+				if marshalErr != nil {
+					_ = rows.Close()
+					return PortableBundle{}, PortableInventory{}, marshalErr
+				}
+				encoded[index] = raw
+			}
+			table.Rows = append(table.Rows, encoded)
+		}
+		if err := rows.Err(); err != nil {
+			_ = rows.Close()
+			return PortableBundle{}, PortableInventory{}, err
+		}
+		_ = rows.Close()
+		sort.Slice(table.Rows, func(i, j int) bool { return portableRowKey(table.Rows[i]) < portableRowKey(table.Rows[j]) })
+		inventory.Tables[definition.name] = len(table.Rows)
+		inventory.Rows += len(table.Rows)
+		inventory.ActiveLeases += activePortableLeases(table)
+		bundle.Tables = append(bundle.Tables, table)
+	}
+	fingerprint, err := portableFingerprint(bundle)
+	if err != nil {
+		return PortableBundle{}, PortableInventory{}, err
+	}
+	bundle.Fingerprint, inventory.Fingerprint = fingerprint, fingerprint
+	return bundle, inventory, nil
+}
+
+func ImportPortable(ctx context.Context, database Database, dialect Dialect, target PortableScope, bundle PortableBundle) (PortableImportReceipt, error) {
+	if database == nil || dialect == nil {
+		return PortableImportReceipt{}, fmt.Errorf("notification portable import dependencies are required")
+	}
+	if err := ValidatePortable(bundle, target); err != nil {
+		return PortableImportReceipt{}, err
+	}
+	existing, inventory, err := ExportPortable(ctx, database, dialect, target)
+	if err != nil {
+		return PortableImportReceipt{}, err
+	}
+	if inventory.Rows > 0 {
+		if existing.Fingerprint != bundle.Fingerprint {
+			return PortableImportReceipt{}, fmt.Errorf("notification portable import target is not empty and does not match the bundle")
+		}
+		return PortableImportReceipt{FormatVersion: PortableFormatV1, Fingerprint: bundle.Fingerprint, Rows: inventory.Rows, AlreadyPresent: true}, nil
+	}
+	tx, err := database.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelSerializable})
+	if err != nil {
+		return PortableImportReceipt{}, err
+	}
+	defer tx.Rollback()
+	rowCount := 0
+	for _, table := range bundle.Tables {
+		statement := dialect.Insert(table.Name, table.Columns)
+		definition := baseSchemaTables[tableDefinitionIndex(table.Name)]
+		for _, row := range table.Rows {
+			values := make([]any, len(row))
+			for index, raw := range row {
+				value, decodeErr := decodePortableCell(raw, definition.columns[index].kind)
+				if decodeErr != nil {
+					return PortableImportReceipt{}, fmt.Errorf("decode notification portable cell: %w", decodeErr)
+				}
+				values[index] = value
+			}
+			if _, err := tx.ExecContext(ctx, statement, values...); err != nil {
+				return PortableImportReceipt{}, fmt.Errorf("import notification table %s: %w", table.Name, err)
+			}
+			rowCount++
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return PortableImportReceipt{}, err
+	}
+	imported, importedInventory, err := ExportPortable(ctx, database, dialect, target)
+	if err != nil {
+		return PortableImportReceipt{}, err
+	}
+	if imported.Fingerprint != bundle.Fingerprint || importedInventory.Rows != rowCount {
+		return PortableImportReceipt{}, fmt.Errorf("notification portable import reconciliation failed")
+	}
+	return PortableImportReceipt{FormatVersion: PortableFormatV1, Fingerprint: bundle.Fingerprint, Rows: rowCount}, nil
+}
+
+func ValidatePortable(bundle PortableBundle, target PortableScope) error {
+	if bundle.FormatVersion != PortableFormatV1 || strings.TrimSpace(bundle.Source.TenantID) == "" || strings.TrimSpace(bundle.Source.WorkspaceID) == "" || strings.TrimSpace(bundle.Source.ApplicationKey) == "" {
+		return fmt.Errorf("notification portable bundle format or source scope is invalid")
+	}
+	if bundle.Source.TenantID != target.TenantID || bundle.Source.WorkspaceID != target.WorkspaceID || bundle.Source.ApplicationKey != target.ApplicationKey {
+		return fmt.Errorf("notification portable bundle target scope mismatch")
+	}
+	if len(bundle.Tables) != len(baseSchemaTables) {
+		return fmt.Errorf("notification portable bundle table inventory is incomplete")
+	}
+	for index, definition := range baseSchemaTables {
+		table := bundle.Tables[index]
+		if table.Name != definition.name || len(table.Columns) != len(definition.columns) {
+			return fmt.Errorf("notification portable table %d schema mismatch", index)
+		}
+		for columnIndex, column := range definition.columns {
+			if table.Columns[columnIndex] != column.name {
+				return fmt.Errorf("notification portable table %s columns mismatch", table.Name)
+			}
+		}
+		for _, row := range table.Rows {
+			if len(row) != len(table.Columns) {
+				return fmt.Errorf("notification portable table %s row width mismatch", table.Name)
+			}
+			if ownershipByTable()[table.Name] == WorkspaceData {
+				workspaceIndex := slices.Index(table.Columns, "workspace_id")
+				var workspaceID string
+				if workspaceIndex < 0 || json.Unmarshal(row[workspaceIndex], &workspaceID) != nil || workspaceID != target.WorkspaceID {
+					return fmt.Errorf("notification portable table %s contains a foreign workspace row", table.Name)
+				}
+			}
+		}
+	}
+	fingerprint, err := portableFingerprint(PortableBundle{FormatVersion: bundle.FormatVersion, Source: bundle.Source, Tables: bundle.Tables})
+	if err != nil || fingerprint != bundle.Fingerprint {
+		return fmt.Errorf("notification portable bundle fingerprint mismatch")
+	}
+	return nil
+}
+
+func tableDefinitionIndex(name string) int {
+	for index, table := range baseSchemaTables {
+		if table.name == name {
+			return index
+		}
+	}
+	return -1
+}
+
+func decodePortableCell(raw json.RawMessage, kind schemaColumnKind) (any, error) {
+	if string(raw) == "null" {
+		return nil, nil
+	}
+	switch kind {
+	case integerColumn, bigIntegerColumn:
+		var value int64
+		if err := json.Unmarshal(raw, &value); err != nil {
+			return nil, err
+		}
+		return value, nil
+	case booleanColumn:
+		var value bool
+		if err := json.Unmarshal(raw, &value); err == nil {
+			return value, nil
+		}
+		var numeric int64
+		if err := json.Unmarshal(raw, &numeric); err != nil {
+			return nil, err
+		}
+		return numeric != 0, nil
+	default:
+		var value string
+		if err := json.Unmarshal(raw, &value); err != nil {
+			return nil, err
+		}
+		return value, nil
+	}
+}
+
+func ownershipByTable() map[string]DataScope {
+	result := make(map[string]DataScope, len(tableOwnership))
+	for _, table := range tableOwnership {
+		result[table.Name] = table.Scope
+	}
+	return result
+}
+
+func portableFingerprint(bundle PortableBundle) (string, error) {
+	bundle.Fingerprint = ""
+	encoded, err := json.Marshal(bundle)
+	if err != nil {
+		return "", err
+	}
+	sum := sha256.Sum256(encoded)
+	return hex.EncodeToString(sum[:]), nil
+}
+
+func portableRowKey(row []json.RawMessage) string {
+	encoded, _ := json.Marshal(row)
+	return string(encoded)
+}
+
+func activePortableLeases(table PortableTable) int {
+	leaseIndex := -1
+	for index, column := range table.Columns {
+		if column == "lease_owner" {
+			leaseIndex = index
+			break
+		}
+	}
+	if leaseIndex < 0 {
+		return 0
+	}
+	active := 0
+	for _, row := range table.Rows {
+		var owner string
+		if leaseIndex < len(row) && json.Unmarshal(row[leaseIndex], &owner) == nil && strings.TrimSpace(owner) != "" {
+			active++
+		}
+	}
+	return active
+}
