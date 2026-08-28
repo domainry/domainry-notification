@@ -13,26 +13,30 @@ import (
 	"github.com/domainry/domainry-notification-sdk/modulehost"
 	"github.com/domainry/domainry-notification/delivery"
 	"github.com/domainry/domainry-notification/inbox"
+	"github.com/domainry/domainry-notification/sqlstore"
 	"github.com/domainry/domainry-notification/template"
 )
 
 type binding struct {
-	application       notificationsdk.ApplicationRef
-	identity          identitysdk.Binding
-	principals        *identityprincipal.Resolver
-	templates         *template.Manager
-	publications      *template.PublicationProcessor
-	engine            *template.Engine
-	publisher         *inbox.Publisher
-	inboxProcessor    *inbox.Processor
-	policy            *delivery.PolicyManager
-	deliveryProcessor *delivery.Processor
-	mailbox           *inbox.MailboxManager
-	actions           *inbox.ActionResolver
-	catalog           *inbox.Catalog
-	eventTypes        []inbox.EventType
-	rules             []inbox.Rule
-	metrics           modulehost.DeliveryMetrics
+	application          notificationsdk.ApplicationRef
+	identity             identitysdk.Binding
+	principals           *identityprincipal.Resolver
+	templates            *template.Manager
+	publications         *template.PublicationProcessor
+	engine               *template.Engine
+	publisher            *inbox.Publisher
+	compiler             *inbox.Compiler
+	store                *sqlstore.Store
+	inboxProcessor       *inbox.Processor
+	policy               *delivery.PolicyManager
+	deliveryProcessor    *delivery.Processor
+	mailbox              *inbox.MailboxManager
+	actions              *inbox.ActionResolver
+	catalog              *inbox.Catalog
+	eventTypes           []inbox.EventType
+	rules                []inbox.Rule
+	metrics              modulehost.DeliveryMetrics
+	templateCapabilities []contract.NotificationTemplateCapability
 }
 
 func (b *binding) Descriptor() notificationsdk.Descriptor {

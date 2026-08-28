@@ -144,7 +144,7 @@ func (f *Factory) OpenModule(ctx context.Context, application notificationsdk.Ap
 	if err != nil {
 		return nil, err
 	}
-	b := &binding{application: application, identity: host.Identity(), principals: principalResolver, templates: templateManager, publications: publicationProcessor, engine: templateEngine, publisher: publisher, inboxProcessor: inboxProcessor, policy: policyManager, deliveryProcessor: deliveryProcessor, mailbox: mailbox, actions: actions, catalog: eventCatalog, eventTypes: eventTypes, rules: rules, metrics: host.DeliveryMetrics()}
+	b := &binding{application: application, identity: host.Identity(), principals: principalResolver, templates: templateManager, publications: publicationProcessor, engine: templateEngine, publisher: publisher, compiler: compiler, store: store, inboxProcessor: inboxProcessor, policy: policyManager, deliveryProcessor: deliveryProcessor, mailbox: mailbox, actions: actions, catalog: eventCatalog, eventTypes: eventTypes, rules: rules, metrics: host.DeliveryMetrics(), templateCapabilities: append([]contract.NotificationTemplateCapability(nil), catalog.TemplateCapabilities...)}
 	if err := b.RefreshPublished(ctx); err != nil {
 		return nil, err
 	}

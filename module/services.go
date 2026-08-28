@@ -2,6 +2,7 @@ package module
 
 import (
 	"context"
+	"strings"
 
 	"github.com/domainry/domainry-notification"
 	notificationsdk "github.com/domainry/domainry-notification-sdk"
@@ -12,6 +13,15 @@ import (
 )
 
 type moduleTemplates struct{ b *binding }
+
+func (s moduleTemplates) Capabilities(ctx context.Context, a notificationsdk.UserAuthority) ([]contract.NotificationTemplateCapability, error) {
+	if _, err := s.actor(ctx, a); err != nil {
+		return nil, err
+	}
+	result := make([]contract.NotificationTemplateCapability, len(s.b.templateCapabilities))
+	copy(result, s.b.templateCapabilities)
+	return result, nil
+}
 
 func (s moduleTemplates) actor(ctx context.Context, a notificationsdk.UserAuthority) (string, error) {
 	p, err := s.b.authenticate(ctx, a)
@@ -211,6 +221,24 @@ func (s moduleDelivery) ListRecipientPreferences(ctx context.Context, a notifica
 		return nil, err
 	}
 	return convertSlice[contract.NotificationRecipientPreference](values)
+}
+func (s moduleDelivery) SaveRecipientPreference(ctx context.Context, a notificationsdk.UserAuthority, v contract.NotificationRecipientPreference) (contract.NotificationRecipientPreference, error) {
+	p, err := s.b.authenticate(ctx, a)
+	if err != nil {
+		return contract.NotificationRecipientPreference{}, err
+	}
+	source, err := convert[delivery.RecipientPreference](v)
+	if err != nil {
+		return contract.NotificationRecipientPreference{}, err
+	}
+	if strings.TrimSpace(source.RecipientKey) == "" {
+		return contract.NotificationRecipientPreference{}, &notificationsdk.Error{StatusCode: 400, Code: "notification.preference_identity_required"}
+	}
+	stored, err := s.b.policy.SaveRecipientPreference(ctx, notification.WorkspaceID(p.WorkspaceID), source, p.UserID)
+	if err != nil {
+		return contract.NotificationRecipientPreference{}, err
+	}
+	return convert[contract.NotificationRecipientPreference](stored)
 }
 func (s moduleDelivery) Metrics(ctx context.Context, a notificationsdk.UserAuthority, since string) (contract.NotificationDeliveryMetrics, error) {
 	p, err := s.b.authenticate(ctx, a)
