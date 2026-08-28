@@ -9,6 +9,7 @@ import (
 	identitysdk "github.com/domainry/domainry-identity-sdk"
 	notificationsdk "github.com/domainry/domainry-notification-sdk"
 	"github.com/domainry/domainry-notification-sdk/contract"
+	"github.com/domainry/domainry-notification-sdk/deliverygateway"
 	"github.com/domainry/domainry-notification-sdk/modulehost"
 	"github.com/domainry/domainry-notification/module"
 )
@@ -28,6 +29,7 @@ type SQLApplicationFactoryOptions struct {
 	WorkNotifier              modulehost.WorkNotifier
 	AudienceResolver          modulehost.AudienceResolver
 	DeliveryGateway           modulehost.DeliveryGateway
+	RemoteDeliveryGateway     deliverygateway.Gateway
 	DeliveryMetrics           modulehost.DeliveryMetrics
 	ProviderTemplateValidator modulehost.ProviderTemplateValidator
 }
@@ -39,8 +41,11 @@ func NewSQLApplicationFactory(options SQLApplicationFactoryOptions) (*SQLApplica
 	if strings.TrimSpace(options.Catalog.DefaultLocale) == "" {
 		return nil, fmt.Errorf("Notification SaaS catalog default locale is required")
 	}
-	if options.DeliveryGateway == nil {
+	if options.DeliveryGateway == nil && options.RemoteDeliveryGateway == nil {
 		return nil, fmt.Errorf("Notification SaaS Delivery Gateway is required")
+	}
+	if options.DeliveryGateway != nil && options.RemoteDeliveryGateway != nil {
+		return nil, fmt.Errorf("Notification SaaS Delivery Gateway configuration is ambiguous")
 	}
 	if options.Clock == nil {
 		options.Clock = wallClock{}
@@ -68,6 +73,10 @@ func (f *SQLApplicationFactory) OpenSaaS(ctx context.Context, application notifi
 	if err != nil {
 		return nil, err
 	}
+	gateway := f.options.DeliveryGateway
+	if gateway == nil {
+		gateway = remoteDeliveryGatewayAdapter{application: application, gateway: f.options.RemoteDeliveryGateway}
+	}
 	host := &saasApplicationHost{
 		application: application,
 		database:    f.persistence.Database(),
@@ -79,7 +88,7 @@ func (f *SQLApplicationFactory) OpenSaaS(ctx context.Context, application notifi
 		notifier:    f.options.WorkNotifier,
 		directory:   identityRecipientDirectory{application: application, directory: identity.Directory()},
 		audiences:   f.options.AudienceResolver,
-		gateway:     f.options.DeliveryGateway,
+		gateway:     gateway,
 		metrics:     f.options.DeliveryMetrics,
 		validator:   f.options.ProviderTemplateValidator,
 	}
@@ -190,5 +199,31 @@ func (snapshotOnlyAudienceResolver) ResolveAudience(context.Context, string, con
 	return nil, fmt.Errorf("Notification SaaS requires a recipient snapshot for Runtime-business audiences")
 }
 
+type remoteDeliveryGatewayAdapter struct {
+	application notificationsdk.ApplicationRef
+	gateway     deliverygateway.Gateway
+}
+
+func (a remoteDeliveryGatewayAdapter) Dispatch(ctx context.Context, request modulehost.DeliveryRequest) (modulehost.DeliveryReceipt, error) {
+	dedupeKey := strings.TrimSpace(request.DedupeKey)
+	if dedupeKey == "" {
+		dedupeKey = strings.TrimSpace(request.PlanID)
+	}
+	fallbacks := make([]deliverygateway.Fallback, len(request.Fallbacks))
+	for index, fallback := range request.Fallbacks {
+		fallbacks[index] = deliverygateway.Fallback{ConnectorKey: fallback.ConnectorKey, ConnectionKey: fallback.ConnectionKey, Operation: fallback.Operation, Rendered: fallback.Rendered}
+	}
+	receipt, err := a.gateway.Dispatch(ctx, a.application, deliverygateway.Request{
+		RequestID: request.PlanID, WorkspaceID: request.WorkspaceID, PlanID: request.PlanID, EventID: request.EventID, Channel: request.Channel,
+		ConnectorKey: request.ConnectorKey, ConnectionKey: request.ConnectionKey, Operation: request.Operation, DedupeKey: dedupeKey,
+		DeliverAfter: request.DeliverAfter, CreatedAt: request.CreatedAt, Rendered: request.Rendered, Fallbacks: fallbacks,
+	})
+	if err != nil {
+		return modulehost.DeliveryReceipt{}, err
+	}
+	return modulehost.DeliveryReceipt{MessageID: receipt.MessageID}, nil
+}
+
 var _ ApplicationFactory = (*SQLApplicationFactory)(nil)
 var _ modulehost.Host = (*saasApplicationHost)(nil)
+var _ modulehost.DeliveryGateway = remoteDeliveryGatewayAdapter{}

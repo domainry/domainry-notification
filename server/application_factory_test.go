@@ -9,6 +9,7 @@ import (
 	identitysdk "github.com/domainry/domainry-identity-sdk"
 	notificationsdk "github.com/domainry/domainry-notification-sdk"
 	"github.com/domainry/domainry-notification-sdk/contract"
+	"github.com/domainry/domainry-notification-sdk/deliverygateway"
 	"github.com/domainry/domainry-notification-sdk/modulehost"
 	"github.com/domainry/domainry-notification/sqlstore"
 
@@ -33,6 +34,13 @@ type applicationGatewayStub struct{}
 
 func (applicationGatewayStub) Dispatch(context.Context, modulehost.DeliveryRequest) (modulehost.DeliveryReceipt, error) {
 	return modulehost.DeliveryReceipt{MessageID: "message"}, nil
+}
+
+type remoteGatewayStub struct{ request deliverygateway.Request }
+
+func (g *remoteGatewayStub) Dispatch(_ context.Context, _ notificationsdk.ApplicationRef, request deliverygateway.Request) (deliverygateway.Receipt, error) {
+	g.request = request
+	return deliverygateway.Receipt{RequestID: request.RequestID, MessageID: "remote-message"}, nil
 }
 
 func TestSQLApplicationFactoryOpensSharedSaaSDomainApplication(t *testing.T) {
@@ -109,5 +117,17 @@ func TestExactQueueScopeRejectsCrossWorkspaceRegistration(t *testing.T) {
 	values, err := scope.Workspaces(t.Context(), nil, "inbox", 10)
 	if err != nil || len(values) != 1 || values[0] != "workspace" {
 		t.Fatalf("values=%v err=%v", values, err)
+	}
+}
+
+func TestRemoteDeliveryGatewayAdapterPreservesStablePlanIdentity(t *testing.T) {
+	remote := &remoteGatewayStub{}
+	adapter := remoteDeliveryGatewayAdapter{application: notificationsdk.ApplicationRef{TenantID: "tenant", WorkspaceID: "workspace", ApplicationKey: "application"}, gateway: remote}
+	receipt, err := adapter.Dispatch(t.Context(), modulehost.DeliveryRequest{WorkspaceID: "workspace", PlanID: "plan", EventID: "event", Channel: "email", ConnectorKey: "smtp", Operation: "send", CreatedAt: "now"})
+	if err != nil || receipt.MessageID != "remote-message" {
+		t.Fatalf("receipt=%+v err=%v", receipt, err)
+	}
+	if remote.request.RequestID != "plan" || remote.request.DedupeKey != "plan" {
+		t.Fatalf("request=%+v", remote.request)
 	}
 }
