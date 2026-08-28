@@ -32,7 +32,10 @@ func (r *bindingResolverStub) Resolve(_ context.Context, application notificatio
 	return r.binding, nil
 }
 
-type httpBindingStub struct{ publisher *httpPublisherStub }
+type httpBindingStub struct {
+	publisher *httpPublisherStub
+	closed    int
+}
 
 func (*httpBindingStub) Descriptor() notificationsdk.Descriptor             { return notificationsdk.Descriptor{} }
 func (b *httpBindingStub) Publisher() notificationsdk.Publisher             { return b.publisher }
@@ -41,7 +44,7 @@ func (*httpBindingStub) Templates() notificationsdk.Templates               { re
 func (*httpBindingStub) Delivery() notificationsdk.Delivery                 { return nil }
 func (*httpBindingStub) Administration() notificationsdk.Administration     { return nil }
 func (*httpBindingStub) LocalWorkers() (notificationsdk.LocalWorkers, bool) { return nil, false }
-func (*httpBindingStub) Close(context.Context) error                        { return nil }
+func (b *httpBindingStub) Close(context.Context) error                      { b.closed++; return nil }
 
 type httpPublisherStub struct{ intent contract.NotificationIntent }
 
