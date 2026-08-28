@@ -9,8 +9,8 @@ import (
 )
 
 func TestBaseSchemaMatchesOwnershipAndRunsOnSQLite(t *testing.T) {
-	if len(baseSchemaTables)+len(retentionArchiveTables) != len(tableOwnership) {
-		t.Fatalf("schema tables=%d ownership=%d", len(baseSchemaTables)+len(retentionArchiveTables), len(tableOwnership))
+	if len(ownedSchemaTables()) != len(tableOwnership) {
+		t.Fatalf("schema tables=%d ownership=%d", len(ownedSchemaTables()), len(tableOwnership))
 	}
 	owned := map[string]bool{}
 	for _, table := range tableOwnership {
@@ -29,13 +29,19 @@ func TestBaseSchemaMatchesOwnershipAndRunsOnSQLite(t *testing.T) {
 		}
 		defined[table.name] = true
 	}
+	for _, table := range migrationControlTables {
+		if defined[table.name] || !owned[table.name] {
+			t.Fatalf("invalid schema table %q", table.name)
+		}
+		defined[table.name] = true
+	}
 	for _, index := range baseSchemaIndexes {
 		if !defined[index.table] {
 			t.Fatalf("index %q references unowned table %q", index.name, index.table)
 		}
 	}
 	migrations, err := SchemaMigrations(SQLite, "", "")
-	if err != nil || len(migrations) != 2 || migrations[0].Version != 1 || migrations[0].Name != "create_notification_schema" || migrations[1].Version != 2 {
+	if err != nil || len(migrations) != 3 || migrations[0].Version != 1 || migrations[0].Name != "create_notification_schema" || migrations[1].Version != 2 || migrations[2].Version != 3 || migrations[2].Name != "create_notification_migration_control" {
 		t.Fatalf("migrations=%+v err=%v", migrations, err)
 	}
 	db, err := sql.Open("sqlite", "file:"+t.Name()+"?mode=memory&cache=shared")
@@ -126,7 +132,7 @@ func TestApplicationSchemaMigrationsPersistExactOwnership(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(migrations) != 2 || migrations[0].Name != "create_notification_saas_application_schema" || migrations[1].Version != 2 {
+	if len(migrations) != 3 || migrations[0].Name != "create_notification_saas_application_schema" || migrations[1].Version != 2 || migrations[2].Version != 3 {
 		t.Fatalf("migrations=%+v", migrations)
 	}
 	db, err := sql.Open("sqlite", "file:"+t.Name()+"?mode=memory&cache=shared")

@@ -27,6 +27,7 @@ var tableOwnership = [...]TableOwnership{
 	{Name: "notification_inbox_delegations", Scope: WorkspaceData},
 	{Name: "notification_inbox_items", Scope: WorkspaceData},
 	{Name: "notification_inbox_saved_views", Scope: WorkspaceData},
+	{Name: "notification_migration_controls", Scope: WorkspaceData},
 	{Name: "notification_recipient_preferences", Scope: WorkspaceData},
 	{Name: "notification_retention_archive", Scope: WorkspaceData},
 	{Name: "notification_template_publication_locks", Scope: SystemData},

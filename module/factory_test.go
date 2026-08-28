@@ -186,7 +186,7 @@ func TestModuleSystemMigrationExportsAndIdempotentlyReconcilesExactApplication(t
 	if err != nil {
 		t.Fatal(err)
 	}
-	if exported.Bundle.Source != (contract.NotificationPortableScope{TenantID: "tenant", WorkspaceID: "workspace", ApplicationKey: "runtime"}) || exported.Bundle.Fingerprint == "" || len(exported.Bundle.Tables) != 15 {
+	if exported.Bundle.Source != (contract.NotificationPortableScope{TenantID: "tenant", WorkspaceID: "workspace", ApplicationKey: "runtime"}) || exported.Bundle.Fingerprint == "" || len(exported.Bundle.Tables) != 16 {
 		t.Fatalf("export=%+v", exported)
 	}
 	receipt, err := migration.SystemMigration().Import(t.Context(), exported.Bundle)

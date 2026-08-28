@@ -137,9 +137,22 @@ var retentionArchiveIndexes = []schemaIndex{
 	{name: "idx_notification_retention_archive_job", table: "notification_retention_archive", columns: []string{"workspace_id", "job_id", "archived_at"}},
 }
 
+var migrationControlTables = []schemaTable{
+	{name: "notification_migration_controls", columns: []schemaColumn{
+		primary("workspace_id", identifierColumn), required("migration_id", identifierColumn), required("role", indexedTextColumn),
+		required("state", indexedTextColumn), defaulted("bundle_fingerprint", identifierColumn, "''"), required("frozen_at", indexedTextColumn),
+		defaulted("activated_at", indexedTextColumn, "''"), required("updated_at", indexedTextColumn),
+	}},
+}
+
+var migrationControlIndexes = []schemaIndex{
+	{name: "idx_notification_migration_state", table: "notification_migration_controls", columns: []string{"state", "updated_at"}},
+}
+
 func ownedSchemaTables() []schemaTable {
-	tables := make([]schemaTable, 0, len(baseSchemaTables)+len(retentionArchiveTables))
+	tables := make([]schemaTable, 0, len(baseSchemaTables)+len(retentionArchiveTables)+len(migrationControlTables))
 	tables = append(tables, baseSchemaTables...)
 	tables = append(tables, retentionArchiveTables...)
+	tables = append(tables, migrationControlTables...)
 	return tables
 }

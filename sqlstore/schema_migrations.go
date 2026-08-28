@@ -60,9 +60,14 @@ func SchemaMigrations(driver Driver, schema, tablePrefix string) ([]SchemaMigrat
 	if err != nil {
 		return nil, err
 	}
+	migrationControlStatements, err := renderSchema(driver, tablePrefix, dialect, nil, migrationControlTables, migrationControlIndexes)
+	if err != nil {
+		return nil, err
+	}
 	return []SchemaMigration{
 		{Version: 1, Name: "create_notification_schema", Statements: statements},
 		{Version: 2, Name: "create_notification_retention_archive", Statements: retentionStatements},
+		{Version: 3, Name: "create_notification_migration_control", Statements: migrationControlStatements},
 	}, nil
 }
 
@@ -119,9 +124,14 @@ func ApplicationSchemaMigrations(driver Driver, schema, tablePrefix string, scop
 	if err != nil {
 		return nil, err
 	}
+	migrationControlStatements, err := renderSchema(driver, tablePrefix, dialect, &scope, migrationControlTables, migrationControlIndexes)
+	if err != nil {
+		return nil, err
+	}
 	return []SchemaMigration{
 		{Version: 1, Name: "create_notification_saas_application_schema", Statements: statements},
 		{Version: 2, Name: "create_notification_retention_archive", Statements: retentionStatements},
+		{Version: 3, Name: "create_notification_migration_control", Statements: migrationControlStatements},
 	}, nil
 }
 
