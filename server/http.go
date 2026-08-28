@@ -84,7 +84,9 @@ func (h *Handler) ServeHTTP(response http.ResponseWriter, request *http.Request)
 			Created bool                       `json:"created"`
 		}{event, created})
 	default:
-		writeHTTPError(response, &notificationsdk.Error{StatusCode: http.StatusNotFound, Code: "notification.route_not_found"})
+		if !serveBindingRoute(response, request, binding) {
+			writeHTTPError(response, &notificationsdk.Error{StatusCode: http.StatusNotFound, Code: "notification.route_not_found"})
+		}
 	}
 }
 
