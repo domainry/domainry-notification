@@ -231,6 +231,14 @@ func (s *Store) eventBySource(ctx context.Context, workspaceID notification.Work
 	return value, err == nil, err
 }
 
+// EventCommitted reports whether the exact source identity has already been
+// durably accepted. It keeps replay checks behind Notification's store
+// ownership instead of exposing notification_events SQL to a Module host.
+func (s *Store) EventCommitted(ctx context.Context, workspaceID notification.WorkspaceID, source, sourceEventID string) (bool, error) {
+	_, found, err := s.eventBySource(ctx, workspaceID, source, sourceEventID)
+	return found, err
+}
+
 type scanner interface{ Scan(...any) error }
 
 func scanEvent(row scanner) (inbox.Event, error) {

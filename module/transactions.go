@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/domainry/domainry-notification"
 	notificationsdk "github.com/domainry/domainry-notification-sdk"
@@ -69,6 +70,20 @@ func (m moduleTransactions) InsertEvent(ctx context.Context, executor modulehost
 		return err
 	}
 	return m.binding.store.InsertEvent(ctx, executor, event)
+}
+
+func (m moduleTransactions) EventCommitted(ctx context.Context, identity modulehost.EventIdentity) (bool, error) {
+	if m.binding == nil || m.binding.store == nil {
+		return false, fmt.Errorf("notification Module transaction boundary is unavailable")
+	}
+	workspaceID, err := notification.NewWorkspaceID(identity.WorkspaceID)
+	if err != nil {
+		return false, err
+	}
+	if strings.TrimSpace(identity.Source) == "" || strings.TrimSpace(identity.SourceEventID) == "" {
+		return false, fmt.Errorf("notification event source identity is incomplete")
+	}
+	return m.binding.store.EventCommitted(ctx, workspaceID, strings.TrimSpace(identity.Source), strings.TrimSpace(identity.SourceEventID))
 }
 
 var _ modulehost.TransactionalBinding = (*binding)(nil)
