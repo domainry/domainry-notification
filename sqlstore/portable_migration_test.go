@@ -78,6 +78,58 @@ func TestPortableMigrationRejectsTamperingAndNonEmptyTarget(t *testing.T) {
 	}
 }
 
+func TestPortableMigrationReconcilesEachWorkspaceWithoutCrossContamination(t *testing.T) {
+	source := openPortableDatabase(t, "multi-workspace-source")
+	applyPortableMigrations(t, source, mustSchemaMigrations(t, ""))
+	insertPortableEvent(t, source, "workspace-a", "event-a", "source-a", "")
+	insertPortableEvent(t, source, "workspace-b", "event-b", "source-b", "")
+	insertPortableArchive(t, source, "workspace-a", "archive-a")
+	insertPortableArchive(t, source, "workspace-b", "archive-b")
+	sourceDialect, _ := NewDialect(SQLite, "", "")
+
+	for _, workspaceID := range []string{"workspace-a", "workspace-b"} {
+		t.Run(workspaceID, func(t *testing.T) {
+			scope := PortableScope{TenantID: "tenant", WorkspaceID: workspaceID, ApplicationKey: "application"}
+			bundle, inventory, err := ExportPortable(t.Context(), source, sourceDialect, scope)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if inventory.Rows != 2 || inventory.Tables["notification_events"] != 1 || inventory.Tables["notification_retention_archive"] != 1 {
+				t.Fatalf("source inventory=%+v", inventory)
+			}
+			target := openPortableDatabase(t, "multi-workspace-target-"+workspaceID)
+			prefix := "application_"
+			migrations, err := ApplicationSchemaMigrations(SQLite, "", prefix, ApplicationScope(scope))
+			if err != nil {
+				t.Fatal(err)
+			}
+			applyPortableMigrations(t, target, migrations)
+			targetDialect, _ := NewDialect(SQLite, "", prefix)
+			receipt, err := ImportPortable(t.Context(), target, targetDialect, scope, bundle)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if receipt.Rows != inventory.Rows || receipt.Fingerprint != inventory.Fingerprint {
+				t.Fatalf("receipt=%+v inventory=%+v", receipt, inventory)
+			}
+			var importedWorkspace, importedEvent string
+			if err := target.QueryRow(`SELECT workspace_id,id FROM application_notification_events`).Scan(&importedWorkspace, &importedEvent); err != nil {
+				t.Fatal(err)
+			}
+			if importedWorkspace != workspaceID || importedEvent != "event-"+workspaceID[len("workspace-"):] {
+				t.Fatalf("imported workspace=%q event=%q", importedWorkspace, importedEvent)
+			}
+			var events int
+			if err := target.QueryRow(`SELECT COUNT(*) FROM application_notification_events`).Scan(&events); err != nil {
+				t.Fatal(err)
+			}
+			if events != 1 {
+				t.Fatalf("cross-workspace event count=%d", events)
+			}
+		})
+	}
+}
+
 func openPortableDatabase(t *testing.T, suffix string) *sql.DB {
 	t.Helper()
 	database, err := sql.Open("sqlite", "file:"+t.Name()+"-"+suffix+"?mode=memory&cache=shared")
