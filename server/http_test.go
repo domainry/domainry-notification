@@ -11,8 +11,21 @@ import (
 
 	notificationsdk "github.com/domainry/domainry-notification-sdk"
 	"github.com/domainry/domainry-notification-sdk/contract"
+	"github.com/domainry/domainry-notification-sdk/contracttest"
 	notificationremote "github.com/domainry/domainry-notification-sdk/remote"
 )
+
+func TestRemoteFactoryPassesDeploymentNeutralContractSuite(t *testing.T) {
+	handler, err := NewHandler(&serviceAuthenticationStub{}, &bindingResolverStub{binding: &httpBindingStub{publisher: &httpPublisherStub{}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	httpServer := httptest.NewServer(handler)
+	t.Cleanup(httpServer.Close)
+	contracttest.Run(t, func(testing.TB) (notificationsdk.Factory, notificationsdk.ApplicationRef) {
+		return notificationremote.NewFactory(notificationremote.Config{BaseURL: httpServer.URL, ServiceCredential: "service-token", HTTPClient: httpServer.Client()}), notificationsdk.ApplicationRef{TenantID: "tenant", WorkspaceID: "workspace", ApplicationKey: "runtime"}
+	})
+}
 
 type serviceAuthenticationStub struct {
 	request ServiceRequest
