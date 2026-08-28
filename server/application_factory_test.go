@@ -4,6 +4,9 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	identitysdk "github.com/domainry/domainry-identity-sdk"
@@ -11,10 +14,27 @@ import (
 	"github.com/domainry/domainry-notification-sdk/contract"
 	"github.com/domainry/domainry-notification-sdk/deliverygateway"
 	"github.com/domainry/domainry-notification-sdk/modulehost"
+	notificationremote "github.com/domainry/domainry-notification-sdk/remote"
 	"github.com/domainry/domainry-notification/sqlstore"
 
 	_ "modernc.org/sqlite"
 )
+
+type loseFirstPublicationResponseTransport struct {
+	base http.RoundTripper
+	lost bool
+}
+
+func (t *loseFirstPublicationResponseTransport) RoundTrip(request *http.Request) (*http.Response, error) {
+	response, err := t.base.RoundTrip(request)
+	if err == nil && request.URL.Path == "/v1/events:publish" && !t.lost {
+		t.lost = true
+		_, _ = io.Copy(io.Discard, response.Body)
+		_ = response.Body.Close()
+		return nil, errors.New("publication response lost after server commit")
+	}
+	return response, err
+}
 
 type applicationIdentityStub struct{ identitysdk.Binding }
 type applicationAuthenticationStub struct{ identitysdk.Authentication }
@@ -106,6 +126,58 @@ func TestSQLApplicationFactoryOpensSharedSaaSDomainApplication(t *testing.T) {
 	}
 	if err := db.PingContext(t.Context()); err == nil {
 		t.Fatal("service-owned database remained open")
+	}
+}
+
+func TestRemotePublicationReconcilesResponseLossWithoutDuplicateIngest(t *testing.T) {
+	db, err := sql.Open("sqlite", "file:"+t.Name()+"?mode=memory&cache=shared")
+	if err != nil {
+		t.Fatal(err)
+	}
+	db.SetMaxOpenConns(1)
+	persistence, err := NewSQLPersistence(SQLPersistenceOptions{Database: db, Driver: sqlstore.SQLite})
+	if err != nil {
+		t.Fatal(err)
+	}
+	factory, err := NewSQLApplicationFactory(SQLApplicationFactoryOptions{
+		Persistence: persistence,
+		Catalog: modulehost.Catalog{
+			DefaultLocale: "en", Surfaces: []string{"business_workspace"},
+			EventTypes: []contract.NotificationEventType{{Key: "report.completed", Source: "report", Category: "report", DefaultSeverity: "info", Surfaces: []string{"business_workspace"}, MandatoryInApp: true, TemplateKey: "report.completed", DefaultLocale: "en", Locales: map[string]contract.NotificationInboxEventTypeContent{"en": {Title: "Report ready", Body: "Ready"}}, Version: 1, Status: "published"}},
+		},
+		WorkerID: "notification-reconciliation-test", DeliveryGateway: applicationGatewayStub{},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	application := notificationsdk.ApplicationRef{TenantID: "tenant", WorkspaceID: "workspace", ApplicationKey: "application"}
+	local, err := factory.OpenSaaS(t.Context(), application, applicationIdentityStub{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	handler, err := NewHandler(&serviceAuthenticationStub{}, &bindingResolverStub{binding: local})
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(handler)
+	t.Cleanup(server.Close)
+	transport := &loseFirstPublicationResponseTransport{base: http.DefaultTransport}
+	remoteBinding, err := notificationremote.NewFactory(notificationremote.Config{BaseURL: server.URL, ServiceCredential: "service", HTTPClient: &http.Client{Transport: transport}}).Open(t.Context(), application)
+	if err != nil {
+		t.Fatal(err)
+	}
+	intent := contract.NotificationIntent{ID: "event", WorkspaceID: "workspace", SourceEventID: "source", EventType: "report.completed", Surface: "business_workspace", RecipientUserIDs: []string{"user"}, OccurredAt: "2026-08-29T00:00:00Z", SubjectType: "report", SubjectID: "report", SubjectVersion: "one"}
+	event, created, err := remoteBinding.Publisher().PublishIntent(t.Context(), intent)
+	if err != nil || created || event.ID == "" || !transport.lost {
+		t.Fatalf("event=%+v created=%v response_lost=%v err=%v", event, created, transport.lost, err)
+	}
+	prefix := applicationTablePrefix(application)
+	var rows int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM `+prefix+`notification_events WHERE workspace_id = ? AND source_event_id = ?`, application.WorkspaceID, intent.SourceEventID).Scan(&rows); err != nil {
+		t.Fatal(err)
+	}
+	if rows != 1 {
+		t.Fatalf("durable event rows=%d", rows)
 	}
 }
 
