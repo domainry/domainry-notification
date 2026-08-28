@@ -12,6 +12,7 @@ import (
 type ServiceRequest struct {
 	Credential  string
 	Application notificationsdk.ApplicationRef
+	Grant       identitysdk.ApplicationServiceGrant
 }
 
 type ServiceAuthority struct {
@@ -40,6 +41,9 @@ func (a *ServiceAuthenticator) Authenticate(ctx context.Context, request Service
 	if err := request.Application.Validate(); err != nil {
 		return ServiceAuthority{}, err
 	}
+	if !request.Grant.Valid() {
+		return ServiceAuthority{}, &notificationsdk.Error{StatusCode: 400, Code: "notification.service_grant_invalid"}
+	}
 	credential := strings.TrimSpace(request.Credential)
 	if credential == "" {
 		return ServiceAuthority{}, &notificationsdk.Error{StatusCode: 401, Code: "notification.service_credential_required"}
@@ -47,7 +51,7 @@ func (a *ServiceAuthenticator) Authenticate(ctx context.Context, request Service
 	descriptor := a.identity.Descriptor()
 	verified, err := a.services.Verify(ctx, identitysdk.VerifyApplicationServiceTokenRequest{
 		AccessToken: credential, Audience: identitysdk.ApplicationKey(descriptor.Audience),
-		Grant: identitysdk.ApplicationServiceGrant{Resource: "notification_event", Action: "publish"},
+		Grant: request.Grant,
 	})
 	if err != nil {
 		return ServiceAuthority{}, &notificationsdk.Error{StatusCode: 401, Code: "notification.service_credential_invalid", Cause: err}

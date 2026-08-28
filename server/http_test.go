@@ -52,7 +52,7 @@ func TestRemoteFactoryAndPublisherUseServerWireContract(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !created || event.ID != "remote-event" || publisher.intent.ID != intent.ID || authenticator.request.Credential != "service-token" || authenticator.request.Application != application {
+	if !created || event.ID != "remote-event" || publisher.intent.ID != intent.ID || authenticator.request.Credential != "service-token" || authenticator.request.Application != application || authenticator.request.Grant.Resource != "notification_event" || authenticator.request.Grant.Action != "publish" {
 		t.Fatalf("created=%v event=%+v published=%+v auth=%+v", created, event, publisher.intent, authenticator.request)
 	}
 }

@@ -36,7 +36,8 @@ func TestServiceAuthenticatorBindsShortTokenToExactApplicationScope(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	authority, err := authenticator.Authenticate(t.Context(), ServiceRequest{Credential: "short-service-token", Application: application})
+	grant := identitysdk.ApplicationServiceGrant{Resource: "notification_event", Action: "publish"}
+	authority, err := authenticator.Authenticate(t.Context(), ServiceRequest{Credential: "short-service-token", Application: application, Grant: grant})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -77,7 +78,7 @@ func TestServiceAuthenticatorFailsClosedForScopeMismatchExpiryAndIdentityOutage(
 			if err != nil {
 				t.Fatal(err)
 			}
-			_, err = authenticator.Authenticate(t.Context(), ServiceRequest{Credential: "token", Application: application})
+			_, err = authenticator.Authenticate(t.Context(), ServiceRequest{Credential: "token", Application: application, Grant: identitysdk.ApplicationServiceGrant{Resource: "notification_event", Action: "publish"}})
 			var sdkErr *notificationsdk.Error
 			if !errors.As(err, &sdkErr) || sdkErr.Code != test.code {
 				t.Fatalf("error=%v", err)

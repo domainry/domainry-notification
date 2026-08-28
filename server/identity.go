@@ -95,6 +95,7 @@ func nilIdentityCapability(value any) bool {
 func notificationIdentityCatalog(application identitysdk.ApplicationRef) identitysdk.AuthorizationCatalog {
 	applicationFacts := []string{"tenant_id", "workspace_id", "application_key"}
 	resources := []identitysdk.ResourceDefinition{
+		{Key: "notification_service", SupportedFacts: applicationFacts},
 		{Key: "notification_event", SupportedFacts: applicationFacts}, {Key: "notification_inbox", SupportedFacts: applicationFacts}, {Key: "notification_template", SupportedFacts: applicationFacts},
 		{Key: "notification_publication", SupportedFacts: applicationFacts}, {Key: "notification_delivery_policy", SupportedFacts: applicationFacts},
 		{Key: "notification_preference", SupportedFacts: applicationFacts}, {Key: "notification_team_mailbox", SupportedFacts: applicationFacts},
@@ -105,6 +106,7 @@ func notificationIdentityCatalog(application identitysdk.ApplicationRef) identit
 		resource string
 		actions  []string
 	}{
+		{"notification_service", []string{"discover"}},
 		{"notification_event", []string{"publish"}},
 		{"notification_inbox", []string{"read", "update", "act"}},
 		{"notification_template", []string{"read", "draft", "preview", "disable"}},
@@ -113,10 +115,10 @@ func notificationIdentityCatalog(application identitysdk.ApplicationRef) identit
 		{"notification_preference", []string{"read", "update"}},
 		{"notification_team_mailbox", []string{"read"}},
 		{"notification_delegation", []string{"read", "update", "delete"}},
-		{"notification_governance", []string{"read"}},
+		{"notification_governance", []string{"read", "export", "erase", "retention", "migrate"}},
 	} {
 		for _, action := range entry.actions {
-			actions = append(actions, identitysdk.ActionDefinition{Resource: identitysdk.ResourceType(entry.resource), Action: identitysdk.Action(action), ServiceCallable: entry.resource == "notification_event" && action == "publish"})
+			actions = append(actions, identitysdk.ActionDefinition{Resource: identitysdk.ResourceType(entry.resource), Action: identitysdk.Action(action), ServiceCallable: true})
 		}
 	}
 	return identitysdk.AuthorizationCatalog{ContractVersion: identitysdk.CatalogVersionV1, Application: application, Resources: resources, Actions: actions}

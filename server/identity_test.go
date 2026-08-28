@@ -137,8 +137,13 @@ func TestOpenIdentityRequiresSaaSAndPublishesScopedCatalog(t *testing.T) {
 	if opened != binding || !sameApplication(factory.opened, application) {
 		t.Fatalf("opened=%v application=%+v", opened, factory.opened)
 	}
-	if !sameApplication(catalog.validated.Application, application) || !sameApplication(catalog.published.Application, application) || len(catalog.published.Resources) != 9 || len(catalog.published.Actions) == 0 {
+	if !sameApplication(catalog.validated.Application, application) || !sameApplication(catalog.published.Application, application) || len(catalog.published.Resources) != 10 || len(catalog.published.Actions) == 0 {
 		t.Fatalf("catalog was not published with exact scope: %+v", catalog.published)
+	}
+	for _, action := range catalog.published.Actions {
+		if !action.ServiceCallable {
+			t.Fatalf("remote route action is not service-callable: %+v", action)
+		}
 	}
 }
 

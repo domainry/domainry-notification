@@ -40,7 +40,12 @@ func (h *Handler) ServeHTTP(response http.ResponseWriter, request *http.Request)
 	application := notificationsdk.ApplicationRef{
 		TenantID: strings.TrimSpace(request.Header.Get("X-Domainry-Tenant-ID")), WorkspaceID: strings.TrimSpace(request.Header.Get("X-Domainry-Workspace-ID")), ApplicationKey: strings.TrimSpace(request.Header.Get("X-Domainry-Application-Key")),
 	}
-	if _, err := h.authenticator.Authenticate(request.Context(), ServiceRequest{Credential: request.Header.Get("X-Domainry-Service-Credential"), Application: application}); err != nil {
+	grant, err := notificationsdk.ServiceGrantForRequest(request.Method, request.URL.Path)
+	if err != nil {
+		writeHTTPError(response, err)
+		return
+	}
+	if _, err := h.authenticator.Authenticate(request.Context(), ServiceRequest{Credential: request.Header.Get("X-Domainry-Service-Credential"), Application: application, Grant: grant}); err != nil {
 		writeHTTPError(response, err)
 		return
 	}
