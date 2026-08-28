@@ -20,7 +20,7 @@ func TestOwnedTablesAreCanonicalAndSorted(t *testing.T) {
 		}
 		seen[table] = true
 	}
-	if len(seen) != 14 {
-		t.Fatalf("notification table ownership count=%d, want 14", len(seen))
+	if len(seen) != 15 || !seen["notification_retention_archive"] {
+		t.Fatalf("notification table ownership=%v", tables)
 	}
 }
