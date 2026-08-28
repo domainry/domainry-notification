@@ -114,6 +114,42 @@ func (h *Handler) ServeHTTP(response http.ResponseWriter, request *http.Request)
 			return
 		}
 		writeJSON(response, http.StatusOK, records)
+	case "/v1/system/subjects:preview", "/v1/system/subjects:export", "/v1/system/subjects:erase":
+		if request.Method != http.MethodPost {
+			writeHTTPError(response, &notificationsdk.Error{StatusCode: http.StatusMethodNotAllowed, Code: "notification.method_not_allowed"})
+			return
+		}
+		systemBinding, ok := binding.(notificationsdk.SystemSubjectBinding)
+		if !ok || systemBinding.SystemSubjects() == nil {
+			writeHTTPError(response, &notificationsdk.Error{StatusCode: http.StatusNotImplemented, Code: "notification.system_subjects_unsupported"})
+			return
+		}
+		var input struct {
+			WorkspaceID string          `json:"workspace_id"`
+			SubjectID   string          `json:"subject_id"`
+			LegalHolds  json.RawMessage `json:"legal_holds,omitempty"`
+		}
+		if err := decodeJSON(request.Body, &input); err != nil {
+			writeHTTPError(response, err)
+			return
+		}
+		if strings.TrimSpace(input.WorkspaceID) != application.WorkspaceID || strings.TrimSpace(input.SubjectID) == "" {
+			writeHTTPError(response, &notificationsdk.Error{StatusCode: http.StatusForbidden, Code: "notification.application_scope_mismatch"})
+			return
+		}
+		var output json.RawMessage
+		if request.URL.Path == "/v1/system/subjects:preview" {
+			output, err = systemBinding.SystemSubjects().PreviewSubject(request.Context(), input.WorkspaceID, input.SubjectID)
+		} else if request.URL.Path == "/v1/system/subjects:export" {
+			output, err = systemBinding.SystemSubjects().ExportSubject(request.Context(), input.WorkspaceID, input.SubjectID)
+		} else {
+			output, err = systemBinding.SystemSubjects().EraseSubject(request.Context(), input.WorkspaceID, input.SubjectID, input.LegalHolds)
+		}
+		if err != nil {
+			writeHTTPError(response, err)
+			return
+		}
+		writeJSON(response, http.StatusOK, output)
 	default:
 		if !serveBindingRoute(response, request, binding) {
 			writeHTTPError(response, &notificationsdk.Error{StatusCode: http.StatusNotFound, Code: "notification.route_not_found"})

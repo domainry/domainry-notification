@@ -2,6 +2,7 @@ package module
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 
 	"github.com/domainry/domainry-notification"
@@ -14,6 +15,26 @@ import (
 
 type moduleTemplates struct{ b *binding }
 type moduleSystemTemplates struct{ b *binding }
+type moduleSystemSubjects struct{ b *binding }
+
+func (s moduleSystemSubjects) PreviewSubject(ctx context.Context, workspaceID, subjectID string) (json.RawMessage, error) {
+	if s.b == nil || s.b.store == nil {
+		return nil, &notificationsdk.Error{StatusCode: 503, Code: "notification.system_subjects_unavailable"}
+	}
+	return s.b.store.PreviewSubject(ctx, workspaceID, subjectID)
+}
+func (s moduleSystemSubjects) ExportSubject(ctx context.Context, workspaceID, subjectID string) (json.RawMessage, error) {
+	if s.b == nil || s.b.store == nil {
+		return nil, &notificationsdk.Error{StatusCode: 503, Code: "notification.system_subjects_unavailable"}
+	}
+	return s.b.store.ExportSubject(ctx, workspaceID, subjectID)
+}
+func (s moduleSystemSubjects) EraseSubject(ctx context.Context, workspaceID, subjectID string, holds json.RawMessage) (json.RawMessage, error) {
+	if s.b == nil || s.b.store == nil {
+		return nil, &notificationsdk.Error{StatusCode: 503, Code: "notification.system_subjects_unavailable"}
+	}
+	return s.b.store.EraseSubject(ctx, workspaceID, subjectID, holds)
+}
 
 func (s moduleSystemTemplates) SyncPublished(ctx context.Context, values []contract.NotificationTemplate) error {
 	if s.b == nil || s.b.store == nil {
@@ -329,3 +350,4 @@ var _ notificationsdk.Delivery = moduleDelivery{}
 var _ notificationsdk.Administration = moduleAdministration{}
 var _ notificationsdk.LocalWorkers = moduleWorkers{}
 var _ notificationsdk.SystemTemplates = moduleSystemTemplates{}
+var _ notificationsdk.SystemSubjects = moduleSystemSubjects{}
