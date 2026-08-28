@@ -5,6 +5,10 @@ import (
 	"strings"
 )
 
+type ApplicationScope struct {
+	TenantID, WorkspaceID, ApplicationKey string
+}
+
 // SchemaMigration is one ordered, immutable schema change. Hosts execute and
 // record these versions with their existing migration ledger; this library does
 // not create a second migration-history table inside the same database.
@@ -22,11 +26,32 @@ func SchemaMigrations(driver Driver, schema, tablePrefix string) ([]SchemaMigrat
 	if err != nil {
 		return nil, err
 	}
-	statements, err := renderBaseSchema(driver, tablePrefix, dialect)
+	statements, err := renderBaseSchema(driver, tablePrefix, dialect, nil)
 	if err != nil {
 		return nil, err
 	}
 	return []SchemaMigration{{Version: 1, Name: "create_notification_schema", Statements: statements}}, nil
+}
+
+// ApplicationSchemaMigrations renders the standalone SaaS schema for one
+// exact application namespace. Every row carries explicit tenant and
+// application ownership, including system-scoped template/policy rows. The
+// table prefix provides an additional physical isolation boundary while all
+// application namespaces may share one service-owned database pool.
+func ApplicationSchemaMigrations(driver Driver, schema, tablePrefix string, scope ApplicationScope) ([]SchemaMigration, error) {
+	scope.TenantID, scope.WorkspaceID, scope.ApplicationKey = strings.TrimSpace(scope.TenantID), strings.TrimSpace(scope.WorkspaceID), strings.TrimSpace(scope.ApplicationKey)
+	if scope.TenantID == "" || scope.WorkspaceID == "" || scope.ApplicationKey == "" {
+		return nil, fmt.Errorf("notification SaaS application scope is incomplete")
+	}
+	dialect, err := NewDialect(driver, schema, tablePrefix)
+	if err != nil {
+		return nil, err
+	}
+	statements, err := renderBaseSchema(driver, tablePrefix, dialect, &scope)
+	if err != nil {
+		return nil, err
+	}
+	return []SchemaMigration{{Version: 1, Name: "create_notification_saas_application_schema", Statements: statements}}, nil
 }
 
 type schemaColumn struct {
@@ -61,11 +86,18 @@ type schemaIndex struct {
 	columns []string
 }
 
-func renderBaseSchema(driver Driver, indexPrefix string, dialect Dialect) ([]string, error) {
+func renderBaseSchema(driver Driver, indexPrefix string, dialect Dialect, application *ApplicationScope) ([]string, error) {
 	statements := make([]string, 0, len(baseSchemaTables)+len(baseSchemaIndexes))
 	for _, table := range baseSchemaTables {
-		parts := make([]string, len(table.columns))
-		for index, column := range table.columns {
+		columns := append([]schemaColumn(nil), table.columns...)
+		if application != nil {
+			columns = append([]schemaColumn{
+				defaulted("tenant_id", identifierColumn, sqlStringLiteral(application.TenantID)),
+				defaulted("application_key", identifierColumn, sqlStringLiteral(application.ApplicationKey)),
+			}, columns...)
+		}
+		parts := make([]string, len(columns))
+		for index, column := range columns {
 			columnType, err := renderColumnType(driver, column.kind)
 			if err != nil {
 				return nil, err
@@ -97,6 +129,8 @@ func renderBaseSchema(driver Driver, indexPrefix string, dialect Dialect) ([]str
 	}
 	return statements, nil
 }
+
+func sqlStringLiteral(value string) string { return "'" + strings.ReplaceAll(value, "'", "''") + "'" }
 
 func renderColumnType(driver Driver, kind schemaColumnKind) (string, error) {
 	switch kind {

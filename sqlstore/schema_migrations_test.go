@@ -83,3 +83,64 @@ func TestSchemaMigrationStatementsDoNotLeakMutableState(t *testing.T) {
 		t.Fatal("schema migration leaked mutable state")
 	}
 }
+
+func TestApplicationSchemaMigrationsPersistExactOwnership(t *testing.T) {
+	scope := ApplicationScope{TenantID: "tenant-'one", WorkspaceID: "workspace-one", ApplicationKey: "application-one"}
+	migrations, err := ApplicationSchemaMigrations(SQLite, "", "app_one_", scope)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(migrations) != 1 || migrations[0].Name != "create_notification_saas_application_schema" {
+		t.Fatalf("migrations=%+v", migrations)
+	}
+	db, err := sql.Open("sqlite", "file:"+t.Name()+"?mode=memory&cache=shared")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	for _, statement := range migrations[0].Statements {
+		if _, err := db.Exec(statement); err != nil {
+			t.Fatalf("execute %q: %v", statement, err)
+		}
+	}
+	if _, err := db.Exec(`INSERT INTO app_one_notification_events (id, workspace_id, source, source_event_id, status, payload_json, occurred_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, "event-one", scope.WorkspaceID, "test", "source-event-one", "pending", `{}`, "1", "1", "1"); err != nil {
+		t.Fatal(err)
+	}
+	var tenantID, applicationKey string
+	if err := db.QueryRow(`SELECT tenant_id, application_key FROM app_one_notification_events WHERE id = ?`, "event-one").Scan(&tenantID, &applicationKey); err != nil {
+		t.Fatal(err)
+	}
+	if tenantID != scope.TenantID || applicationKey != scope.ApplicationKey {
+		t.Fatalf("ownership=(%q,%q), want (%q,%q)", tenantID, applicationKey, scope.TenantID, scope.ApplicationKey)
+	}
+}
+
+func TestApplicationSchemaMigrationsUseDistinctPhysicalNamespaces(t *testing.T) {
+	left, err := ApplicationSchemaMigrations(SQLite, "", "left_", ApplicationScope{TenantID: "tenant", WorkspaceID: "workspace", ApplicationKey: "left"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	right, err := ApplicationSchemaMigrations(SQLite, "", "right_", ApplicationScope{TenantID: "tenant", WorkspaceID: "workspace", ApplicationKey: "right"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	leftSQL, rightSQL := strings.Join(left[0].Statements, "\n"), strings.Join(right[0].Statements, "\n")
+	if !strings.Contains(leftSQL, `"left_notification_events"`) || strings.Contains(leftSQL, `"right_notification_events"`) {
+		t.Fatalf("left migration has an invalid physical namespace")
+	}
+	if !strings.Contains(rightSQL, `"right_notification_events"`) || strings.Contains(rightSQL, `"left_notification_events"`) {
+		t.Fatalf("right migration has an invalid physical namespace")
+	}
+}
+
+func TestApplicationSchemaMigrationsRequireExactScope(t *testing.T) {
+	for _, scope := range []ApplicationScope{
+		{WorkspaceID: "workspace", ApplicationKey: "application"},
+		{TenantID: "tenant", ApplicationKey: "application"},
+		{TenantID: "tenant", WorkspaceID: "workspace"},
+	} {
+		if _, err := ApplicationSchemaMigrations(SQLite, "", "app_", scope); err == nil {
+			t.Fatalf("expected incomplete scope error for %+v", scope)
+		}
+	}
+}
