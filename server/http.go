@@ -193,6 +193,40 @@ func (h *Handler) ServeHTTP(response http.ResponseWriter, request *http.Request)
 			return
 		}
 		writeJSON(response, http.StatusOK, output)
+	case "/v1/system/migration:export", "/v1/system/migration:import":
+		if request.Method != http.MethodPost {
+			writeHTTPError(response, &notificationsdk.Error{StatusCode: http.StatusMethodNotAllowed, Code: "notification.method_not_allowed"})
+			return
+		}
+		migrationBinding, ok := binding.(notificationsdk.SystemMigrationBinding)
+		if !ok || migrationBinding.SystemMigration() == nil {
+			writeHTTPError(response, &notificationsdk.Error{StatusCode: http.StatusNotImplemented, Code: "notification.system_migration_unsupported"})
+			return
+		}
+		if request.URL.Path == "/v1/system/migration:export" {
+			output, err := migrationBinding.SystemMigration().Export(request.Context())
+			if err != nil {
+				writeHTTPError(response, err)
+				return
+			}
+			writeJSON(response, http.StatusOK, output)
+			return
+		}
+		var bundle contract.NotificationPortableBundle
+		if err := decodeJSON(request.Body, &bundle); err != nil {
+			writeHTTPError(response, err)
+			return
+		}
+		if bundle.Source.TenantID != application.TenantID || bundle.Source.WorkspaceID != application.WorkspaceID || bundle.Source.ApplicationKey != application.ApplicationKey {
+			writeHTTPError(response, &notificationsdk.Error{StatusCode: http.StatusForbidden, Code: "notification.application_scope_mismatch"})
+			return
+		}
+		output, err := migrationBinding.SystemMigration().Import(request.Context(), bundle)
+		if err != nil {
+			writeHTTPError(response, err)
+			return
+		}
+		writeJSON(response, http.StatusOK, output)
 	default:
 		if !serveBindingRoute(response, request, binding) {
 			writeHTTPError(response, &notificationsdk.Error{StatusCode: http.StatusNotFound, Code: "notification.route_not_found"})

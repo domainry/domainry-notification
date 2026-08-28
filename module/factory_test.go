@@ -168,6 +168,33 @@ func TestModuleSystemTemplatesSynchronizeThroughOwnedStore(t *testing.T) {
 	}
 }
 
+func TestModuleSystemMigrationExportsAndIdempotentlyReconcilesExactApplication(t *testing.T) {
+	host := newTestHost(t)
+	application := notificationsdk.ApplicationRef{TenantID: "tenant", WorkspaceID: "workspace", ApplicationKey: "runtime"}
+	binding, err := NewFactory(Options{}).OpenModule(t.Context(), application, host)
+	if err != nil {
+		t.Fatal(err)
+	}
+	migration, ok := binding.(notificationsdk.SystemMigrationBinding)
+	if !ok || migration.SystemMigration() == nil {
+		t.Fatal("Module Binding did not expose system migration")
+	}
+	if _, err := host.database.Exec(`INSERT INTO notification_retention_archive (id, workspace_id, policy_key, policy_version, job_id, source_table, resource_id, payload_hash, payload_json, archived_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, "archive", "workspace", "notification.history.v1", "1", "job", "notification_events", "event", "hash", `{}`, "now"); err != nil {
+		t.Fatal(err)
+	}
+	exported, err := migration.SystemMigration().Export(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if exported.Bundle.Source != (contract.NotificationPortableScope{TenantID: "tenant", WorkspaceID: "workspace", ApplicationKey: "runtime"}) || exported.Bundle.Fingerprint == "" || len(exported.Bundle.Tables) != 15 {
+		t.Fatalf("export=%+v", exported)
+	}
+	receipt, err := migration.SystemMigration().Import(t.Context(), exported.Bundle)
+	if err != nil || !receipt.AlreadyPresent || receipt.Fingerprint != exported.Bundle.Fingerprint {
+		t.Fatalf("receipt=%+v err=%v", receipt, err)
+	}
+}
+
 type moduleFactoryContractAdapter struct {
 	factory *Factory
 	host    modulehost.Host

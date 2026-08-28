@@ -64,6 +64,7 @@ type httpBindingStub struct {
 	system    *httpSystemTemplatesStub
 	subjects  *httpSystemSubjectsStub
 	retention *httpSystemRetentionStub
+	migration *httpSystemMigrationStub
 	closed    int
 }
 
@@ -76,6 +77,7 @@ func (*httpBindingStub) Administration() notificationsdk.Administration     { re
 func (b *httpBindingStub) SystemTemplates() notificationsdk.SystemTemplates { return b.system }
 func (b *httpBindingStub) SystemSubjects() notificationsdk.SystemSubjects   { return b.subjects }
 func (b *httpBindingStub) SystemRetention() notificationsdk.SystemRetention { return b.retention }
+func (b *httpBindingStub) SystemMigration() notificationsdk.SystemMigration { return b.migration }
 func (*httpBindingStub) LocalWorkers() (notificationsdk.LocalWorkers, bool) { return nil, false }
 func (b *httpBindingStub) Close(context.Context) error                      { b.closed++; return nil }
 
@@ -92,6 +94,37 @@ type httpSystemTemplatesStub struct {
 
 type httpSystemSubjectsStub struct{ calls int }
 type httpSystemRetentionStub struct{ calls int }
+type httpSystemMigrationStub struct{ imports int }
+
+func (s *httpSystemMigrationStub) Export(context.Context) (contract.NotificationPortableExport, error) {
+	return contract.NotificationPortableExport{}, nil
+}
+func (s *httpSystemMigrationStub) Import(_ context.Context, bundle contract.NotificationPortableBundle) (contract.NotificationPortableImportReceipt, error) {
+	s.imports++
+	return contract.NotificationPortableImportReceipt{FormatVersion: bundle.FormatVersion, Fingerprint: bundle.Fingerprint}, nil
+}
+
+func TestHandlerSystemMigrationRejectsCrossApplicationBundleBeforeImport(t *testing.T) {
+	migration := &httpSystemMigrationStub{}
+	handler, _ := NewHandler(&serviceAuthenticationStub{}, &bindingResolverStub{binding: &httpBindingStub{publisher: &httpPublisherStub{}, migration: migration}})
+	bundle := contract.NotificationPortableBundle{
+		FormatVersion: contract.NotificationPortableFormatV1,
+		Source:        contract.NotificationPortableScope{TenantID: "tenant-a", WorkspaceID: "workspace-b", ApplicationKey: "runtime-a"},
+		Tables:        []contract.NotificationPortableTable{{Name: "notification_events", Columns: []string{"id"}, Rows: [][]json.RawMessage{{json.RawMessage(`"event"`)}}}},
+		Fingerprint:   "fingerprint",
+	}
+	body, _ := json.Marshal(bundle)
+	request := httptest.NewRequest(http.MethodPost, "/v1/system/migration:import", bytes.NewReader(body))
+	request.Header.Set("X-Domainry-Service-Credential", "service-token")
+	request.Header.Set("X-Domainry-Tenant-ID", "tenant-a")
+	request.Header.Set("X-Domainry-Workspace-ID", "workspace-a")
+	request.Header.Set("X-Domainry-Application-Key", "runtime-a")
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusForbidden || migration.imports != 0 {
+		t.Fatalf("status=%d imports=%d body=%s", response.Code, migration.imports, response.Body.String())
+	}
+}
 
 func (s *httpSystemRetentionStub) Preview(context.Context, contract.NotificationRetentionPreviewRequest) (contract.NotificationRetentionPreview, error) {
 	s.calls++

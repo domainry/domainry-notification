@@ -47,6 +47,20 @@ type PortableImportReceipt struct {
 	AlreadyPresent bool   `json:"already_present"`
 }
 
+func (s *Store) ExportPortable(ctx context.Context, scope PortableScope) (PortableBundle, PortableInventory, error) {
+	if s == nil {
+		return PortableBundle{}, PortableInventory{}, fmt.Errorf("notification portable store is unavailable")
+	}
+	return ExportPortable(ctx, s.database, s.dialect, scope)
+}
+
+func (s *Store) ImportPortable(ctx context.Context, scope PortableScope, bundle PortableBundle) (PortableImportReceipt, error) {
+	if s == nil {
+		return PortableImportReceipt{}, fmt.Errorf("notification portable store is unavailable")
+	}
+	return ImportPortable(ctx, s.database, s.dialect, scope, bundle)
+}
+
 func ExportPortable(ctx context.Context, database Queryer, dialect Dialect, scope PortableScope) (PortableBundle, PortableInventory, error) {
 	if database == nil || dialect == nil || strings.TrimSpace(scope.TenantID) == "" || strings.TrimSpace(scope.WorkspaceID) == "" || strings.TrimSpace(scope.ApplicationKey) == "" {
 		return PortableBundle{}, PortableInventory{}, fmt.Errorf("notification portable export dependencies and scope are required")

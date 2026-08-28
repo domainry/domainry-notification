@@ -56,6 +56,7 @@ func (b *binding) Administration() notificationsdk.Administration     { return m
 func (b *binding) SystemTemplates() notificationsdk.SystemTemplates   { return moduleSystemTemplates{b} }
 func (b *binding) SystemSubjects() notificationsdk.SystemSubjects     { return moduleSystemSubjects{b} }
 func (b *binding) SystemRetention() notificationsdk.SystemRetention   { return moduleSystemRetention{b} }
+func (b *binding) SystemMigration() notificationsdk.SystemMigration   { return moduleSystemMigration{b} }
 func (b *binding) LocalWorkers() (notificationsdk.LocalWorkers, bool) { return moduleWorkers{b}, true }
 func (b *binding) Close(context.Context) error                        { return nil }
 

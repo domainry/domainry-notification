@@ -10,6 +10,7 @@ import (
 	"github.com/domainry/domainry-notification-sdk/contract"
 	"github.com/domainry/domainry-notification/delivery"
 	"github.com/domainry/domainry-notification/inbox"
+	"github.com/domainry/domainry-notification/sqlstore"
 	"github.com/domainry/domainry-notification/template"
 )
 
@@ -17,6 +18,43 @@ type moduleTemplates struct{ b *binding }
 type moduleSystemTemplates struct{ b *binding }
 type moduleSystemSubjects struct{ b *binding }
 type moduleSystemRetention struct{ b *binding }
+type moduleSystemMigration struct{ b *binding }
+
+func (s moduleSystemMigration) Export(ctx context.Context) (contract.NotificationPortableExport, error) {
+	if s.b == nil || s.b.store == nil {
+		return contract.NotificationPortableExport{}, &notificationsdk.Error{StatusCode: 503, Code: "notification.system_migration_unavailable"}
+	}
+	scope := sqlstore.PortableScope{TenantID: s.b.application.TenantID, WorkspaceID: s.b.application.WorkspaceID, ApplicationKey: s.b.application.ApplicationKey}
+	bundle, inventory, err := s.b.store.ExportPortable(ctx, scope)
+	if err != nil {
+		return contract.NotificationPortableExport{}, err
+	}
+	convertedBundle, err := convert[contract.NotificationPortableBundle](bundle)
+	if err != nil {
+		return contract.NotificationPortableExport{}, err
+	}
+	convertedInventory, err := convert[contract.NotificationPortableInventory](inventory)
+	return contract.NotificationPortableExport{Bundle: convertedBundle, Inventory: convertedInventory}, err
+}
+
+func (s moduleSystemMigration) Import(ctx context.Context, bundle contract.NotificationPortableBundle) (contract.NotificationPortableImportReceipt, error) {
+	if s.b == nil || s.b.store == nil {
+		return contract.NotificationPortableImportReceipt{}, &notificationsdk.Error{StatusCode: 503, Code: "notification.system_migration_unavailable"}
+	}
+	if err := bundle.ValidateEnvelope(); err != nil {
+		return contract.NotificationPortableImportReceipt{}, err
+	}
+	scope := sqlstore.PortableScope{TenantID: s.b.application.TenantID, WorkspaceID: s.b.application.WorkspaceID, ApplicationKey: s.b.application.ApplicationKey}
+	portable, err := convert[sqlstore.PortableBundle](bundle)
+	if err != nil {
+		return contract.NotificationPortableImportReceipt{}, err
+	}
+	receipt, err := s.b.store.ImportPortable(ctx, scope, portable)
+	if err != nil {
+		return contract.NotificationPortableImportReceipt{}, err
+	}
+	return convert[contract.NotificationPortableImportReceipt](receipt)
+}
 
 func (s moduleSystemRetention) Preview(ctx context.Context, request contract.NotificationRetentionPreviewRequest) (contract.NotificationRetentionPreview, error) {
 	if s.b == nil || s.b.store == nil {
