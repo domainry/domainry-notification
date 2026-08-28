@@ -19,6 +19,10 @@ type ApplicationFactory interface {
 	OpenSaaS(context.Context, notificationsdk.ApplicationRef, identitysdk.Binding) (notificationsdk.Binding, error)
 }
 
+type applicationFactoryCloser interface {
+	Close(context.Context) error
+}
+
 type Options struct {
 	Identity     IdentityOptions
 	Applications ApplicationFactory
@@ -111,11 +115,18 @@ func (r *Runtime) Close(ctx context.Context) error {
 	}
 	r.bindings = nil
 	identity := r.identity
+	factory := r.factory
 	r.identity = nil
+	r.factory = nil
 	r.mu.Unlock()
-	errs := make([]error, 0, len(bindings)+1)
+	errs := make([]error, 0, len(bindings)+2)
 	for _, binding := range bindings {
 		if err := binding.Close(ctx); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	if closer, ok := factory.(applicationFactoryCloser); ok {
+		if err := closer.Close(ctx); err != nil {
 			errs = append(errs, err)
 		}
 	}

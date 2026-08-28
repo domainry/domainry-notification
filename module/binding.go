@@ -19,6 +19,7 @@ import (
 
 type binding struct {
 	application          notificationsdk.ApplicationRef
+	mode                 notificationsdk.DeploymentMode
 	identity             identitysdk.Binding
 	principals           *identityprincipal.Resolver
 	templates            *template.Manager
@@ -40,7 +41,11 @@ type binding struct {
 }
 
 func (b *binding) Descriptor() notificationsdk.Descriptor {
-	return notificationsdk.Descriptor{ProtocolVersion: notificationsdk.CurrentProtocolVersion, Mode: notificationsdk.DeploymentModeModule, Audience: b.application.ApplicationKey, Capabilities: []string{"publication", "inbox", "templates", "delivery", "administration", "local_workers"}}
+	capabilities := []string{"publication", "inbox", "templates", "delivery", "administration"}
+	if b.mode == notificationsdk.DeploymentModeModule {
+		capabilities = append(capabilities, "local_workers")
+	}
+	return notificationsdk.Descriptor{ProtocolVersion: notificationsdk.CurrentProtocolVersion, Mode: b.mode, Audience: b.application.ApplicationKey, Capabilities: capabilities}
 }
 func (b *binding) Publisher() notificationsdk.Publisher               { return modulePublisher{b} }
 func (b *binding) Inbox() notificationsdk.Inbox                       { return moduleInbox{b} }

@@ -31,8 +31,22 @@ func (f *Factory) Open(context.Context, notificationsdk.ApplicationRef) (notific
 }
 
 func (f *Factory) OpenModule(ctx context.Context, application notificationsdk.ApplicationRef, host modulehost.Host) (notificationsdk.Binding, error) {
+	return f.openHosted(ctx, application, host, notificationsdk.DeploymentModeModule)
+}
+
+// OpenSaaSApplication assembles the same source-owned domain behavior over a
+// standalone service host. It is for Notification's server composition only;
+// remote SDK clients still receive a Remote Binding with no LocalWorkers.
+func (f *Factory) OpenSaaSApplication(ctx context.Context, application notificationsdk.ApplicationRef, host modulehost.Host) (notificationsdk.Binding, error) {
+	return f.openHosted(ctx, application, host, notificationsdk.DeploymentModeSaaS)
+}
+
+func (f *Factory) openHosted(ctx context.Context, application notificationsdk.ApplicationRef, host modulehost.Host, mode notificationsdk.DeploymentMode) (notificationsdk.Binding, error) {
 	if err := application.Validate(); err != nil {
 		return nil, err
+	}
+	if mode != notificationsdk.DeploymentModeModule && mode != notificationsdk.DeploymentModeSaaS {
+		return nil, fmt.Errorf("notification deployment mode %q is unsupported", mode)
 	}
 	if host == nil || host.Database() == nil || host.Dialect() == nil || host.WorkspaceScope() == nil || host.QueueScopes() == nil || host.Identity() == nil || host.Clock() == nil || strings.TrimSpace(host.WorkerID()) == "" || host.WorkNotifier() == nil || host.RecipientDirectory() == nil || host.DeliveryGateway() == nil {
 		return nil, fmt.Errorf("notification Module host is incomplete")
@@ -144,7 +158,7 @@ func (f *Factory) OpenModule(ctx context.Context, application notificationsdk.Ap
 	if err != nil {
 		return nil, err
 	}
-	b := &binding{application: application, identity: host.Identity(), principals: principalResolver, templates: templateManager, publications: publicationProcessor, engine: templateEngine, publisher: publisher, compiler: compiler, store: store, inboxProcessor: inboxProcessor, policy: policyManager, deliveryProcessor: deliveryProcessor, mailbox: mailbox, actions: actions, catalog: eventCatalog, eventTypes: eventTypes, rules: rules, metrics: host.DeliveryMetrics(), templateCapabilities: append([]contract.NotificationTemplateCapability(nil), catalog.TemplateCapabilities...)}
+	b := &binding{application: application, mode: mode, identity: host.Identity(), principals: principalResolver, templates: templateManager, publications: publicationProcessor, engine: templateEngine, publisher: publisher, compiler: compiler, store: store, inboxProcessor: inboxProcessor, policy: policyManager, deliveryProcessor: deliveryProcessor, mailbox: mailbox, actions: actions, catalog: eventCatalog, eventTypes: eventTypes, rules: rules, metrics: host.DeliveryMetrics(), templateCapabilities: append([]contract.NotificationTemplateCapability(nil), catalog.TemplateCapabilities...)}
 	if err := b.RefreshPublished(ctx); err != nil {
 		return nil, err
 	}
