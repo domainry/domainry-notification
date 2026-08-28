@@ -22,13 +22,25 @@ func (f *identityFactoryStub) Open(_ context.Context, application identitysdk.Ap
 type identityBindingStub struct {
 	descriptor identitysdk.Descriptor
 	catalog    *catalogStub
+	tokens     identitysdk.TokenVerifier
+	authorize  identitysdk.Authorization
 	closed     bool
 }
 
 func (b *identityBindingStub) Descriptor() identitysdk.Descriptor       { return b.descriptor }
 func (*identityBindingStub) Authentication() identitysdk.Authentication { return nil }
-func (*identityBindingStub) Tokens() identitysdk.TokenVerifier          { return tokenVerifierStub{} }
-func (*identityBindingStub) Authorization() identitysdk.Authorization   { return authorizationStub{} }
+func (b *identityBindingStub) Tokens() identitysdk.TokenVerifier {
+	if b.tokens != nil {
+		return b.tokens
+	}
+	return tokenVerifierStub{}
+}
+func (b *identityBindingStub) Authorization() identitysdk.Authorization {
+	if b.authorize != nil {
+		return b.authorize
+	}
+	return authorizationStub{}
+}
 func (*identityBindingStub) Principals() identitysdk.PrincipalResolver {
 	return principalResolverStub{}
 }

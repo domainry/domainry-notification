@@ -80,7 +80,7 @@ func OpenIdentity(ctx context.Context, options IdentityOptions) (identitysdk.Bin
 
 func notificationIdentityCatalog(application identitysdk.ApplicationRef) identitysdk.AuthorizationCatalog {
 	resources := []identitysdk.ResourceDefinition{
-		{Key: "notification_event"}, {Key: "notification_inbox"}, {Key: "notification_template"},
+		{Key: "notification_event", SupportedFacts: []string{"tenant_id", "workspace_id", "application_key"}}, {Key: "notification_inbox"}, {Key: "notification_template"},
 		{Key: "notification_publication"}, {Key: "notification_delivery_policy"},
 		{Key: "notification_preference"}, {Key: "notification_team_mailbox"},
 		{Key: "notification_delegation"}, {Key: "notification_governance"},
