@@ -13,6 +13,32 @@ import (
 )
 
 type moduleTemplates struct{ b *binding }
+type moduleSystemTemplates struct{ b *binding }
+
+func (s moduleSystemTemplates) SyncPublished(ctx context.Context, values []contract.NotificationTemplate) error {
+	if s.b == nil || s.b.store == nil {
+		return &notificationsdk.Error{StatusCode: 503, Code: "notification.system_templates_unavailable"}
+	}
+	templates, err := convertSlice[template.Template](values)
+	if err != nil {
+		return err
+	}
+	if err := s.b.store.SyncPublished(ctx, templates); err != nil {
+		return moduleError(err)
+	}
+	return s.b.RefreshPublished(ctx)
+}
+
+func (s moduleSystemTemplates) ListPublished(ctx context.Context) ([]contract.NotificationTemplateRecord, error) {
+	if s.b == nil || s.b.store == nil {
+		return nil, &notificationsdk.Error{StatusCode: 503, Code: "notification.system_templates_unavailable"}
+	}
+	values, err := s.b.store.List(ctx)
+	if err != nil {
+		return nil, moduleError(err)
+	}
+	return convertSlice[contract.NotificationTemplateRecord](values)
+}
 
 func (s moduleTemplates) Capabilities(ctx context.Context, a notificationsdk.UserAuthority) ([]contract.NotificationTemplateCapability, error) {
 	if _, err := s.actor(ctx, a); err != nil {
@@ -302,3 +328,4 @@ var _ notificationsdk.Templates = moduleTemplates{}
 var _ notificationsdk.Delivery = moduleDelivery{}
 var _ notificationsdk.Administration = moduleAdministration{}
 var _ notificationsdk.LocalWorkers = moduleWorkers{}
+var _ notificationsdk.SystemTemplates = moduleSystemTemplates{}

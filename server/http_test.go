@@ -60,6 +60,7 @@ func (r *bindingResolverStub) Resolve(_ context.Context, application notificatio
 
 type httpBindingStub struct {
 	publisher *httpPublisherStub
+	system    *httpSystemTemplatesStub
 	closed    int
 }
 
@@ -69,6 +70,7 @@ func (*httpBindingStub) Inbox() notificationsdk.Inbox                       { re
 func (*httpBindingStub) Templates() notificationsdk.Templates               { return nil }
 func (*httpBindingStub) Delivery() notificationsdk.Delivery                 { return nil }
 func (*httpBindingStub) Administration() notificationsdk.Administration     { return nil }
+func (b *httpBindingStub) SystemTemplates() notificationsdk.SystemTemplates { return b.system }
 func (*httpBindingStub) LocalWorkers() (notificationsdk.LocalWorkers, bool) { return nil, false }
 func (b *httpBindingStub) Close(context.Context) error                      { b.closed++; return nil }
 
@@ -77,6 +79,35 @@ type httpPublisherStub struct{ intent contract.NotificationIntent }
 func (p *httpPublisherStub) PublishIntent(_ context.Context, intent contract.NotificationIntent) (contract.NotificationEvent, bool, error) {
 	p.intent = intent
 	return contract.NotificationEvent{ID: "remote-event"}, true, nil
+}
+
+type httpSystemTemplatesStub struct {
+	synced []contract.NotificationTemplate
+}
+
+func (s *httpSystemTemplatesStub) SyncPublished(_ context.Context, values []contract.NotificationTemplate) error {
+	s.synced = append([]contract.NotificationTemplate(nil), values...)
+	return nil
+}
+
+func (*httpSystemTemplatesStub) ListPublished(context.Context) ([]contract.NotificationTemplateRecord, error) {
+	return []contract.NotificationTemplateRecord{{Key: "welcome"}}, nil
+}
+
+func TestHandlerSystemTemplatesUseServiceAuthenticationWithoutUserBearer(t *testing.T) {
+	system := &httpSystemTemplatesStub{}
+	handler, _ := NewHandler(&serviceAuthenticationStub{}, &bindingResolverStub{binding: &httpBindingStub{publisher: &httpPublisherStub{}, system: system}})
+	body, _ := json.Marshal(map[string]any{"templates": []contract.NotificationTemplate{{Key: "welcome"}}})
+	request := httptest.NewRequest(http.MethodPost, "/v1/system/templates:sync-published", bytes.NewReader(body))
+	request.Header.Set("X-Domainry-Service-Credential", "service-token")
+	request.Header.Set("X-Domainry-Tenant-ID", "tenant-a")
+	request.Header.Set("X-Domainry-Workspace-ID", "workspace-a")
+	request.Header.Set("X-Domainry-Application-Key", "runtime-a")
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusNoContent || len(system.synced) != 1 || system.synced[0].Key != "welcome" {
+		t.Fatalf("status=%d body=%s synced=%+v", response.Code, response.Body.String(), system.synced)
+	}
 }
 
 func TestHandlerAuthenticatesAndPublishesScopedIntent(t *testing.T) {

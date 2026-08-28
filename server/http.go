@@ -83,6 +83,37 @@ func (h *Handler) ServeHTTP(response http.ResponseWriter, request *http.Request)
 			Event   contract.NotificationEvent `json:"event"`
 			Created bool                       `json:"created"`
 		}{event, created})
+	case "/v1/system/templates:sync-published", "/v1/system/templates:list-published":
+		if request.Method != http.MethodPost {
+			writeHTTPError(response, &notificationsdk.Error{StatusCode: http.StatusMethodNotAllowed, Code: "notification.method_not_allowed"})
+			return
+		}
+		systemBinding, ok := binding.(notificationsdk.SystemTemplateBinding)
+		if !ok || systemBinding.SystemTemplates() == nil {
+			writeHTTPError(response, &notificationsdk.Error{StatusCode: http.StatusNotImplemented, Code: "notification.system_templates_unsupported"})
+			return
+		}
+		if request.URL.Path == "/v1/system/templates:sync-published" {
+			var input struct {
+				Templates []contract.NotificationTemplate `json:"templates"`
+			}
+			if err := decodeJSON(request.Body, &input); err != nil {
+				writeHTTPError(response, err)
+				return
+			}
+			if err := systemBinding.SystemTemplates().SyncPublished(request.Context(), input.Templates); err != nil {
+				writeHTTPError(response, err)
+				return
+			}
+			response.WriteHeader(http.StatusNoContent)
+			return
+		}
+		records, err := systemBinding.SystemTemplates().ListPublished(request.Context())
+		if err != nil {
+			writeHTTPError(response, err)
+			return
+		}
+		writeJSON(response, http.StatusOK, records)
 	default:
 		if !serveBindingRoute(response, request, binding) {
 			writeHTTPError(response, &notificationsdk.Error{StatusCode: http.StatusNotFound, Code: "notification.route_not_found"})

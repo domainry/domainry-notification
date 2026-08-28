@@ -53,6 +53,7 @@ func (b *binding) Inbox() notificationsdk.Inbox                       { return m
 func (b *binding) Templates() notificationsdk.Templates               { return moduleTemplates{b} }
 func (b *binding) Delivery() notificationsdk.Delivery                 { return moduleDelivery{b} }
 func (b *binding) Administration() notificationsdk.Administration     { return moduleAdministration{b} }
+func (b *binding) SystemTemplates() notificationsdk.SystemTemplates   { return moduleSystemTemplates{b} }
 func (b *binding) LocalWorkers() (notificationsdk.LocalWorkers, bool) { return moduleWorkers{b}, true }
 func (b *binding) Close(context.Context) error                        { return nil }
 

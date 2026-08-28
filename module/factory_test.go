@@ -130,6 +130,26 @@ func TestModuleFactoryContractAndBorrowedDatabaseLifecycle(t *testing.T) {
 	}
 }
 
+func TestModuleSystemTemplatesSynchronizeThroughOwnedStore(t *testing.T) {
+	host := newTestHost(t)
+	binding, err := NewFactory(Options{}).OpenModule(t.Context(), notificationsdk.ApplicationRef{TenantID: "tenant", WorkspaceID: "workspace", ApplicationKey: "runtime"}, host)
+	if err != nil {
+		t.Fatal(err)
+	}
+	system, ok := binding.(notificationsdk.SystemTemplateBinding)
+	if !ok || system.SystemTemplates() == nil {
+		t.Fatal("Module Binding did not expose system templates")
+	}
+	template := contract.NotificationTemplate{Key: "welcome", Name: "Welcome", Channel: "in_app", Status: "active", Version: 1, DefaultLocale: "en", Locales: map[string]contract.NotificationTemplateContent{"en": {Title: "Welcome", Text: "Hello"}}}
+	if err := system.SystemTemplates().SyncPublished(t.Context(), []contract.NotificationTemplate{template}); err != nil {
+		t.Fatal(err)
+	}
+	records, err := system.SystemTemplates().ListPublished(t.Context())
+	if err != nil || len(records) != 1 || records[0].Key != template.Key || records[0].Published == nil {
+		t.Fatalf("records=%+v err=%v", records, err)
+	}
+}
+
 type moduleFactoryContractAdapter struct {
 	factory *Factory
 	host    modulehost.Host
