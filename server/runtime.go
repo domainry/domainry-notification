@@ -7,6 +7,8 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
+	"time"
 
 	identitysdk "github.com/domainry/domainry-identity-sdk"
 	notificationsdk "github.com/domainry/domainry-notification-sdk"
@@ -26,15 +28,27 @@ type applicationFactoryCloser interface {
 type Options struct {
 	Identity     IdentityOptions
 	Applications ApplicationFactory
+	Workers      WorkerOptions
+}
+
+type WorkerOptions struct {
+	PollInterval time.Duration
+	BatchSize    int
+	OnError      func(error)
+	Disabled     bool
 }
 
 type Runtime struct {
-	identity identitysdk.Binding
-	factory  ApplicationFactory
-	handler  *Handler
-	mu       sync.Mutex
-	bindings map[string]notificationsdk.Binding
-	closed   bool
+	identity      identitysdk.Binding
+	factory       ApplicationFactory
+	handler       *Handler
+	mu            sync.Mutex
+	bindings      map[string]notificationsdk.Binding
+	closed        bool
+	cancel        context.CancelFunc
+	workers       sync.WaitGroup
+	ready         atomic.Bool
+	workerOptions WorkerOptions
 }
 
 func Open(ctx context.Context, options Options) (*Runtime, error) {
@@ -50,13 +64,27 @@ func Open(ctx context.Context, options Options) (*Runtime, error) {
 		_ = identity.Close(ctx)
 		return nil, err
 	}
-	runtime := &Runtime{identity: identity, factory: options.Applications, bindings: map[string]notificationsdk.Binding{}}
+	workerOptions := options.Workers
+	if workerOptions.PollInterval <= 0 {
+		workerOptions.PollInterval = time.Second
+	}
+	if workerOptions.BatchSize <= 0 {
+		workerOptions.BatchSize = 100
+	}
+	workerContext, cancel := context.WithCancel(ctx)
+	runtime := &Runtime{identity: identity, factory: options.Applications, bindings: map[string]notificationsdk.Binding{}, cancel: cancel, workerOptions: workerOptions}
 	handler, err := NewHandler(authenticator, runtime)
 	if err != nil {
 		_ = identity.Close(ctx)
 		return nil, err
 	}
 	runtime.handler = handler
+	if workerOptions.Disabled {
+		runtime.ready.Store(true)
+	} else {
+		runtime.workers.Add(1)
+		go runtime.runWorkers(workerContext)
+	}
 	return runtime, nil
 }
 
@@ -66,6 +94,8 @@ func (r *Runtime) Handler() *Handler {
 	}
 	return r.handler
 }
+
+func (r *Runtime) Ready() bool { return r != nil && r.ready.Load() }
 
 func (r *Runtime) Resolve(ctx context.Context, application notificationsdk.ApplicationRef) (notificationsdk.Binding, error) {
 	if r == nil {
@@ -104,6 +134,8 @@ func (r *Runtime) Close(ctx context.Context) error {
 		return nil
 	}
 	r.closed = true
+	cancel := r.cancel
+	r.cancel = nil
 	keys := make([]string, 0, len(r.bindings))
 	for key := range r.bindings {
 		keys = append(keys, key)
@@ -119,6 +151,10 @@ func (r *Runtime) Close(ctx context.Context) error {
 	r.identity = nil
 	r.factory = nil
 	r.mu.Unlock()
+	if cancel != nil {
+		cancel()
+	}
+	r.workers.Wait()
 	errs := make([]error, 0, len(bindings)+2)
 	for _, binding := range bindings {
 		if err := binding.Close(ctx); err != nil {
@@ -136,6 +172,41 @@ func (r *Runtime) Close(ctx context.Context) error {
 		}
 	}
 	return errors.Join(errs...)
+}
+
+func (r *Runtime) runWorkers(ctx context.Context) {
+	defer r.workers.Done()
+	ticker := time.NewTicker(r.workerOptions.PollInterval)
+	defer ticker.Stop()
+	for {
+		r.processDue(ctx)
+		r.ready.Store(true)
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
+	}
+}
+
+func (r *Runtime) processDue(ctx context.Context) {
+	r.mu.Lock()
+	bindings := make([]notificationsdk.Binding, 0, len(r.bindings))
+	for _, binding := range r.bindings {
+		bindings = append(bindings, binding)
+	}
+	r.mu.Unlock()
+	for _, binding := range bindings {
+		workers, local := binding.LocalWorkers()
+		if !local || workers == nil {
+			continue
+		}
+		for _, run := range []func(context.Context, int) (int, error){workers.ProcessDuePublications, workers.ProcessDueInboxEvents, workers.ProcessDueChannelPlans} {
+			if _, err := run(ctx, r.workerOptions.BatchSize); err != nil && ctx.Err() == nil && r.workerOptions.OnError != nil {
+				r.workerOptions.OnError(err)
+			}
+		}
+	}
 }
 
 func applicationKey(application notificationsdk.ApplicationRef) string {
