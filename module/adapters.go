@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"github.com/domainry/domainry-notification"
 	"github.com/domainry/domainry-notification-sdk/contract"
@@ -120,7 +121,15 @@ func (a deliveryGatewayAdapter) Dispatch(ctx context.Context, request delivery.D
 	if err != nil {
 		return delivery.DispatchReceipt{}, err
 	}
-	receipt, err := a.delegate.Dispatch(ctx, modulehost.DeliveryRequest{WorkspaceID: request.WorkspaceID.String(), PlanID: request.PlanID, EventID: request.EventID, Channel: request.Channel, ConnectorKey: request.ConnectorKey, ConnectionKey: request.ConnectionKey, Operation: request.Operation, DedupeKey: request.DeduplicationKey, Rendered: rendered})
+	fallbacks := make([]modulehost.DeliveryFallback, len(request.Fallbacks))
+	for index, fallback := range request.Fallbacks {
+		content, convertErr := convert[contract.RenderedNotification](fallback.Content)
+		if convertErr != nil {
+			return delivery.DispatchReceipt{}, convertErr
+		}
+		fallbacks[index] = modulehost.DeliveryFallback{ConnectorKey: fallback.ConnectorKey, ConnectionKey: fallback.ConnectionKey, Operation: fallback.Operation, Rendered: content}
+	}
+	receipt, err := a.delegate.Dispatch(ctx, modulehost.DeliveryRequest{WorkspaceID: request.WorkspaceID.String(), PlanID: request.PlanID, EventID: request.EventID, Channel: request.Channel, ConnectorKey: request.ConnectorKey, ConnectionKey: request.ConnectionKey, Operation: request.Operation, DedupeKey: request.DeduplicationKey, DeliverAfter: request.Decision.DeliverAfter, CreatedAt: request.CreatedAt.UTC().Format(time.RFC3339Nano), Rendered: rendered, Fallbacks: fallbacks})
 	return delivery.DispatchReceipt{MessageID: receipt.MessageID, AcceptedAt: request.CreatedAt}, err
 }
 
