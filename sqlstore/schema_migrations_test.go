@@ -84,6 +84,34 @@ func TestSchemaMigrationStatementsDoNotLeakMutableState(t *testing.T) {
 	}
 }
 
+func TestModuleSchemaBaselineCoversEveryColumnAndDeclaredIndex(t *testing.T) {
+	baseline, err := ModuleSchemaBaseline(MySQL, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(baseline.Tables) != len(baseSchemaTables) {
+		t.Fatalf("baseline tables=%d want=%d", len(baseline.Tables), len(baseSchemaTables))
+	}
+	for tableIndex, table := range baseline.Tables {
+		definition := baseSchemaTables[tableIndex]
+		if table.Name != definition.name || len(table.Columns) != len(definition.columns) {
+			t.Fatalf("baseline table[%d]=%+v", tableIndex, table)
+		}
+		for columnIndex, column := range table.Columns {
+			if column.Name != definition.columns[columnIndex].name || strings.Contains(column.Type, " ") {
+				t.Fatalf("baseline column %s.%s=%+v", table.Name, column.Name, column)
+			}
+		}
+	}
+	indexes := 0
+	for _, table := range baseline.Tables {
+		indexes += len(table.Indexes)
+	}
+	if indexes != len(baseSchemaIndexes) {
+		t.Fatalf("baseline indexes=%d want=%d", indexes, len(baseSchemaIndexes))
+	}
+}
+
 func TestApplicationSchemaMigrationsPersistExactOwnership(t *testing.T) {
 	scope := ApplicationScope{TenantID: "tenant-'one", WorkspaceID: "workspace-one", ApplicationKey: "application-one"}
 	migrations, err := ApplicationSchemaMigrations(SQLite, "", "app_one_", scope)

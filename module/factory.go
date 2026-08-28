@@ -61,10 +61,28 @@ func (f *Factory) openHosted(ctx context.Context, application notificationsdk.Ap
 		if err != nil {
 			return nil, err
 		}
-		owned := sqlstore.OwnedTables()
+		baseline, err := sqlstore.ModuleSchemaBaseline(sqlstore.Driver(registrar.Driver()), "")
+		if err != nil {
+			return nil, err
+		}
+		hostBaseline := modulehost.SchemaBaseline{Tables: make([]modulehost.SchemaTable, len(baseline.Tables))}
+		for tableIndex, table := range baseline.Tables {
+			hostTable := modulehost.SchemaTable{Name: table.Name, Columns: make([]modulehost.SchemaColumn, len(table.Columns)), Indexes: make([]modulehost.SchemaIndex, len(table.Indexes))}
+			for columnIndex, column := range table.Columns {
+				hostTable.Columns[columnIndex] = modulehost.SchemaColumn{Name: column.Name, Type: column.Type, Nullable: column.Nullable, PrimaryKey: column.PrimaryKey}
+			}
+			for indexIndex, index := range table.Indexes {
+				hostTable.Indexes[indexIndex] = modulehost.SchemaIndex{Name: index.Name, Unique: index.Unique, Columns: append([]string(nil), index.Columns...)}
+			}
+			hostBaseline.Tables[tableIndex] = hostTable
+		}
 		hostMigrations := make([]modulehost.SchemaMigration, len(migrations))
 		for index, migration := range migrations {
-			hostMigrations[index] = modulehost.SchemaMigration{Version: migration.Version, Name: migration.Name, Statements: append([]string(nil), migration.Statements...), BaselineTables: append([]string(nil), owned...)}
+			hostMigrations[index] = modulehost.SchemaMigration{Version: migration.Version, Name: migration.Name, Statements: append([]string(nil), migration.Statements...)}
+			if migration.Version == 1 {
+				value := hostBaseline
+				hostMigrations[index].Baseline = &value
+			}
 		}
 		if err := registrar.ApplyOwnedMigrations(ctx, "notification", hostMigrations); err != nil {
 			return nil, fmt.Errorf("apply Notification Module migrations: %w", err)

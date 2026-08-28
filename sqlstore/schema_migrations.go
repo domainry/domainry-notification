@@ -18,6 +18,32 @@ type SchemaMigration struct {
 	Statements []string
 }
 
+// SchemaBaseline is the complete physical contract used only to adopt a
+// pre-extraction Module schema. It deliberately excludes database-generated
+// indexes while including every source-declared index.
+type SchemaBaseline struct {
+	Tables []SchemaBaselineTable
+}
+
+type SchemaBaselineTable struct {
+	Name    string
+	Columns []SchemaBaselineColumn
+	Indexes []SchemaBaselineIndex
+}
+
+type SchemaBaselineColumn struct {
+	Name       string
+	Type       string
+	Nullable   bool
+	PrimaryKey bool
+}
+
+type SchemaBaselineIndex struct {
+	Name    string
+	Unique  bool
+	Columns []string
+}
+
 // SchemaMigrations renders the complete migration history for one physical
 // naming configuration. Existing installations must verify and baseline
 // version 1 instead of re-running it over Plane-owned legacy tables.
@@ -31,6 +57,37 @@ func SchemaMigrations(driver Driver, schema, tablePrefix string) ([]SchemaMigrat
 		return nil, err
 	}
 	return []SchemaMigration{{Version: 1, Name: "create_notification_schema", Statements: statements}}, nil
+}
+
+// ModuleSchemaBaseline renders the exact legacy physical shape for one
+// dialect. A host must match this contract before recording migration 1 as an
+// adopted baseline.
+func ModuleSchemaBaseline(driver Driver, tablePrefix string) (SchemaBaseline, error) {
+	result := SchemaBaseline{Tables: make([]SchemaBaselineTable, len(baseSchemaTables))}
+	byName := make(map[string]*SchemaBaselineTable, len(baseSchemaTables))
+	for tableIndex, table := range baseSchemaTables {
+		value := SchemaBaselineTable{Name: tablePrefix + table.name, Columns: make([]SchemaBaselineColumn, len(table.columns))}
+		for columnIndex, column := range table.columns {
+			physicalType, err := renderColumnType(driver, column.kind)
+			if err != nil {
+				return SchemaBaseline{}, err
+			}
+			if separator := strings.IndexByte(physicalType, ' '); separator >= 0 {
+				physicalType = physicalType[:separator]
+			}
+			value.Columns[columnIndex] = SchemaBaselineColumn{Name: column.name, Type: physicalType, Nullable: column.nullable, PrimaryKey: column.primaryKey}
+		}
+		result.Tables[tableIndex] = value
+		byName[table.name] = &result.Tables[tableIndex]
+	}
+	for _, index := range baseSchemaIndexes {
+		table := byName[index.table]
+		if table == nil {
+			return SchemaBaseline{}, fmt.Errorf("notification schema index %q references unknown table %q", index.name, index.table)
+		}
+		table.Indexes = append(table.Indexes, SchemaBaselineIndex{Name: tablePrefix + index.name, Unique: index.unique, Columns: append([]string(nil), index.columns...)})
+	}
+	return result, nil
 }
 
 // ApplicationSchemaMigrations renders the standalone SaaS schema for one
