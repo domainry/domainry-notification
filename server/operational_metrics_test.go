@@ -12,6 +12,8 @@ import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 	"go.opentelemetry.io/otel/trace"
+
+	"github.com/domainry/domainry-foundation/telemetry"
 )
 
 func TestObserveHTTPExportsMetricsAndContinuesW3CTrace(t *testing.T) {
@@ -65,7 +67,7 @@ func TestOperationalWorkerMetricsAreBoundedByOwnedKinds(t *testing.T) {
 }
 
 func TestTelemetryRejectsUnknownExporter(t *testing.T) {
-	if _, err := InitializeTelemetry(t.Context(), TelemetryConfig{Exporter: "unknown"}); err == nil {
+	if _, err := telemetry.Initialize(t.Context(), telemetry.Config{Exporter: "unknown"}); err == nil {
 		t.Fatal("unknown telemetry exporter was accepted")
 	}
 }

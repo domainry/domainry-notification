@@ -18,6 +18,7 @@ import (
 	_ "github.com/jackc/pgx/v5/stdlib"
 	_ "modernc.org/sqlite"
 
+	"github.com/domainry/domainry-foundation/telemetry"
 	"github.com/domainry/domainry-notification-sdk/deliverygateway"
 	"github.com/domainry/domainry-notification-sdk/modulehost"
 	"github.com/domainry/domainry-notification/server"
@@ -38,7 +39,7 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	shutdownTelemetry, err := server.InitializeTelemetry(ctx, config.telemetry)
+	shutdownTelemetry, err := telemetry.Initialize(ctx, config.telemetry)
 	if err != nil {
 		return err
 	}
@@ -111,7 +112,7 @@ type configuration struct {
 	workerPollInterval                                  time.Duration
 	workerBatchSize                                     int
 	catalog                                             modulehost.Catalog
-	telemetry                                           server.TelemetryConfig
+	telemetry                                           telemetry.Config
 }
 
 func configurationFromEnvironment() (configuration, error) {
@@ -120,7 +121,7 @@ func configurationFromEnvironment() (configuration, error) {
 		databaseMaxOpen: 20, databaseMaxIdle: 10, databaseConnLifetime: 30 * time.Minute,
 		deliveryGatewayURL: strings.TrimSpace(os.Getenv("NOTIFICATION_DELIVERY_GATEWAY_URL")), deliveryGatewayCredential: strings.TrimSpace(os.Getenv("NOTIFICATION_DELIVERY_GATEWAY_SERVICE_CREDENTIAL")), deliveryGatewayTimeout: 10 * time.Second, deliveryGatewayAttempts: 3,
 		workerID: strings.TrimSpace(os.Getenv("NOTIFICATION_WORKER_ID")), workerPollInterval: time.Second, workerBatchSize: 100,
-		telemetry: server.TelemetryConfig{ServiceName: "domainry-notification", ServiceVersion: strings.TrimSpace(os.Getenv("NOTIFICATION_SERVICE_VERSION")), Exporter: env("NOTIFICATION_TELEMETRY_EXPORTER", "none"), Endpoint: strings.TrimSpace(os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT")), Headers: telemetryHeaders(os.Getenv("OTEL_EXPORTER_OTLP_HEADERS")), Insecure: strings.EqualFold(strings.TrimSpace(os.Getenv("OTEL_EXPORTER_OTLP_INSECURE")), "true"), SampleRatio: 1, ExportTimeout: 10 * time.Second},
+		telemetry: telemetry.Config{ServiceName: "domainry-notification", ServiceVersion: strings.TrimSpace(os.Getenv("NOTIFICATION_SERVICE_VERSION")), Exporter: env("NOTIFICATION_TELEMETRY_EXPORTER", "none"), Endpoint: strings.TrimSpace(os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT")), Headers: telemetryHeaders(os.Getenv("OTEL_EXPORTER_OTLP_HEADERS")), Insecure: strings.EqualFold(strings.TrimSpace(os.Getenv("OTEL_EXPORTER_OTLP_INSECURE")), "true"), SampleRatio: 1, ExportTimeout: 10 * time.Second},
 	}
 	if raw := strings.TrimSpace(os.Getenv("OTEL_TRACES_SAMPLER_ARG")); raw != "" {
 		ratio, parseErr := strconv.ParseFloat(raw, 64)
