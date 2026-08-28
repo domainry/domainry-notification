@@ -324,6 +324,43 @@ func TestModuleSystemMigrationExportsAndIdempotentlyReconcilesExactApplication(t
 	}
 }
 
+func TestMigrationFreezeWaitsForInFlightWriterAndFencesFollowingWrites(t *testing.T) {
+	host := newTestHost(t)
+	application := notificationsdk.ApplicationRef{TenantID: "tenant", WorkspaceID: "workspace", ApplicationKey: "runtime"}
+	opened, err := NewFactory(Options{}).OpenModule(t.Context(), application, host)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b := opened.(*binding)
+	release, err := b.beginMigrationSensitiveWrite(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	finished := make(chan error, 1)
+	go func() {
+		_, freezeErr := b.SystemMigration().Freeze(t.Context(), contract.NotificationMigrationCommand{MigrationID: "concurrent-freeze", At: time.Date(2026, 8, 29, 4, 0, 0, 0, time.UTC)})
+		finished <- freezeErr
+	}()
+	select {
+	case err := <-finished:
+		t.Fatalf("freeze crossed an in-flight writer: %v", err)
+	case <-time.After(25 * time.Millisecond):
+	}
+	release()
+	select {
+	case err := <-finished:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("freeze did not finish after the in-flight writer exited")
+	}
+	if release, err := b.beginMigrationSensitiveWrite(t.Context()); err == nil {
+		release()
+		t.Fatal("write crossed a completed migration freeze")
+	}
+}
+
 type moduleFactoryContractAdapter struct {
 	factory *Factory
 	host    modulehost.Host
