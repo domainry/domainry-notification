@@ -190,6 +190,16 @@ func (s moduleInbox) scope(ctx context.Context, a notificationsdk.UserAuthority,
 	if err != nil {
 		return principal, inbox.Query{}, err
 	}
+	if strings.TrimSpace(q.TeamMemberID) != "" {
+		if _, err = s.b.authorize(ctx, a, "notification_team_mailbox", "read", false); err != nil {
+			return principal, inbox.Query{}, err
+		}
+	}
+	if q.Scope == contract.NotificationInboxScopeDelegated {
+		if _, err = s.b.authorize(ctx, a, "notification_delegation", "read", false); err != nil {
+			return principal, inbox.Query{}, err
+		}
+	}
 	query, err := inboxQuery(q, principal, a.Surface)
 	if err != nil {
 		return principal, query, err

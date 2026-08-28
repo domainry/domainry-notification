@@ -7,6 +7,7 @@ import (
 
 	identitysdk "github.com/domainry/domainry-identity-sdk"
 	notificationsdk "github.com/domainry/domainry-notification-sdk"
+	"github.com/domainry/domainry-notification-sdk/contract"
 )
 
 type principalAuthenticatorStub struct {
@@ -109,6 +110,29 @@ func TestAuthorizeFailsClosedWhenCurrentIdentityDeniesOrIsUnavailable(t *testing
 			}
 			_, err := b.authorize(context.Background(), notificationsdk.UserAuthority{AccessToken: "secret"}, "notification_publication", "approve", true)
 			assertNotificationAuthorizationError(t, err, test.status, test.code, test.retryable)
+		})
+	}
+}
+
+func TestInboxScopeRequiresAdditionalTeamAndDelegationPermissions(t *testing.T) {
+	b := &binding{
+		application: notificationsdk.ApplicationRef{TenantID: "tenant-1", WorkspaceID: "workspace-1", ApplicationKey: "app-1"},
+		principals: principalAuthenticatorStub{principal: authorizedPrincipal("workspace-1",
+			identitysdk.FunctionGrant{Resource: "notification_inbox", Action: "read", Effect: identitysdk.EffectAllow},
+		)},
+	}
+	authority := notificationsdk.UserAuthority{AccessToken: "secret", Surface: "business_workspace"}
+	tests := []struct {
+		name  string
+		query contract.NotificationInboxQuery
+	}{
+		{name: "team mailbox", query: contract.NotificationInboxQuery{Scope: contract.NotificationInboxScopeMine, TeamMemberID: "user-2"}},
+		{name: "delegated mailbox", query: contract.NotificationInboxQuery{Scope: contract.NotificationInboxScopeDelegated}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			_, _, err := (moduleInbox{b: b}).scope(context.Background(), authority, test.query, "read", false)
+			assertNotificationAuthorizationError(t, err, 403, "notification.permission_denied", false)
 		})
 	}
 }
