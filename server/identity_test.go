@@ -24,6 +24,7 @@ type identityBindingStub struct {
 	catalog    *catalogStub
 	tokens     identitysdk.TokenVerifier
 	authorize  identitysdk.Authorization
+	services   identitysdk.ApplicationServiceAuthentication
 	closed     bool
 }
 
@@ -47,9 +48,24 @@ func (*identityBindingStub) Principals() identitysdk.PrincipalResolver {
 func (*identityBindingStub) Directory() identitysdk.Directory           { return directoryStub{} }
 func (b *identityBindingStub) Catalog() identitysdk.CatalogClient       { return b.catalog }
 func (*identityBindingStub) Credentials() identitysdk.CredentialManager { return nil }
-func (b *identityBindingStub) Close(context.Context) error              { b.closed = true; return nil }
+func (b *identityBindingStub) ApplicationServices() identitysdk.ApplicationServiceAuthentication {
+	if b.services == nil {
+		return applicationServicesStub{}
+	}
+	return b.services
+}
+func (b *identityBindingStub) Close(context.Context) error { b.closed = true; return nil }
 
 type tokenVerifierStub struct{}
+
+type applicationServicesStub struct{}
+
+func (applicationServicesStub) Exchange(context.Context, identitysdk.ExchangeApplicationServiceTokenRequest) (identitysdk.ApplicationServiceToken, error) {
+	return identitysdk.ApplicationServiceToken{}, nil
+}
+func (applicationServicesStub) Verify(context.Context, identitysdk.VerifyApplicationServiceTokenRequest) (identitysdk.ApplicationServicePrincipal, error) {
+	return identitysdk.ApplicationServicePrincipal{}, nil
+}
 
 func (tokenVerifierStub) Verify(context.Context, identitysdk.VerifyTokenRequest) (identitysdk.VerifiedToken, error) {
 	return identitysdk.VerifiedToken{}, nil

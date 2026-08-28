@@ -116,7 +116,7 @@ func notificationIdentityCatalog(application identitysdk.ApplicationRef) identit
 		{"notification_governance", []string{"read"}},
 	} {
 		for _, action := range entry.actions {
-			actions = append(actions, identitysdk.ActionDefinition{Resource: identitysdk.ResourceType(entry.resource), Action: identitysdk.Action(action)})
+			actions = append(actions, identitysdk.ActionDefinition{Resource: identitysdk.ResourceType(entry.resource), Action: identitysdk.Action(action), ServiceCallable: entry.resource == "notification_event" && action == "publish"})
 		}
 	}
 	return identitysdk.AuthorizationCatalog{ContractVersion: identitysdk.CatalogVersionV1, Application: application, Resources: resources, Actions: actions}
