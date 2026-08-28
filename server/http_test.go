@@ -61,6 +61,7 @@ func (r *bindingResolverStub) Resolve(_ context.Context, application notificatio
 type httpBindingStub struct {
 	publisher *httpPublisherStub
 	system    *httpSystemTemplatesStub
+	subjects  *httpSystemSubjectsStub
 	closed    int
 }
 
@@ -71,6 +72,7 @@ func (*httpBindingStub) Templates() notificationsdk.Templates               { re
 func (*httpBindingStub) Delivery() notificationsdk.Delivery                 { return nil }
 func (*httpBindingStub) Administration() notificationsdk.Administration     { return nil }
 func (b *httpBindingStub) SystemTemplates() notificationsdk.SystemTemplates { return b.system }
+func (b *httpBindingStub) SystemSubjects() notificationsdk.SystemSubjects   { return b.subjects }
 func (*httpBindingStub) LocalWorkers() (notificationsdk.LocalWorkers, bool) { return nil, false }
 func (b *httpBindingStub) Close(context.Context) error                      { b.closed++; return nil }
 
@@ -83,6 +85,46 @@ func (p *httpPublisherStub) PublishIntent(_ context.Context, intent contract.Not
 
 type httpSystemTemplatesStub struct {
 	synced []contract.NotificationTemplate
+}
+
+type httpSystemSubjectsStub struct{ calls int }
+
+func (s *httpSystemSubjectsStub) PreviewSubject(context.Context, string, string) (json.RawMessage, error) {
+	s.calls++
+	return json.RawMessage(`{"preview":true}`), nil
+}
+func (s *httpSystemSubjectsStub) ExportSubject(context.Context, string, string) (json.RawMessage, error) {
+	s.calls++
+	return json.RawMessage(`{"export":true}`), nil
+}
+func (s *httpSystemSubjectsStub) EraseSubject(context.Context, string, string, json.RawMessage) (json.RawMessage, error) {
+	s.calls++
+	return json.RawMessage(`{"erased":true}`), nil
+}
+
+func TestHandlerSystemSubjectsEnforceExactApplicationWorkspace(t *testing.T) {
+	subjects := &httpSystemSubjectsStub{}
+	handler, _ := NewHandler(&serviceAuthenticationStub{}, &bindingResolverStub{binding: &httpBindingStub{publisher: &httpPublisherStub{}, subjects: subjects}})
+	for _, workspace := range []string{"workspace-a", "workspace-b"} {
+		body, _ := json.Marshal(map[string]any{"workspace_id": workspace, "subject_id": "user"})
+		request := httptest.NewRequest(http.MethodPost, "/v1/system/subjects:preview", bytes.NewReader(body))
+		request.Header.Set("X-Domainry-Service-Credential", "service-token")
+		request.Header.Set("X-Domainry-Tenant-ID", "tenant-a")
+		request.Header.Set("X-Domainry-Workspace-ID", "workspace-a")
+		request.Header.Set("X-Domainry-Application-Key", "runtime-a")
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, request)
+		want := http.StatusOK
+		if workspace != "workspace-a" {
+			want = http.StatusForbidden
+		}
+		if response.Code != want {
+			t.Fatalf("workspace=%s status=%d body=%s", workspace, response.Code, response.Body.String())
+		}
+	}
+	if subjects.calls != 1 {
+		t.Fatalf("subject calls=%d", subjects.calls)
+	}
 }
 
 func (s *httpSystemTemplatesStub) SyncPublished(_ context.Context, values []contract.NotificationTemplate) error {
