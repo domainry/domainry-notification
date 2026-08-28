@@ -52,9 +52,10 @@ func ExportPortable(ctx context.Context, database Queryer, dialect Dialect, scop
 		return PortableBundle{}, PortableInventory{}, fmt.Errorf("notification portable export dependencies and scope are required")
 	}
 	ownership := ownershipByTable()
-	bundle := PortableBundle{FormatVersion: PortableFormatV1, Source: scope, Tables: make([]PortableTable, 0, len(baseSchemaTables))}
+	definitions := ownedSchemaTables()
+	bundle := PortableBundle{FormatVersion: PortableFormatV1, Source: scope, Tables: make([]PortableTable, 0, len(definitions))}
 	inventory := PortableInventory{Tables: map[string]int{}}
-	for _, definition := range baseSchemaTables {
+	for _, definition := range definitions {
 		columns := make([]string, len(definition.columns))
 		quoted := make([]string, len(definition.columns))
 		for index, column := range definition.columns {
@@ -139,7 +140,10 @@ func ImportPortable(ctx context.Context, database Database, dialect Dialect, tar
 	rowCount := 0
 	for _, table := range bundle.Tables {
 		statement := dialect.Insert(table.Name, table.Columns)
-		definition := baseSchemaTables[tableDefinitionIndex(table.Name)]
+		definition, found := tableDefinition(table.Name)
+		if !found {
+			return PortableImportReceipt{}, fmt.Errorf("notification portable table %s is not owned by this module", table.Name)
+		}
 		for _, row := range table.Rows {
 			values := make([]any, len(row))
 			for index, raw := range row {
@@ -175,10 +179,11 @@ func ValidatePortable(bundle PortableBundle, target PortableScope) error {
 	if bundle.Source.TenantID != target.TenantID || bundle.Source.WorkspaceID != target.WorkspaceID || bundle.Source.ApplicationKey != target.ApplicationKey {
 		return fmt.Errorf("notification portable bundle target scope mismatch")
 	}
-	if len(bundle.Tables) != len(baseSchemaTables) {
+	definitions := ownedSchemaTables()
+	if len(bundle.Tables) != len(definitions) {
 		return fmt.Errorf("notification portable bundle table inventory is incomplete")
 	}
-	for index, definition := range baseSchemaTables {
+	for index, definition := range definitions {
 		table := bundle.Tables[index]
 		if table.Name != definition.name || len(table.Columns) != len(definition.columns) {
 			return fmt.Errorf("notification portable table %d schema mismatch", index)
@@ -208,13 +213,13 @@ func ValidatePortable(bundle PortableBundle, target PortableScope) error {
 	return nil
 }
 
-func tableDefinitionIndex(name string) int {
-	for index, table := range baseSchemaTables {
+func tableDefinition(name string) (schemaTable, bool) {
+	for _, table := range ownedSchemaTables() {
 		if table.name == name {
-			return index
+			return table, true
 		}
 	}
-	return -1
+	return schemaTable{}, false
 }
 
 func decodePortableCell(raw json.RawMessage, kind schemaColumnKind) (any, error) {

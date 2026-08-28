@@ -16,13 +16,15 @@ func TestPortableMigrationFiltersWorkspaceImportsOwnershipAndReconciles(t *testi
 	}
 	insertPortableEvent(t, source, "workspace", "event-one", "source-one", "worker")
 	insertPortableEvent(t, source, "other-workspace", "event-other", "source-other", "")
+	insertPortableArchive(t, source, "workspace", "archive-one")
+	insertPortableArchive(t, source, "other-workspace", "archive-other")
 	sourceDialect, _ := NewDialect(SQLite, "", "")
 	scope := PortableScope{TenantID: "tenant", WorkspaceID: "workspace", ApplicationKey: "application"}
 	bundle, inventory, err := ExportPortable(t.Context(), source, sourceDialect, scope)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if inventory.Rows != 2 || inventory.ActiveLeases != 1 || inventory.Tables["notification_events"] != 1 || bundle.Fingerprint == "" {
+	if inventory.Rows != 3 || inventory.ActiveLeases != 1 || inventory.Tables["notification_events"] != 1 || inventory.Tables["notification_retention_archive"] != 1 || bundle.Fingerprint == "" {
 		t.Fatalf("inventory=%+v bundle=%+v", inventory, bundle)
 	}
 
@@ -51,6 +53,13 @@ func TestPortableMigrationFiltersWorkspaceImportsOwnershipAndReconciles(t *testi
 	}
 	if tenantID != scope.TenantID || applicationKey != scope.ApplicationKey || workspaceID != scope.WorkspaceID {
 		t.Fatalf("ownership=(%q,%q,%q)", tenantID, applicationKey, workspaceID)
+	}
+	var archivedWorkspaceID string
+	if err := target.QueryRow(`SELECT workspace_id FROM application_notification_retention_archive WHERE id = ?`, "archive-one").Scan(&archivedWorkspaceID); err != nil {
+		t.Fatal(err)
+	}
+	if archivedWorkspaceID != scope.WorkspaceID {
+		t.Fatalf("archive workspace=%q", archivedWorkspaceID)
 	}
 }
 
@@ -103,6 +112,13 @@ func applyPortableMigrations(t *testing.T, database *sql.DB, migrations []Schema
 func insertPortableEvent(t *testing.T, database *sql.DB, workspaceID, id, sourceEventID, leaseOwner string) {
 	t.Helper()
 	if _, err := database.Exec(`INSERT INTO notification_events (id, workspace_id, source, source_event_id, status, payload_json, lease_owner, occurred_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, id, workspaceID, "test", sourceEventID, "queued", `{}`, leaseOwner, "now", "now", "now"); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func insertPortableArchive(t *testing.T, database *sql.DB, workspaceID, id string) {
+	t.Helper()
+	if _, err := database.Exec(`INSERT INTO notification_retention_archive (id, workspace_id, policy_key, policy_version, job_id, source_table, resource_id, payload_hash, payload_json, archived_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, id, workspaceID, "notification.history.v1", "1", "job", "notification_events", "event", "hash", `{}`, "now"); err != nil {
 		t.Fatal(err)
 	}
 }

@@ -136,3 +136,10 @@ var retentionArchiveIndexes = []schemaIndex{
 	{name: "uniq_notification_retention_archive", table: "notification_retention_archive", unique: true, columns: []string{"workspace_id", "policy_key", "source_table", "resource_id"}},
 	{name: "idx_notification_retention_archive_job", table: "notification_retention_archive", columns: []string{"workspace_id", "job_id", "archived_at"}},
 }
+
+func ownedSchemaTables() []schemaTable {
+	tables := make([]schemaTable, 0, len(baseSchemaTables)+len(retentionArchiveTables))
+	tables = append(tables, baseSchemaTables...)
+	tables = append(tables, retentionArchiveTables...)
+	return tables
+}
