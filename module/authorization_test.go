@@ -62,14 +62,19 @@ func TestAuthorizeFailsClosedWithoutRequiredPermission(t *testing.T) {
 }
 
 func TestAuthorizePreservesWorkspaceAdministratorOverride(t *testing.T) {
+	capture := &authorizationCapture{decision: identitysdk.AccessDecision{Allowed: true}}
 	b := &binding{
 		application: notificationsdk.ApplicationRef{TenantID: "tenant-1", WorkspaceID: "workspace-1", ApplicationKey: "app-1"},
+		identity:    authorizationBindingStub{authorization: capture},
 		principals: principalAuthenticatorStub{principal: authorizedPrincipal("workspace-1",
 			identitysdk.FunctionGrant{Resource: "workspace", Action: "admin", Effect: identitysdk.EffectAllow},
 		)},
 	}
-	if _, err := b.authorize(context.Background(), notificationsdk.UserAuthority{AccessToken: "secret"}, "notification_inbox", "read", false); err != nil {
+	if _, err := b.authorize(context.Background(), notificationsdk.UserAuthority{AccessToken: "secret"}, "notification_inbox", "update", true); err != nil {
 		t.Fatal(err)
+	}
+	if len(capture.requests) != 1 || capture.requests[0].Access.ObjectKey != "workspace" || capture.requests[0].Access.Action != "admin" || capture.requests[0].Facts["id"] != "workspace-1" || len(capture.requests[0].Facts) != 1 {
+		t.Fatalf("unexpected administrator reauthorization: %#v", capture.requests)
 	}
 }
 

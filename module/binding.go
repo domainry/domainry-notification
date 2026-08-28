@@ -96,15 +96,17 @@ func (b *binding) authorize(ctx context.Context, authority notificationsdk.UserA
 		return principal, nil
 	}
 	decisionResource, decisionAction := resource, action
+	facts := identitysdk.ResourceFacts{
+		"tenant_id": b.application.TenantID, "workspace_id": b.application.WorkspaceID, "application_key": b.application.ApplicationKey,
+	}
 	if adminOverride {
 		decisionResource, decisionAction = "workspace", "admin"
+		facts = identitysdk.ResourceFacts{"id": b.application.WorkspaceID}
 	}
 	decision, err := b.identity.Authorization().Reauthorize(ctx, identitysdk.DecisionRequest{
 		Identity: identitysdk.RequestIdentity{Principal: principal, AccessToken: authority.AccessToken},
 		Access:   identitysdk.AccessRequest{ObjectKey: decisionResource, Action: decisionAction},
-		Facts: identitysdk.ResourceFacts{
-			"tenant_id": b.application.TenantID, "workspace_id": b.application.WorkspaceID, "application_key": b.application.ApplicationKey,
-		},
+		Facts:    facts,
 	})
 	if err != nil {
 		return identitysdk.Principal{}, &notificationsdk.Error{StatusCode: 503, Code: "notification.identity_reauthorization_failed", Retryable: true, Cause: err}
