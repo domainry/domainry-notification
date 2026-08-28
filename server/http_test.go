@@ -10,11 +10,37 @@ import (
 
 	notificationsdk "github.com/domainry/domainry-notification-sdk"
 	"github.com/domainry/domainry-notification-sdk/contract"
+	notificationremote "github.com/domainry/domainry-notification-sdk/remote"
 )
 
 type serviceAuthenticationStub struct {
 	request ServiceRequest
 	err     error
+}
+
+func TestRemoteFactoryAndPublisherUseServerWireContract(t *testing.T) {
+	publisher := &httpPublisherStub{}
+	authenticator := &serviceAuthenticationStub{}
+	handler, err := NewHandler(authenticator, &bindingResolverStub{binding: &httpBindingStub{publisher: publisher}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	httpServer := httptest.NewServer(handler)
+	t.Cleanup(httpServer.Close)
+	factory := notificationremote.NewFactory(notificationremote.Config{BaseURL: httpServer.URL, ServiceCredential: "service-token", HTTPClient: httpServer.Client()})
+	application := notificationsdk.ApplicationRef{TenantID: "tenant-a", WorkspaceID: "workspace-a", ApplicationKey: "runtime-a"}
+	binding, err := factory.Open(t.Context(), application)
+	if err != nil {
+		t.Fatal(err)
+	}
+	intent := contract.NotificationIntent{ID: "request-a", WorkspaceID: "workspace-a", SourceEventID: "record-a:created", EventType: "record.created", Surface: "business_workspace", RecipientUserIDs: []string{"user-a"}, OccurredAt: "2026-08-28T00:00:00Z"}
+	event, created, err := binding.Publisher().PublishIntent(t.Context(), intent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !created || event.ID != "remote-event" || publisher.intent.ID != intent.ID || authenticator.request.Credential != "service-token" || authenticator.request.Application != application {
+		t.Fatalf("created=%v event=%+v published=%+v auth=%+v", created, event, publisher.intent, authenticator.request)
+	}
 }
 
 func (a *serviceAuthenticationStub) Authenticate(_ context.Context, request ServiceRequest) (ServiceAuthority, error) {
