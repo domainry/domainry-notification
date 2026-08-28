@@ -52,8 +52,9 @@ func (p *SQLPersistence) Database() *sql.DB {
 }
 
 // PrepareApplication applies immutable migrations and returns the dialect for
-// one exact physical application namespace. The in-process mutex prevents two
-// opens in this service process from racing the same migration ledger.
+// one exact physical application namespace. A process mutex plus a
+// database-session advisory lock serialize both same-process and multi-instance
+// migration attempts.
 func (p *SQLPersistence) PrepareApplication(ctx context.Context, application notificationsdk.ApplicationRef) (sqlstore.Dialect, error) {
 	if p == nil || p.database == nil {
 		return nil, fmt.Errorf("Notification SaaS persistence is unavailable")
@@ -77,12 +78,22 @@ func (p *SQLPersistence) PrepareApplication(ctx context.Context, application not
 	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	if err := p.ensureLedger(ctx); err != nil {
+	connection, err := p.database.Conn(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("open Notification SaaS migration connection: %w", err)
+	}
+	defer connection.Close()
+	namespace := applicationKey(application)
+	release, err := p.acquireMigrationLock(ctx, connection, namespace)
+	if err != nil {
 		return nil, err
 	}
-	namespace := applicationKey(application)
+	defer func() { _ = release(context.Background()) }()
+	if err := p.ensureLedger(ctx, connection); err != nil {
+		return nil, err
+	}
 	for _, migration := range migrations {
-		if err := p.applyMigration(ctx, namespace, migration); err != nil {
+		if err := p.applyMigration(ctx, connection, namespace, migration); err != nil {
 			return nil, err
 		}
 	}
@@ -98,7 +109,13 @@ func (p *SQLPersistence) Close() error {
 	return err
 }
 
-func (p *SQLPersistence) ensureLedger(ctx context.Context) error {
+type migrationConnection interface {
+	ExecContext(context.Context, string, ...any) (sql.Result, error)
+	QueryRowContext(context.Context, string, ...any) *sql.Row
+	BeginTx(context.Context, *sql.TxOptions) (*sql.Tx, error)
+}
+
+func (p *SQLPersistence) ensureLedger(ctx context.Context, connection migrationConnection) error {
 	dialect, err := sqlstore.NewDialect(p.driver, p.schema, "")
 	if err != nil {
 		return err
@@ -108,15 +125,15 @@ func (p *SQLPersistence) ensureLedger(ctx context.Context) error {
 		dialect.Identifier("version") + " BIGINT NOT NULL, " +
 		dialect.Identifier("checksum") + " VARCHAR(64) NOT NULL, " +
 		dialect.Identifier("applied_at") + " VARCHAR(64) NOT NULL, PRIMARY KEY (" + dialect.Identifier("namespace") + ", " + dialect.Identifier("version") + "))"
-	if _, err := p.database.ExecContext(ctx, statement); err != nil {
+	if _, err := connection.ExecContext(ctx, statement); err != nil {
 		return fmt.Errorf("create Notification SaaS migration ledger: %w", err)
 	}
 	return nil
 }
 
-func (p *SQLPersistence) applyMigration(ctx context.Context, namespace string, migration sqlstore.SchemaMigration) error {
+func (p *SQLPersistence) applyMigration(ctx context.Context, connection migrationConnection, namespace string, migration sqlstore.SchemaMigration) error {
 	checksum := migrationChecksum(migration)
-	existing, found, err := p.migrationChecksum(ctx, p.database, namespace, migration.Version)
+	existing, found, err := p.migrationChecksum(ctx, connection, namespace, migration.Version)
 	if err != nil {
 		return err
 	}
@@ -126,7 +143,7 @@ func (p *SQLPersistence) applyMigration(ctx context.Context, namespace string, m
 		}
 		return nil
 	}
-	tx, err := p.database.BeginTx(ctx, nil)
+	tx, err := connection.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("begin Notification SaaS migration %s/%d: %w", namespace, migration.Version, err)
 	}
@@ -159,6 +176,54 @@ func (p *SQLPersistence) applyMigration(ctx context.Context, namespace string, m
 		return fmt.Errorf("commit Notification SaaS migration %s/%d: %w", namespace, migration.Version, err)
 	}
 	return nil
+}
+
+func (p *SQLPersistence) acquireMigrationLock(ctx context.Context, connection migrationConnection, namespace string) (func(context.Context) error, error) {
+	lockKey := migrationLockKey(namespace)
+	switch p.driver {
+	case sqlstore.Postgres:
+		var ignored any
+		if err := connection.QueryRowContext(ctx, "SELECT pg_advisory_lock(hashtextextended($1, 0))", lockKey).Scan(&ignored); err != nil {
+			return nil, fmt.Errorf("acquire Notification SaaS PostgreSQL migration lock: %w", err)
+		}
+		return func(releaseContext context.Context) error {
+			var released bool
+			if err := connection.QueryRowContext(releaseContext, "SELECT pg_advisory_unlock(hashtextextended($1, 0))", lockKey).Scan(&released); err != nil {
+				return err
+			}
+			if !released {
+				return fmt.Errorf("Notification SaaS PostgreSQL migration lock was not held")
+			}
+			return nil
+		}, nil
+	case sqlstore.MySQL:
+		var acquired sql.NullInt64
+		if err := connection.QueryRowContext(ctx, "SELECT GET_LOCK(?, ?)", lockKey, 30).Scan(&acquired); err != nil {
+			return nil, fmt.Errorf("acquire Notification SaaS MySQL migration lock: %w", err)
+		}
+		if !acquired.Valid || acquired.Int64 != 1 {
+			return nil, fmt.Errorf("acquire Notification SaaS MySQL migration lock timed out")
+		}
+		return func(releaseContext context.Context) error {
+			var released sql.NullInt64
+			if err := connection.QueryRowContext(releaseContext, "SELECT RELEASE_LOCK(?)", lockKey).Scan(&released); err != nil {
+				return err
+			}
+			if !released.Valid || released.Int64 != 1 {
+				return fmt.Errorf("Notification SaaS MySQL migration lock was not held")
+			}
+			return nil
+		}, nil
+	case sqlstore.SQLite:
+		return func(context.Context) error { return nil }, nil
+	default:
+		return nil, fmt.Errorf("Notification SaaS migration driver %q is unsupported", p.driver)
+	}
+}
+
+func migrationLockKey(namespace string) string {
+	sum := sha256.Sum256([]byte(strings.TrimSpace(namespace)))
+	return "notification-migration-" + hex.EncodeToString(sum[:16])
 }
 
 type migrationQueryer interface {

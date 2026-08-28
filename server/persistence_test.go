@@ -2,9 +2,11 @@ package server
 
 import (
 	"database/sql"
+	"regexp"
 	"strings"
 	"testing"
 
+	"github.com/DATA-DOG/go-sqlmock"
 	notificationsdk "github.com/domainry/domainry-notification-sdk"
 	"github.com/domainry/domainry-notification/sqlstore"
 
@@ -100,5 +102,58 @@ func TestApplicationTablePrefixDoesNotExposeScopeValues(t *testing.T) {
 	prefix := applicationTablePrefix(application)
 	if !strings.HasPrefix(prefix, "notification_") || !strings.HasSuffix(prefix, "_") || strings.Contains(prefix, "secret") {
 		t.Fatalf("unsafe prefix %q", prefix)
+	}
+}
+
+func TestMigrationLockKeyIsDeterministicBoundedAndOpaque(t *testing.T) {
+	first := migrationLockKey("tenant-secret/workspace-secret/application-secret")
+	second := migrationLockKey("tenant-secret/workspace-secret/application-secret")
+	other := migrationLockKey("tenant-secret/workspace-secret/other")
+	if first != second || first == other || len(first) > 64 || strings.Contains(first, "secret") {
+		t.Fatalf("lock keys first=%q second=%q other=%q", first, second, other)
+	}
+}
+
+func TestMigrationLocksUseOneDatabaseSession(t *testing.T) {
+	for _, test := range []struct {
+		name, acquire, release string
+		driver                 sqlstore.Driver
+		acquireRow, releaseRow any
+	}{
+		{name: "postgres", driver: sqlstore.Postgres, acquire: `SELECT pg_advisory_lock(hashtextextended($1, 0))`, release: `SELECT pg_advisory_unlock(hashtextextended($1, 0))`, acquireRow: nil, releaseRow: true},
+		{name: "mysql", driver: sqlstore.MySQL, acquire: `SELECT GET_LOCK(?, ?)`, release: `SELECT RELEASE_LOCK(?)`, acquireRow: int64(1), releaseRow: int64(1)},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			db, mock, err := sqlmock.New()
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer db.Close()
+			key := migrationLockKey("tenant/workspace/application")
+			var acquire *sqlmock.ExpectedQuery
+			if test.driver == sqlstore.MySQL {
+				acquire = mock.ExpectQuery(regexp.QuoteMeta(test.acquire)).WithArgs(key, 30)
+			} else {
+				acquire = mock.ExpectQuery(regexp.QuoteMeta(test.acquire)).WithArgs(key)
+			}
+			acquire.WillReturnRows(sqlmock.NewRows([]string{"locked"}).AddRow(test.acquireRow))
+			mock.ExpectQuery(regexp.QuoteMeta(test.release)).WithArgs(key).WillReturnRows(sqlmock.NewRows([]string{"released"}).AddRow(test.releaseRow))
+			connection, err := db.Conn(t.Context())
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer connection.Close()
+			persistence := &SQLPersistence{driver: test.driver}
+			release, err := persistence.acquireMigrationLock(t.Context(), connection, "tenant/workspace/application")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := release(t.Context()); err != nil {
+				t.Fatal(err)
+			}
+			if err := mock.ExpectationsWereMet(); err != nil {
+				t.Fatal(err)
+			}
+		})
 	}
 }
