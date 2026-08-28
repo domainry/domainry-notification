@@ -206,6 +206,11 @@ func (s moduleInbox) mine(ctx context.Context, a notificationsdk.UserAuthority) 
 	return s.scope(ctx, a, contract.NotificationInboxQuery{Scope: contract.NotificationInboxScopeMine})
 }
 func (s moduleInbox) SetRead(ctx context.Context, a notificationsdk.UserAuthority, id string, v bool) (contract.NotificationInboxItem, error) {
+	release, err := s.b.beginMigrationSensitiveWrite(ctx)
+	if err != nil {
+		return contract.NotificationInboxItem{}, err
+	}
+	defer release()
 	_, q, err := s.mine(ctx, a)
 	if err != nil {
 		return contract.NotificationInboxItem{}, err
@@ -217,6 +222,11 @@ func (s moduleInbox) SetRead(ctx context.Context, a notificationsdk.UserAuthorit
 	return convert[contract.NotificationInboxItem](value)
 }
 func (s moduleInbox) SetArchived(ctx context.Context, a notificationsdk.UserAuthority, id string, v bool) (contract.NotificationInboxItem, error) {
+	release, err := s.b.beginMigrationSensitiveWrite(ctx)
+	if err != nil {
+		return contract.NotificationInboxItem{}, err
+	}
+	defer release()
 	_, q, err := s.mine(ctx, a)
 	if err != nil {
 		return contract.NotificationInboxItem{}, err
@@ -228,6 +238,11 @@ func (s moduleInbox) SetArchived(ctx context.Context, a notificationsdk.UserAuth
 	return convert[contract.NotificationInboxItem](value)
 }
 func (s moduleInbox) AcknowledgeAlert(ctx context.Context, a notificationsdk.UserAuthority, id string) (contract.NotificationInboxItem, error) {
+	release, err := s.b.beginMigrationSensitiveWrite(ctx)
+	if err != nil {
+		return contract.NotificationInboxItem{}, err
+	}
+	defer release()
 	p, q, err := s.mine(ctx, a)
 	if err != nil {
 		return contract.NotificationInboxItem{}, err
@@ -239,6 +254,11 @@ func (s moduleInbox) AcknowledgeAlert(ctx context.Context, a notificationsdk.Use
 	return convert[contract.NotificationInboxItem](value)
 }
 func (s moduleInbox) MarkAllRead(ctx context.Context, a notificationsdk.UserAuthority, qv contract.NotificationInboxQuery) (int, error) {
+	release, err := s.b.beginMigrationSensitiveWrite(ctx)
+	if err != nil {
+		return 0, err
+	}
+	defer release()
 	_, q, err := s.scope(ctx, a, qv)
 	if err != nil {
 		return 0, err
@@ -268,6 +288,11 @@ func (s moduleInbox) ListDelegations(ctx context.Context, a notificationsdk.User
 	return convertSlice[contract.NotificationInboxDelegation](values)
 }
 func (s moduleInbox) SaveDelegation(ctx context.Context, a notificationsdk.UserAuthority, v contract.NotificationInboxDelegation) (contract.NotificationInboxDelegation, error) {
+	release, err := s.b.beginMigrationSensitiveWrite(ctx)
+	if err != nil {
+		return contract.NotificationInboxDelegation{}, err
+	}
+	defer release()
 	p, err := s.b.authenticate(ctx, a)
 	if err != nil {
 		return contract.NotificationInboxDelegation{}, err
@@ -285,6 +310,11 @@ func (s moduleInbox) SaveDelegation(ctx context.Context, a notificationsdk.UserA
 	return convert[contract.NotificationInboxDelegation](value)
 }
 func (s moduleInbox) DeleteDelegation(ctx context.Context, a notificationsdk.UserAuthority, id string) error {
+	release, err := s.b.beginMigrationSensitiveWrite(ctx)
+	if err != nil {
+		return err
+	}
+	defer release()
 	p, err := s.b.authenticate(ctx, a)
 	if err != nil {
 		return err
@@ -318,6 +348,11 @@ func (s moduleInbox) ListSavedViews(ctx context.Context, a notificationsdk.UserA
 	return convertSlice[contract.NotificationInboxSavedView](values)
 }
 func (s moduleInbox) SaveSavedView(ctx context.Context, a notificationsdk.UserAuthority, v contract.NotificationInboxSavedView) (contract.NotificationInboxSavedView, error) {
+	release, err := s.b.beginMigrationSensitiveWrite(ctx)
+	if err != nil {
+		return contract.NotificationInboxSavedView{}, err
+	}
+	defer release()
 	p, err := s.b.authenticate(ctx, a)
 	if err != nil {
 		return contract.NotificationInboxSavedView{}, err
@@ -333,6 +368,11 @@ func (s moduleInbox) SaveSavedView(ctx context.Context, a notificationsdk.UserAu
 	return convert[contract.NotificationInboxSavedView](value)
 }
 func (s moduleInbox) DeleteSavedView(ctx context.Context, a notificationsdk.UserAuthority, key string) error {
+	release, err := s.b.beginMigrationSensitiveWrite(ctx)
+	if err != nil {
+		return err
+	}
+	defer release()
 	p, err := s.b.authenticate(ctx, a)
 	if err != nil {
 		return err
@@ -354,6 +394,11 @@ func (s moduleInbox) GetPreference(ctx context.Context, a notificationsdk.UserAu
 	return convert[contract.NotificationRecipientPreference](value)
 }
 func (s moduleInbox) SavePreference(ctx context.Context, a notificationsdk.UserAuthority, surface string, v contract.NotificationRecipientPreference) (contract.NotificationRecipientPreference, error) {
+	release, err := s.b.beginMigrationSensitiveWrite(ctx)
+	if err != nil {
+		return contract.NotificationRecipientPreference{}, err
+	}
+	defer release()
 	p, err := s.b.authenticate(ctx, a)
 	if err != nil {
 		return contract.NotificationRecipientPreference{}, err

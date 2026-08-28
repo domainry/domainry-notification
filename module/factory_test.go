@@ -202,6 +202,81 @@ func TestModuleSystemMigrationExportsAndIdempotentlyReconcilesExactApplication(t
 	if _, err := workers.ProcessDueInboxEvents(t.Context(), 1); err == nil {
 		t.Fatal("frozen source worker accepted work")
 	}
+	inboxAPI, templatesAPI, deliveryAPI := binding.Inbox(), binding.Templates(), binding.Delivery()
+	emptyAuthority := notificationsdk.UserAuthority{}
+	frozenWrites := []func() error{
+		func() error { _, err := inboxAPI.SetRead(t.Context(), emptyAuthority, "item", true); return err },
+		func() error { _, err := inboxAPI.SetArchived(t.Context(), emptyAuthority, "item", true); return err },
+		func() error { _, err := inboxAPI.AcknowledgeAlert(t.Context(), emptyAuthority, "item"); return err },
+		func() error {
+			_, err := inboxAPI.MarkAllRead(t.Context(), emptyAuthority, contract.NotificationInboxQuery{})
+			return err
+		},
+		func() error {
+			_, err := inboxAPI.SaveDelegation(t.Context(), emptyAuthority, contract.NotificationInboxDelegation{})
+			return err
+		},
+		func() error { return inboxAPI.DeleteDelegation(t.Context(), emptyAuthority, "delegation") },
+		func() error {
+			_, err := inboxAPI.SaveSavedView(t.Context(), emptyAuthority, contract.NotificationInboxSavedView{})
+			return err
+		},
+		func() error { return inboxAPI.DeleteSavedView(t.Context(), emptyAuthority, "view") },
+		func() error {
+			_, err := inboxAPI.SavePreference(t.Context(), emptyAuthority, "surface", contract.NotificationRecipientPreference{})
+			return err
+		},
+		func() error {
+			_, err := templatesAPI.SaveDraft(t.Context(), emptyAuthority, "template", contract.NotificationTemplate{}, "")
+			return err
+		},
+		func() error {
+			_, err := templatesAPI.RestoreVersionDraft(t.Context(), emptyAuthority, "template", 1, "")
+			return err
+		},
+		func() error { _, err := templatesAPI.Disable(t.Context(), emptyAuthority, "template", ""); return err },
+		func() error {
+			_, err := templatesAPI.RequestPublication(t.Context(), emptyAuthority, "template", "", "")
+			return err
+		},
+		func() error {
+			_, err := templatesAPI.ApprovePublication(t.Context(), emptyAuthority, "publication")
+			return err
+		},
+		func() error {
+			_, err := templatesAPI.RejectPublication(t.Context(), emptyAuthority, "publication", "reason")
+			return err
+		},
+		func() error {
+			_, err := templatesAPI.CancelPublication(t.Context(), emptyAuthority, "publication")
+			return err
+		},
+		func() error {
+			_, err := deliveryAPI.SavePolicy(t.Context(), emptyAuthority, contract.NotificationDeliveryPolicy{})
+			return err
+		},
+		func() error {
+			_, err := deliveryAPI.SaveRecipientPreference(t.Context(), emptyAuthority, contract.NotificationRecipientPreference{})
+			return err
+		},
+		func() error {
+			return binding.(notificationsdk.SystemTemplateBinding).SystemTemplates().SyncPublished(t.Context(), nil)
+		},
+		func() error {
+			_, err := binding.(notificationsdk.SystemSubjectBinding).SystemSubjects().EraseSubject(t.Context(), "workspace", "subject", nil)
+			return err
+		},
+		func() error {
+			_, err := binding.(notificationsdk.SystemRetentionBinding).SystemRetention().ProcessBatch(t.Context(), contract.NotificationRetentionBatchRequest{})
+			return err
+		},
+	}
+	for index, call := range frozenWrites {
+		var sdkError *notificationsdk.Error
+		if err := call(); !errors.As(err, &sdkError) || sdkError.Code != "notification.migration_writes_frozen" {
+			t.Fatalf("frozen write %d error=%v", index, err)
+		}
+	}
 	if _, err := migration.SystemMigration().Export(t.Context()); err == nil {
 		t.Fatal("source exported while an active lease remained")
 	}

@@ -79,6 +79,8 @@ func (s moduleSystemMigration) Import(ctx context.Context, bundle contract.Notif
 	if err := bundle.ValidateEnvelope(); err != nil {
 		return contract.NotificationPortableImportReceipt{}, err
 	}
+	s.b.migrationMu.Lock()
+	defer s.b.migrationMu.Unlock()
 	scope := sqlstore.PortableScope{TenantID: s.b.application.TenantID, WorkspaceID: s.b.application.WorkspaceID, ApplicationKey: s.b.application.ApplicationKey}
 	status, err := s.b.store.MigrationStatus(ctx, s.b.application.WorkspaceID)
 	if err != nil {
@@ -105,6 +107,8 @@ func (s moduleSystemMigration) Activate(ctx context.Context, command contract.No
 	if err := command.Validate(true); err != nil {
 		return contract.NotificationMigrationStatus{}, err
 	}
+	s.b.migrationMu.Lock()
+	defer s.b.migrationMu.Unlock()
 	status, err := s.b.store.ActivateMigration(ctx, s.b.application.WorkspaceID, command.MigrationID, command.BundleFingerprint, command.At)
 	if err != nil {
 		return contract.NotificationMigrationStatus{}, err
@@ -116,6 +120,8 @@ func (s moduleSystemMigration) Rollback(ctx context.Context, command contract.No
 	if err := command.Validate(true); err != nil {
 		return contract.NotificationMigrationStatus{}, err
 	}
+	s.b.migrationMu.Lock()
+	defer s.b.migrationMu.Unlock()
 	status, err := s.b.store.RollbackMigration(ctx, s.b.application.WorkspaceID, command.MigrationID, command.BundleFingerprint, command.At)
 	if err != nil {
 		return contract.NotificationMigrationStatus{}, err
@@ -146,6 +152,11 @@ func (s moduleSystemRetention) Preview(ctx context.Context, request contract.Not
 }
 
 func (s moduleSystemRetention) ProcessBatch(ctx context.Context, request contract.NotificationRetentionBatchRequest) (contract.NotificationRetentionBatchResult, error) {
+	release, err := s.b.beginMigrationSensitiveWrite(ctx)
+	if err != nil {
+		return contract.NotificationRetentionBatchResult{}, err
+	}
+	defer release()
 	if s.b == nil || s.b.store == nil {
 		return contract.NotificationRetentionBatchResult{}, &notificationsdk.Error{StatusCode: 503, Code: "notification.system_retention_unavailable"}
 	}
@@ -165,6 +176,11 @@ func (s moduleSystemSubjects) ExportSubject(ctx context.Context, workspaceID, su
 	return s.b.store.ExportSubject(ctx, workspaceID, subjectID)
 }
 func (s moduleSystemSubjects) EraseSubject(ctx context.Context, workspaceID, subjectID string, holds json.RawMessage) (json.RawMessage, error) {
+	release, err := s.b.beginMigrationSensitiveWrite(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer release()
 	if s.b == nil || s.b.store == nil {
 		return nil, &notificationsdk.Error{StatusCode: 503, Code: "notification.system_subjects_unavailable"}
 	}
@@ -172,6 +188,11 @@ func (s moduleSystemSubjects) EraseSubject(ctx context.Context, workspaceID, sub
 }
 
 func (s moduleSystemTemplates) SyncPublished(ctx context.Context, values []contract.NotificationTemplate) error {
+	release, err := s.b.beginMigrationSensitiveWrite(ctx)
+	if err != nil {
+		return err
+	}
+	defer release()
 	if s.b == nil || s.b.store == nil {
 		return &notificationsdk.Error{StatusCode: 503, Code: "notification.system_templates_unavailable"}
 	}
@@ -241,6 +262,11 @@ func (s moduleTemplates) ListVersions(ctx context.Context, a notificationsdk.Use
 	return convertSlice[contract.NotificationTemplateVersion](values)
 }
 func (s moduleTemplates) SaveDraft(ctx context.Context, a notificationsdk.UserAuthority, key string, v contract.NotificationTemplate, expected string) (contract.NotificationTemplateRecord, error) {
+	release, err := s.b.beginMigrationSensitiveWrite(ctx)
+	if err != nil {
+		return contract.NotificationTemplateRecord{}, err
+	}
+	defer release()
 	actor, err := s.actor(ctx, a)
 	if err != nil {
 		return contract.NotificationTemplateRecord{}, err
@@ -256,6 +282,11 @@ func (s moduleTemplates) SaveDraft(ctx context.Context, a notificationsdk.UserAu
 	return convert[contract.NotificationTemplateRecord](value)
 }
 func (s moduleTemplates) RestoreVersionDraft(ctx context.Context, a notificationsdk.UserAuthority, key string, version int, expected string) (contract.NotificationTemplateRecord, error) {
+	release, err := s.b.beginMigrationSensitiveWrite(ctx)
+	if err != nil {
+		return contract.NotificationTemplateRecord{}, err
+	}
+	defer release()
 	actor, err := s.actor(ctx, a)
 	if err != nil {
 		return contract.NotificationTemplateRecord{}, err
@@ -267,6 +298,11 @@ func (s moduleTemplates) RestoreVersionDraft(ctx context.Context, a notification
 	return convert[contract.NotificationTemplateRecord](value)
 }
 func (s moduleTemplates) Disable(ctx context.Context, a notificationsdk.UserAuthority, key, expected string) (contract.NotificationTemplateRecord, error) {
+	release, err := s.b.beginMigrationSensitiveWrite(ctx)
+	if err != nil {
+		return contract.NotificationTemplateRecord{}, err
+	}
+	defer release()
 	actor, err := s.actor(ctx, a)
 	if err != nil {
 		return contract.NotificationTemplateRecord{}, err
@@ -322,6 +358,11 @@ func (s moduleTemplates) ListPublicationRequests(ctx context.Context, a notifica
 	return convertSlice[contract.NotificationPublicationRequest](values)
 }
 func (s moduleTemplates) RequestPublication(ctx context.Context, a notificationsdk.UserAuthority, key, scheduled, expected string) (contract.NotificationPublicationRequest, error) {
+	release, err := s.b.beginMigrationSensitiveWrite(ctx)
+	if err != nil {
+		return contract.NotificationPublicationRequest{}, err
+	}
+	defer release()
 	actor, err := s.actor(ctx, a)
 	if err != nil {
 		return contract.NotificationPublicationRequest{}, err
@@ -333,6 +374,11 @@ func (s moduleTemplates) RequestPublication(ctx context.Context, a notifications
 	return convert[contract.NotificationPublicationRequest](value)
 }
 func (s moduleTemplates) ApprovePublication(ctx context.Context, a notificationsdk.UserAuthority, id string) (contract.NotificationPublicationRequest, error) {
+	release, err := s.b.beginMigrationSensitiveWrite(ctx)
+	if err != nil {
+		return contract.NotificationPublicationRequest{}, err
+	}
+	defer release()
 	actor, err := s.actor(ctx, a)
 	if err != nil {
 		return contract.NotificationPublicationRequest{}, err
@@ -344,6 +390,11 @@ func (s moduleTemplates) ApprovePublication(ctx context.Context, a notifications
 	return convert[contract.NotificationPublicationRequest](value)
 }
 func (s moduleTemplates) RejectPublication(ctx context.Context, a notificationsdk.UserAuthority, id, reason string) (contract.NotificationPublicationRequest, error) {
+	release, err := s.b.beginMigrationSensitiveWrite(ctx)
+	if err != nil {
+		return contract.NotificationPublicationRequest{}, err
+	}
+	defer release()
 	actor, err := s.actor(ctx, a)
 	if err != nil {
 		return contract.NotificationPublicationRequest{}, err
@@ -355,6 +406,11 @@ func (s moduleTemplates) RejectPublication(ctx context.Context, a notificationsd
 	return convert[contract.NotificationPublicationRequest](value)
 }
 func (s moduleTemplates) CancelPublication(ctx context.Context, a notificationsdk.UserAuthority, id string) (contract.NotificationPublicationRequest, error) {
+	release, err := s.b.beginMigrationSensitiveWrite(ctx)
+	if err != nil {
+		return contract.NotificationPublicationRequest{}, err
+	}
+	defer release()
 	actor, err := s.actor(ctx, a)
 	if err != nil {
 		return contract.NotificationPublicationRequest{}, err
@@ -379,6 +435,11 @@ func (s moduleDelivery) GetPolicy(ctx context.Context, a notificationsdk.UserAut
 	return convert[contract.NotificationDeliveryPolicy](value)
 }
 func (s moduleDelivery) SavePolicy(ctx context.Context, a notificationsdk.UserAuthority, v contract.NotificationDeliveryPolicy) (contract.NotificationDeliveryPolicy, error) {
+	release, err := s.b.beginMigrationSensitiveWrite(ctx)
+	if err != nil {
+		return contract.NotificationDeliveryPolicy{}, err
+	}
+	defer release()
 	p, err := s.b.authenticate(ctx, a)
 	if err != nil {
 		return contract.NotificationDeliveryPolicy{}, err
@@ -405,6 +466,11 @@ func (s moduleDelivery) ListRecipientPreferences(ctx context.Context, a notifica
 	return convertSlice[contract.NotificationRecipientPreference](values)
 }
 func (s moduleDelivery) SaveRecipientPreference(ctx context.Context, a notificationsdk.UserAuthority, v contract.NotificationRecipientPreference) (contract.NotificationRecipientPreference, error) {
+	release, err := s.b.beginMigrationSensitiveWrite(ctx)
+	if err != nil {
+		return contract.NotificationRecipientPreference{}, err
+	}
+	defer release()
 	p, err := s.b.authenticate(ctx, a)
 	if err != nil {
 		return contract.NotificationRecipientPreference{}, err
