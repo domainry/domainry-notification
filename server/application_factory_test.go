@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"testing"
 
 	identitysdk "github.com/domainry/domainry-identity-sdk"
@@ -45,8 +46,11 @@ func TestSQLApplicationFactoryOpensSharedSaaSDomainApplication(t *testing.T) {
 		t.Fatal(err)
 	}
 	factory, err := NewSQLApplicationFactory(SQLApplicationFactoryOptions{
-		Persistence:     persistence,
-		Catalog:         modulehost.Catalog{DefaultLocale: "en", Surfaces: []string{"business_workspace"}, TemplateCapabilities: []contract.NotificationTemplateCapability{{Channel: "in_app"}}},
+		Persistence: persistence,
+		Catalog: modulehost.Catalog{
+			DefaultLocale: "en", Surfaces: []string{"business_workspace"}, TemplateCapabilities: []contract.NotificationTemplateCapability{{Channel: "in_app"}},
+			EventTypes: []contract.NotificationEventType{{Key: "report.completed", Source: "report", Category: "report", DefaultSeverity: "info", Surfaces: []string{"business_workspace"}, MandatoryInApp: true, TemplateKey: "report.completed", DefaultLocale: "en", Locales: map[string]contract.NotificationInboxEventTypeContent{"en": {Title: "Report ready", Body: "The report is ready."}}, Version: 1, Status: "published"}},
+		},
 		WorkerID:        "notification-test",
 		DeliveryGateway: applicationGatewayStub{},
 	})
@@ -67,6 +71,24 @@ func TestSQLApplicationFactoryOpensSharedSaaSDomainApplication(t *testing.T) {
 	intent := contract.NotificationIntent{ID: "event", WorkspaceID: "another-workspace", SourceEventID: "source", EventType: "report.completed", Surface: "business_workspace", RecipientUserIDs: []string{"user"}, OccurredAt: "2026-08-28T00:00:00.000000000Z", SubjectType: "report", SubjectID: "report", SubjectVersion: "one"}
 	if _, _, err := binding.Publisher().PublishIntent(t.Context(), intent); err == nil {
 		t.Fatal("cross-workspace publication was accepted")
+	}
+	intent.WorkspaceID = application.WorkspaceID
+	first, created, err := binding.Publisher().PublishIntent(t.Context(), intent)
+	if err != nil || !created {
+		t.Fatalf("first ingest created=%v event=%+v err=%v", created, first, err)
+	}
+	second, created, err := binding.Publisher().PublishIntent(t.Context(), intent)
+	if err != nil || created || second.ID != first.ID {
+		t.Fatalf("duplicate ingest created=%v event=%+v err=%v", created, second, err)
+	}
+	intent.SubjectVersion = "two"
+	if _, _, err := binding.Publisher().PublishIntent(t.Context(), intent); err == nil {
+		t.Fatal("conflicting retry was accepted")
+	} else {
+		var sdkError *notificationsdk.Error
+		if !errors.As(err, &sdkError) || sdkError.StatusCode != 409 || sdkError.Code != "notification.request_identity_conflict" {
+			t.Fatalf("conflicting retry error=%v", err)
+		}
 	}
 	if err := binding.Close(t.Context()); err != nil {
 		t.Fatal(err)

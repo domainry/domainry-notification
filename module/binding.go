@@ -2,6 +2,7 @@ package module
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -107,6 +108,9 @@ func (s modulePublisher) PublishIntent(ctx context.Context, value contract.Notif
 	}
 	stored, created, err := s.b.publisher.PublishIntent(ctx, source)
 	if err != nil {
+		if errors.Is(err, sqlstore.ErrIdempotencyConflict) {
+			return contract.NotificationEvent{}, false, &notificationsdk.Error{StatusCode: 409, Code: "notification.request_identity_conflict"}
+		}
 		return contract.NotificationEvent{}, false, err
 	}
 	result, err := convert[contract.NotificationEvent](stored)

@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/domainry/domainry-notification"
+	"github.com/domainry/domainry-notification/delivery"
 	"github.com/domainry/domainry-notification/inbox"
 )
 
@@ -41,9 +42,46 @@ func (s *Store) Enqueue(ctx context.Context, event inbox.Event) (inbox.Event, bo
 		return inbox.Event{}, false, fmt.Errorf("enqueue notification event: %w", err)
 	}
 	if found {
+		if !sameIngest(existing, event) {
+			return inbox.Event{}, false, ErrIdempotencyConflict
+		}
 		return existing, false, nil
 	}
 	return inbox.Event{}, false, fmt.Errorf("enqueue notification event: %w", err)
+}
+
+func sameIngest(left, right inbox.Event) bool {
+	left.Status, right.Status = "", ""
+	left.AttemptCount, right.AttemptCount = 0, 0
+	left.NextAttemptAt, right.NextAttemptAt = "", ""
+	left.LastErrorCode, right.LastErrorCode = "", ""
+	left.LeaseOwner, right.LeaseOwner = "", ""
+	left.LeaseExpiresAt, right.LeaseExpiresAt = "", ""
+	left.FencingToken, right.FencingToken = 0, 0
+	left.CreatedAt, right.CreatedAt = "", ""
+	left.UpdatedAt, right.UpdatedAt = "", ""
+	for index := range left.ChannelPlans {
+		clearPlanLifecycle(&left.ChannelPlans[index])
+	}
+	for index := range right.ChannelPlans {
+		clearPlanLifecycle(&right.ChannelPlans[index])
+	}
+	leftJSON, leftErr := json.Marshal(left)
+	rightJSON, rightErr := json.Marshal(right)
+	return leftErr == nil && rightErr == nil && string(leftJSON) == string(rightJSON)
+}
+
+func clearPlanLifecycle(plan *delivery.Plan) {
+	plan.Status = ""
+	plan.AttemptCount = 0
+	plan.NextAttemptAt = ""
+	plan.LastErrorCode = ""
+	plan.OutboxMessageID = ""
+	plan.LeaseOwner = ""
+	plan.LeaseExpiresAt = ""
+	plan.FencingToken = 0
+	plan.CreatedAt = ""
+	plan.UpdatedAt = ""
 }
 
 func (s *Store) ListDue(ctx context.Context, now string, limit int) ([]inbox.Event, error) {
