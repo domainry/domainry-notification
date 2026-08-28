@@ -28,11 +28,15 @@ func TestConfigurationSelectsPostgresAndLoadsCatalog(t *testing.T) {
 	t.Setenv("NOTIFICATION_DELIVERY_GATEWAY_SERVICE_CREDENTIAL", "credential")
 	t.Setenv("NOTIFICATION_WORKER_ID", "worker")
 	t.Setenv("NOTIFICATION_CATALOG_FILE", catalogFile)
+	t.Setenv("NOTIFICATION_TELEMETRY_EXPORTER", "otlp-http")
+	t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "https://telemetry.example/v1/traces")
+	t.Setenv("OTEL_EXPORTER_OTLP_HEADERS", "authorization=secret,x-tenant=tenant")
+	t.Setenv("OTEL_TRACES_SAMPLER_ARG", "0.25")
 	config, err := configurationFromEnvironment()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if config.storeDriver != sqlstore.Postgres || config.sqlDriver != "pgx" || config.catalog.DefaultLocale != "en" {
+	if config.storeDriver != sqlstore.Postgres || config.sqlDriver != "pgx" || config.catalog.DefaultLocale != "en" || config.telemetry.Exporter != "otlp-http" || config.telemetry.Endpoint != "https://telemetry.example/v1/traces" || config.telemetry.Headers["x-tenant"] != "tenant" || config.telemetry.SampleRatio != 0.25 {
 		t.Fatalf("config=%+v", config)
 	}
 }

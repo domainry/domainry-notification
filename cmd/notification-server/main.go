@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -37,6 +38,11 @@ func run() error {
 	if err != nil {
 		return err
 	}
+	shutdownTelemetry, err := server.InitializeTelemetry(ctx, config.telemetry)
+	if err != nil {
+		return err
+	}
+	defer shutdownTelemetry(context.Background())
 	database, err := sql.Open(config.sqlDriver, config.databaseDSN)
 	if err != nil {
 		return fmt.Errorf("open Notification SaaS database: %w", err)
@@ -59,7 +65,8 @@ func run() error {
 		_ = persistence.Close()
 		return err
 	}
-	runtime, err := server.Open(ctx, server.Options{Identity: server.IdentityOptionsFromEnvironment(), Applications: applications, Workers: server.WorkerOptions{PollInterval: config.workerPollInterval, BatchSize: config.workerBatchSize}})
+	metrics := server.NewOperationalMetrics()
+	runtime, err := server.Open(ctx, server.Options{Identity: server.IdentityOptionsFromEnvironment(), Applications: applications, Workers: server.WorkerOptions{PollInterval: config.workerPollInterval, BatchSize: config.workerBatchSize}, Metrics: metrics})
 	if err != nil {
 		_ = applications.Close(ctx)
 		return err
@@ -74,8 +81,9 @@ func run() error {
 		}
 		response.WriteHeader(http.StatusNoContent)
 	})
+	mux.Handle("GET /metrics", metrics.Handler())
 	mux.Handle("/", runtime.Handler())
-	httpServer := &http.Server{Addr: config.httpAddress, Handler: mux, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 30 * time.Second, WriteTimeout: 30 * time.Second, IdleTimeout: 60 * time.Second}
+	httpServer := &http.Server{Addr: config.httpAddress, Handler: server.ObserveHTTP(mux, metrics), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 30 * time.Second, WriteTimeout: 30 * time.Second, IdleTimeout: 60 * time.Second}
 	serveErrors := make(chan error, 1)
 	go func() { serveErrors <- httpServer.ListenAndServe() }()
 	select {
@@ -103,6 +111,7 @@ type configuration struct {
 	workerPollInterval                                  time.Duration
 	workerBatchSize                                     int
 	catalog                                             modulehost.Catalog
+	telemetry                                           server.TelemetryConfig
 }
 
 func configurationFromEnvironment() (configuration, error) {
@@ -111,6 +120,14 @@ func configurationFromEnvironment() (configuration, error) {
 		databaseMaxOpen: 20, databaseMaxIdle: 10, databaseConnLifetime: 30 * time.Minute,
 		deliveryGatewayURL: strings.TrimSpace(os.Getenv("NOTIFICATION_DELIVERY_GATEWAY_URL")), deliveryGatewayCredential: strings.TrimSpace(os.Getenv("NOTIFICATION_DELIVERY_GATEWAY_SERVICE_CREDENTIAL")), deliveryGatewayTimeout: 10 * time.Second, deliveryGatewayAttempts: 3,
 		workerID: strings.TrimSpace(os.Getenv("NOTIFICATION_WORKER_ID")), workerPollInterval: time.Second, workerBatchSize: 100,
+		telemetry: server.TelemetryConfig{ServiceName: "domainry-notification", ServiceVersion: strings.TrimSpace(os.Getenv("NOTIFICATION_SERVICE_VERSION")), Exporter: env("NOTIFICATION_TELEMETRY_EXPORTER", "none"), Endpoint: strings.TrimSpace(os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT")), Headers: telemetryHeaders(os.Getenv("OTEL_EXPORTER_OTLP_HEADERS")), Insecure: strings.EqualFold(strings.TrimSpace(os.Getenv("OTEL_EXPORTER_OTLP_INSECURE")), "true"), SampleRatio: 1, ExportTimeout: 10 * time.Second},
+	}
+	if raw := strings.TrimSpace(os.Getenv("OTEL_TRACES_SAMPLER_ARG")); raw != "" {
+		ratio, parseErr := strconv.ParseFloat(raw, 64)
+		if parseErr != nil || ratio <= 0 || ratio > 1 {
+			return configuration{}, fmt.Errorf("OTEL_TRACES_SAMPLER_ARG must be greater than 0 and at most 1")
+		}
+		value.telemetry.SampleRatio = ratio
 	}
 	switch strings.ToLower(strings.TrimSpace(os.Getenv("NOTIFICATION_DATABASE_DRIVER"))) {
 	case "sqlite":
@@ -140,6 +157,17 @@ func configurationFromEnvironment() (configuration, error) {
 		return configuration{}, fmt.Errorf("Notification catalog default locale is required")
 	}
 	return value, nil
+}
+
+func telemetryHeaders(raw string) map[string]string {
+	result := map[string]string{}
+	for _, entry := range strings.Split(raw, ",") {
+		key, value, found := strings.Cut(entry, "=")
+		if key = strings.TrimSpace(key); found && key != "" {
+			result[key] = strings.TrimSpace(value)
+		}
+	}
+	return result
 }
 
 func env(key, fallback string) string {

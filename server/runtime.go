@@ -12,6 +12,9 @@ import (
 
 	identitysdk "github.com/domainry/domainry-identity-sdk"
 	notificationsdk "github.com/domainry/domainry-notification-sdk"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
 )
 
 // ApplicationFactory opens one Notification application against
@@ -29,6 +32,7 @@ type Options struct {
 	Identity     IdentityOptions
 	Applications ApplicationFactory
 	Workers      WorkerOptions
+	Metrics      *OperationalMetrics
 }
 
 type WorkerOptions struct {
@@ -49,6 +53,7 @@ type Runtime struct {
 	workers       sync.WaitGroup
 	ready         atomic.Bool
 	workerOptions WorkerOptions
+	metrics       *OperationalMetrics
 }
 
 func Open(ctx context.Context, options Options) (*Runtime, error) {
@@ -72,7 +77,7 @@ func Open(ctx context.Context, options Options) (*Runtime, error) {
 		workerOptions.BatchSize = 100
 	}
 	workerContext, cancel := context.WithCancel(ctx)
-	runtime := &Runtime{identity: identity, factory: options.Applications, bindings: map[string]notificationsdk.Binding{}, cancel: cancel, workerOptions: workerOptions}
+	runtime := &Runtime{identity: identity, factory: options.Applications, bindings: map[string]notificationsdk.Binding{}, cancel: cancel, workerOptions: workerOptions, metrics: options.Metrics}
 	handler, err := NewHandler(authenticator, runtime)
 	if err != nil {
 		_ = identity.Close(ctx)
@@ -201,8 +206,22 @@ func (r *Runtime) processDue(ctx context.Context) {
 		if !local || workers == nil {
 			continue
 		}
-		for _, run := range []func(context.Context, int) (int, error){workers.ProcessDuePublications, workers.ProcessDueInboxEvents, workers.ProcessDueChannelPlans} {
-			if _, err := run(ctx, r.workerOptions.BatchSize); err != nil && ctx.Err() == nil && r.workerOptions.OnError != nil {
+		for _, work := range []struct {
+			kind string
+			run  func(context.Context, int) (int, error)
+		}{{"publication", workers.ProcessDuePublications}, {"inbox", workers.ProcessDueInboxEvents}, {"delivery", workers.ProcessDueChannelPlans}} {
+			started := time.Now()
+			workerContext, span := otel.Tracer("domainry.notification.worker").Start(ctx, "notification.worker."+work.kind)
+			processed, err := work.run(workerContext, r.workerOptions.BatchSize)
+			result := "success"
+			if err != nil {
+				result = "error"
+				span.SetStatus(codes.Error, "worker failed")
+			}
+			span.SetAttributes(attribute.String("notification.worker.kind", work.kind), attribute.Int("notification.worker.processed", processed), attribute.String("notification.worker.result", result))
+			span.End()
+			r.metrics.ObserveWorker(work.kind, result, processed, time.Since(started))
+			if err != nil && ctx.Err() == nil && r.workerOptions.OnError != nil {
 				r.workerOptions.OnError(err)
 			}
 		}
