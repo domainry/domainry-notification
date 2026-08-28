@@ -4,7 +4,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/domainry/domainry-notification"
+	notification "github.com/domainry/domainry-notification/internal/domain/notification/model"
 )
 
 func TestModuleOwnedIdentityValues(t *testing.T) {

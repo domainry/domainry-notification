@@ -15,9 +15,9 @@ The module owns:
 - durable-work processors and transport-neutral application services; the host
   retains worker scheduling, lifecycle, and wakeup transport.
 
-The durable table contract and tenancy classification are exposed by
-`sqlstore.SchemaOwnership()` because table ownership is a persistence concern,
-not part of the root domain API.
+The public `module` package exposes only the in-process Factory and the schema
+contract required by a host. Domain, application, SQL, Identity, HTTP, and
+composition implementations are internal.
 
 ## Host boundary
 
@@ -36,13 +36,13 @@ make check
 
 ## Database schema
 
-`sqlstore.SchemaMigrations` returns ordered SQL statements for SQLite,
+`module.SchemaMigrations` returns ordered SQL statements for SQLite,
 PostgreSQL, or MySQL. Apply them through the host's migration runner. Fresh
 databases start at version 1; databases that already contain Plane's
 notification tables must verify schema compatibility before recording the
 version-1 baseline. Do not execute the base migration over an existing schema.
 
-`sqlstore.SchemaOwnership` identifies system-scoped and workspace-scoped tables
+`module.SchemaOwnership` identifies system-scoped and workspace-scoped tables
 so RLS and workspace retirement apply only where appropriate.
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for package naming, dependency direction,

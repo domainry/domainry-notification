@@ -21,8 +21,9 @@ import (
 	"github.com/domainry/domainry-foundation/telemetry"
 	"github.com/domainry/domainry-notification-sdk/deliverygateway"
 	"github.com/domainry/domainry-notification-sdk/modulehost"
-	"github.com/domainry/domainry-notification/server"
-	"github.com/domainry/domainry-notification/sqlstore"
+	server "github.com/domainry/domainry-notification/internal/assembly/saas"
+	"github.com/domainry/domainry-notification/internal/infrastructure/persistence/sqlstore"
+	notificationhttp "github.com/domainry/domainry-notification/internal/transport/http"
 )
 
 func main() {
@@ -66,7 +67,7 @@ func run() error {
 		_ = persistence.Close()
 		return err
 	}
-	metrics := server.NewOperationalMetrics()
+	metrics := notificationhttp.NewOperationalMetrics()
 	runtime, err := server.Open(ctx, server.Options{Identity: server.IdentityOptionsFromEnvironment(), Applications: applications, Workers: server.WorkerOptions{PollInterval: config.workerPollInterval, BatchSize: config.workerBatchSize}, Metrics: metrics})
 	if err != nil {
 		_ = applications.Close(ctx)
@@ -84,7 +85,7 @@ func run() error {
 	})
 	mux.Handle("GET /metrics", metrics.Handler())
 	mux.Handle("/", runtime.Handler())
-	httpServer := &http.Server{Addr: config.httpAddress, Handler: server.ObserveHTTP(mux, metrics), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 30 * time.Second, WriteTimeout: 30 * time.Second, IdleTimeout: 60 * time.Second}
+	httpServer := &http.Server{Addr: config.httpAddress, Handler: notificationhttp.ObserveHTTP(mux, metrics), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 30 * time.Second, WriteTimeout: 30 * time.Second, IdleTimeout: 60 * time.Second}
 	serveErrors := make(chan error, 1)
 	go func() { serveErrors <- httpServer.ListenAndServe() }()
 	select {

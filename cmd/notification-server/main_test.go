@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/domainry/domainry-notification/sqlstore"
+	"github.com/domainry/domainry-notification/internal/infrastructure/persistence/sqlstore"
 )
 
 func TestConfigurationRequiresStandaloneSaaSDependencies(t *testing.T) {

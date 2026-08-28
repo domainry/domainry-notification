@@ -4,39 +4,44 @@ This module owns notification semantics. It does not own the host application's
 identity model, authorization model, worker runtime, HTTP transport, Integration
 Outbox, secrets, or concrete Connector providers.
 
-## Package vocabulary
+## DDD package structure
 
-- `notification` — stable domain values exchanged across capabilities and hosts;
-- `template` — validation, publication, rendering, and catalog behavior;
-- `inbox` — intent compilation, materialization, mailbox, alert, delegation,
-  saved-view, and action behavior;
-- `delivery` — policy evaluation and channel-plan orchestration up to dispatch;
-- `sqlstore` — SQL persistence for state owned by this module;
+Notification follows the same dependency-oriented DDD structure as Identity
+and Runtime. Deployment topology is not a domain boundary.
 
-Do not introduce packages named `model`, `service`, `contract`, `repository`,
-`common`, `util`, or `runtime`. Those names hide cohesion and recreate Plane's
-horizontal package structure. Capability packages may use those words for
-unexported filenames without making them import paths.
+- `internal/domain/<capability>/model` owns domain state and value types;
+- `internal/domain/<capability>/repository` owns persistence ports;
+- `internal/domain/<capability>/service` owns domain behavior;
+- `internal/application` owns use-case contracts shared by adapters;
+- `internal/infrastructure` implements Identity and persistence ports;
+- `internal/transport/http` implements the standalone HTTP adapter;
+- `internal/assembly/module` and `internal/assembly/saas` are the two composition
+  roots over the same domain implementation;
+- public `module` is the narrow in-process Factory and schema contract facade;
+- `cmd/notification-server` is the standalone SaaS process entry point.
+
+No domain or application package may import infrastructure, transport, assembly,
+or the public Module facade. SDK wire contracts are converted at adapter
+boundaries and do not define domain ownership.
 
 ## Dependency direction
 
 ```text
-host (Plane or a future service)
-  -> inbox / template / delivery
-       -> notification
-  -> sqlstore
-       -> notification
+cmd / public module
+  -> assembly
+       -> transport / infrastructure / application
+            -> domain service -> domain repository + domain model
 
-host adapters implement interfaces declared by the capability that consumes them
-sqlstore never imports host code
-notification never imports subpackages
+domain never imports application, infrastructure, transport, or assembly
+application never imports infrastructure, transport, or assembly
+infrastructure and transport never import assembly
 ```
 
 The host owns authentication and translates its principal into explicit
 workspace, actor, recipient, and surface values before invoking this module.
 
-`inbox.MailboxManager` accepts that already-authorized query scope and owns
-mailbox behavior. `inbox.ActionResolver` only resolves catalog-backed semantic
+The internal inbox mailbox service accepts that already-authorized query scope and owns
+mailbox behavior. The internal action resolver only resolves catalog-backed semantic
 actions into host route input. Team and delegated views are read-only; the host
 must authorize the referenced business resource after resolution and before
 navigation or execution.
@@ -57,12 +62,13 @@ and the default delivery policy are system-scoped configuration. Events,
 failures, channel plans, recipient preferences, delivery reservations, inbox
 items, alert groups, delegations, and saved views are workspace-scoped data.
 
-`sqlstore.SchemaOwnership` is the authoritative machine-readable inventory.
+`module.SchemaOwnership` is the public authoritative machine-readable inventory;
+its implementation delegates to the internal SQL adapter.
 Only workspace-scoped tables participate in host RLS and workspace-retirement
 workflows. A table must not be moved between scopes as a naming-only refactor;
 that is a data migration and authorization change.
 
-`sqlstore.SchemaMigrations` is the authoritative ordered DDL history. The host
+`module.SchemaMigrations` is the authoritative ordered DDL history. The host
 executes it with its existing migration ledger; notification does not create a
 parallel migration-history table. A fresh deployment applies version 1. An
 existing Plane database must first prove that all owned tables, columns,
