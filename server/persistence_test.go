@@ -36,7 +36,7 @@ func TestSQLPersistencePreparesAndReopensExactApplication(t *testing.T) {
 		t.Fatalf("application namespace changed: %s != %s", first.Table("notification_events"), second.Table("notification_events"))
 	}
 	var migrations int
-	if err := db.QueryRow(`SELECT COUNT(*) FROM notification_saas_schema_migrations WHERE namespace = ?`, applicationKey(application)).Scan(&migrations); err != nil || migrations != 1 {
+	if err := db.QueryRow(`SELECT COUNT(*) FROM notification_saas_schema_migrations WHERE namespace = ?`, applicationKey(application)).Scan(&migrations); err != nil || migrations != 2 {
 		t.Fatalf("migration count=%d err=%v", migrations, err)
 	}
 	var columns int
@@ -70,7 +70,7 @@ func TestSQLPersistenceSeparatesApplicationsWithSameWorkspace(t *testing.T) {
 		t.Fatal("two applications share one physical Notification table")
 	}
 	var migrations int
-	if err := db.QueryRow(`SELECT COUNT(*) FROM notification_saas_schema_migrations`).Scan(&migrations); err != nil || migrations != 2 {
+	if err := db.QueryRow(`SELECT COUNT(*) FROM notification_saas_schema_migrations`).Scan(&migrations); err != nil || migrations != 4 {
 		t.Fatalf("migration count=%d err=%v", migrations, err)
 	}
 }

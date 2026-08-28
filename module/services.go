@@ -16,6 +16,21 @@ import (
 type moduleTemplates struct{ b *binding }
 type moduleSystemTemplates struct{ b *binding }
 type moduleSystemSubjects struct{ b *binding }
+type moduleSystemRetention struct{ b *binding }
+
+func (s moduleSystemRetention) Preview(ctx context.Context, request contract.NotificationRetentionPreviewRequest) (contract.NotificationRetentionPreview, error) {
+	if s.b == nil || s.b.store == nil {
+		return contract.NotificationRetentionPreview{}, &notificationsdk.Error{StatusCode: 503, Code: "notification.system_retention_unavailable"}
+	}
+	return s.b.store.PreviewRetention(ctx, request)
+}
+
+func (s moduleSystemRetention) ProcessBatch(ctx context.Context, request contract.NotificationRetentionBatchRequest) (contract.NotificationRetentionBatchResult, error) {
+	if s.b == nil || s.b.store == nil {
+		return contract.NotificationRetentionBatchResult{}, &notificationsdk.Error{StatusCode: 503, Code: "notification.system_retention_unavailable"}
+	}
+	return s.b.store.ProcessRetentionBatch(ctx, request)
+}
 
 func (s moduleSystemSubjects) PreviewSubject(ctx context.Context, workspaceID, subjectID string) (json.RawMessage, error) {
 	if s.b == nil || s.b.store == nil {
@@ -351,3 +366,4 @@ var _ notificationsdk.Administration = moduleAdministration{}
 var _ notificationsdk.LocalWorkers = moduleWorkers{}
 var _ notificationsdk.SystemTemplates = moduleSystemTemplates{}
 var _ notificationsdk.SystemSubjects = moduleSystemSubjects{}
+var _ notificationsdk.SystemRetention = moduleSystemRetention{}

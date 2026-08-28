@@ -122,3 +122,17 @@ var baseSchemaIndexes = []schemaIndex{
 	{name: "idx_notification_alert_group_state", table: "notification_alert_groups", columns: []string{"workspace_id", "state", "updated_at"}},
 	{name: "uniq_notification_inbox_saved_view", table: "notification_inbox_saved_views", unique: true, columns: []string{"workspace_id", "recipient_user_id", "surface", "view_key"}},
 }
+
+var retentionArchiveTables = []schemaTable{
+	{name: "notification_retention_archive", columns: []schemaColumn{
+		primary("id", identifierColumn), required("workspace_id", identifierColumn), required("policy_key", indexedTextColumn),
+		required("policy_version", indexedTextColumn), required("job_id", indexedTextColumn), required("source_table", indexedTextColumn),
+		required("resource_id", indexedTextColumn), required("payload_hash", indexedTextColumn), required("payload_json", documentColumn),
+		required("archived_at", indexedTextColumn),
+	}},
+}
+
+var retentionArchiveIndexes = []schemaIndex{
+	{name: "uniq_notification_retention_archive", table: "notification_retention_archive", unique: true, columns: []string{"workspace_id", "policy_key", "source_table", "resource_id"}},
+	{name: "idx_notification_retention_archive_job", table: "notification_retention_archive", columns: []string{"workspace_id", "job_id", "archived_at"}},
+}

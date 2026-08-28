@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	notificationsdk "github.com/domainry/domainry-notification-sdk"
 	"github.com/domainry/domainry-notification-sdk/contract"
@@ -62,6 +63,7 @@ type httpBindingStub struct {
 	publisher *httpPublisherStub
 	system    *httpSystemTemplatesStub
 	subjects  *httpSystemSubjectsStub
+	retention *httpSystemRetentionStub
 	closed    int
 }
 
@@ -73,6 +75,7 @@ func (*httpBindingStub) Delivery() notificationsdk.Delivery                 { re
 func (*httpBindingStub) Administration() notificationsdk.Administration     { return nil }
 func (b *httpBindingStub) SystemTemplates() notificationsdk.SystemTemplates { return b.system }
 func (b *httpBindingStub) SystemSubjects() notificationsdk.SystemSubjects   { return b.subjects }
+func (b *httpBindingStub) SystemRetention() notificationsdk.SystemRetention { return b.retention }
 func (*httpBindingStub) LocalWorkers() (notificationsdk.LocalWorkers, bool) { return nil, false }
 func (b *httpBindingStub) Close(context.Context) error                      { b.closed++; return nil }
 
@@ -88,6 +91,42 @@ type httpSystemTemplatesStub struct {
 }
 
 type httpSystemSubjectsStub struct{ calls int }
+type httpSystemRetentionStub struct{ calls int }
+
+func (s *httpSystemRetentionStub) Preview(context.Context, contract.NotificationRetentionPreviewRequest) (contract.NotificationRetentionPreview, error) {
+	s.calls++
+	return contract.NotificationRetentionPreview{Rows: 1}, nil
+}
+func (s *httpSystemRetentionStub) ProcessBatch(context.Context, contract.NotificationRetentionBatchRequest) (contract.NotificationRetentionBatchResult, error) {
+	s.calls++
+	return contract.NotificationRetentionBatchResult{Scanned: 1, Done: true}, nil
+}
+
+func TestHandlerSystemRetentionEnforcesExactApplicationWorkspace(t *testing.T) {
+	retention := &httpSystemRetentionStub{}
+	handler, _ := NewHandler(&serviceAuthenticationStub{}, &bindingResolverStub{binding: &httpBindingStub{publisher: &httpPublisherStub{}, retention: retention}})
+	policy := contract.NotificationRetentionPolicy{Key: contract.NotificationRetentionHistoryPolicy, Version: "1", DefaultRetentionSeconds: 3600}
+	for _, workspace := range []string{"workspace-a", "workspace-b"} {
+		body, _ := json.Marshal(contract.NotificationRetentionPreviewRequest{WorkspaceID: workspace, Policy: policy, Now: time.Date(2026, 8, 29, 1, 0, 0, 0, time.UTC)})
+		request := httptest.NewRequest(http.MethodPost, "/v1/system/retention:preview", bytes.NewReader(body))
+		request.Header.Set("X-Domainry-Service-Credential", "service-token")
+		request.Header.Set("X-Domainry-Tenant-ID", "tenant-a")
+		request.Header.Set("X-Domainry-Workspace-ID", "workspace-a")
+		request.Header.Set("X-Domainry-Application-Key", "runtime-a")
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, request)
+		want := http.StatusOK
+		if workspace != "workspace-a" {
+			want = http.StatusForbidden
+		}
+		if response.Code != want {
+			t.Fatalf("workspace=%s status=%d body=%s", workspace, response.Code, response.Body.String())
+		}
+	}
+	if retention.calls != 1 {
+		t.Fatalf("retention calls=%d", retention.calls)
+	}
+}
 
 func (s *httpSystemSubjectsStub) PreviewSubject(context.Context, string, string) (json.RawMessage, error) {
 	s.calls++

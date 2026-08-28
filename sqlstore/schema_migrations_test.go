@@ -9,8 +9,8 @@ import (
 )
 
 func TestBaseSchemaMatchesOwnershipAndRunsOnSQLite(t *testing.T) {
-	if len(baseSchemaTables) != len(tableOwnership) {
-		t.Fatalf("schema tables=%d ownership=%d", len(baseSchemaTables), len(tableOwnership))
+	if len(baseSchemaTables)+len(retentionArchiveTables) != len(tableOwnership) {
+		t.Fatalf("schema tables=%d ownership=%d", len(baseSchemaTables)+len(retentionArchiveTables), len(tableOwnership))
 	}
 	owned := map[string]bool{}
 	for _, table := range tableOwnership {
@@ -23,13 +23,19 @@ func TestBaseSchemaMatchesOwnershipAndRunsOnSQLite(t *testing.T) {
 		}
 		defined[table.name] = true
 	}
+	for _, table := range retentionArchiveTables {
+		if defined[table.name] || !owned[table.name] {
+			t.Fatalf("invalid schema table %q", table.name)
+		}
+		defined[table.name] = true
+	}
 	for _, index := range baseSchemaIndexes {
 		if !defined[index.table] {
 			t.Fatalf("index %q references unowned table %q", index.name, index.table)
 		}
 	}
 	migrations, err := SchemaMigrations(SQLite, "", "")
-	if err != nil || len(migrations) != 1 || migrations[0].Version != 1 || migrations[0].Name != "create_notification_schema" {
+	if err != nil || len(migrations) != 2 || migrations[0].Version != 1 || migrations[0].Name != "create_notification_schema" || migrations[1].Version != 2 {
 		t.Fatalf("migrations=%+v err=%v", migrations, err)
 	}
 	db, err := sql.Open("sqlite", "file:"+t.Name()+"?mode=memory&cache=shared")
@@ -37,9 +43,11 @@ func TestBaseSchemaMatchesOwnershipAndRunsOnSQLite(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer db.Close()
-	for _, statement := range migrations[0].Statements {
-		if _, err := db.Exec(statement); err != nil {
-			t.Fatalf("execute %q: %v", statement, err)
+	for _, migration := range migrations {
+		for _, statement := range migration.Statements {
+			if _, err := db.Exec(statement); err != nil {
+				t.Fatalf("execute %q: %v", statement, err)
+			}
 		}
 	}
 	for table := range owned {
@@ -118,7 +126,7 @@ func TestApplicationSchemaMigrationsPersistExactOwnership(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(migrations) != 1 || migrations[0].Name != "create_notification_saas_application_schema" {
+	if len(migrations) != 2 || migrations[0].Name != "create_notification_saas_application_schema" || migrations[1].Version != 2 {
 		t.Fatalf("migrations=%+v", migrations)
 	}
 	db, err := sql.Open("sqlite", "file:"+t.Name()+"?mode=memory&cache=shared")
@@ -126,9 +134,11 @@ func TestApplicationSchemaMigrationsPersistExactOwnership(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer db.Close()
-	for _, statement := range migrations[0].Statements {
-		if _, err := db.Exec(statement); err != nil {
-			t.Fatalf("execute %q: %v", statement, err)
+	for _, migration := range migrations {
+		for _, statement := range migration.Statements {
+			if _, err := db.Exec(statement); err != nil {
+				t.Fatalf("execute %q: %v", statement, err)
+			}
 		}
 	}
 	if _, err := db.Exec(`INSERT INTO app_one_notification_events (id, workspace_id, source, source_event_id, status, payload_json, occurred_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, "event-one", scope.WorkspaceID, "test", "source-event-one", "pending", `{}`, "1", "1", "1"); err != nil {

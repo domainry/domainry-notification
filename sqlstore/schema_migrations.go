@@ -56,7 +56,14 @@ func SchemaMigrations(driver Driver, schema, tablePrefix string) ([]SchemaMigrat
 	if err != nil {
 		return nil, err
 	}
-	return []SchemaMigration{{Version: 1, Name: "create_notification_schema", Statements: statements}}, nil
+	retentionStatements, err := renderSchema(driver, tablePrefix, dialect, nil, retentionArchiveTables, retentionArchiveIndexes)
+	if err != nil {
+		return nil, err
+	}
+	return []SchemaMigration{
+		{Version: 1, Name: "create_notification_schema", Statements: statements},
+		{Version: 2, Name: "create_notification_retention_archive", Statements: retentionStatements},
+	}, nil
 }
 
 // ModuleSchemaBaseline renders the exact legacy physical shape for one
@@ -108,7 +115,14 @@ func ApplicationSchemaMigrations(driver Driver, schema, tablePrefix string, scop
 	if err != nil {
 		return nil, err
 	}
-	return []SchemaMigration{{Version: 1, Name: "create_notification_saas_application_schema", Statements: statements}}, nil
+	retentionStatements, err := renderSchema(driver, tablePrefix, dialect, &scope, retentionArchiveTables, retentionArchiveIndexes)
+	if err != nil {
+		return nil, err
+	}
+	return []SchemaMigration{
+		{Version: 1, Name: "create_notification_saas_application_schema", Statements: statements},
+		{Version: 2, Name: "create_notification_retention_archive", Statements: retentionStatements},
+	}, nil
 }
 
 type schemaColumn struct {
@@ -144,8 +158,12 @@ type schemaIndex struct {
 }
 
 func renderBaseSchema(driver Driver, indexPrefix string, dialect Dialect, application *ApplicationScope) ([]string, error) {
-	statements := make([]string, 0, len(baseSchemaTables)+len(baseSchemaIndexes))
-	for _, table := range baseSchemaTables {
+	return renderSchema(driver, indexPrefix, dialect, application, baseSchemaTables, baseSchemaIndexes)
+}
+
+func renderSchema(driver Driver, indexPrefix string, dialect Dialect, application *ApplicationScope, tables []schemaTable, indexes []schemaIndex) ([]string, error) {
+	statements := make([]string, 0, len(tables)+len(indexes))
+	for _, table := range tables {
 		columns := append([]schemaColumn(nil), table.columns...)
 		if application != nil {
 			columns = append([]schemaColumn{
@@ -173,7 +191,7 @@ func renderBaseSchema(driver Driver, indexPrefix string, dialect Dialect, applic
 		}
 		statements = append(statements, "CREATE TABLE "+dialect.Table(table.name)+" ("+strings.Join(parts, ", ")+")")
 	}
-	for _, index := range baseSchemaIndexes {
+	for _, index := range indexes {
 		columns := make([]string, len(index.columns))
 		for position, column := range index.columns {
 			columns[position] = dialect.Identifier(column)

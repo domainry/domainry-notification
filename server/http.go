@@ -150,6 +150,49 @@ func (h *Handler) ServeHTTP(response http.ResponseWriter, request *http.Request)
 			return
 		}
 		writeJSON(response, http.StatusOK, output)
+	case "/v1/system/retention:preview", "/v1/system/retention:process-batch":
+		if request.Method != http.MethodPost {
+			writeHTTPError(response, &notificationsdk.Error{StatusCode: http.StatusMethodNotAllowed, Code: "notification.method_not_allowed"})
+			return
+		}
+		retentionBinding, ok := binding.(notificationsdk.SystemRetentionBinding)
+		if !ok || retentionBinding.SystemRetention() == nil {
+			writeHTTPError(response, &notificationsdk.Error{StatusCode: http.StatusNotImplemented, Code: "notification.system_retention_unsupported"})
+			return
+		}
+		if request.URL.Path == "/v1/system/retention:preview" {
+			var input contract.NotificationRetentionPreviewRequest
+			if err := decodeJSON(request.Body, &input); err != nil {
+				writeHTTPError(response, err)
+				return
+			}
+			if strings.TrimSpace(input.WorkspaceID) != application.WorkspaceID {
+				writeHTTPError(response, &notificationsdk.Error{StatusCode: http.StatusForbidden, Code: "notification.application_scope_mismatch"})
+				return
+			}
+			output, err := retentionBinding.SystemRetention().Preview(request.Context(), input)
+			if err != nil {
+				writeHTTPError(response, err)
+				return
+			}
+			writeJSON(response, http.StatusOK, output)
+			return
+		}
+		var input contract.NotificationRetentionBatchRequest
+		if err := decodeJSON(request.Body, &input); err != nil {
+			writeHTTPError(response, err)
+			return
+		}
+		if strings.TrimSpace(input.WorkspaceID) != application.WorkspaceID {
+			writeHTTPError(response, &notificationsdk.Error{StatusCode: http.StatusForbidden, Code: "notification.application_scope_mismatch"})
+			return
+		}
+		output, err := retentionBinding.SystemRetention().ProcessBatch(request.Context(), input)
+		if err != nil {
+			writeHTTPError(response, err)
+			return
+		}
+		writeJSON(response, http.StatusOK, output)
 	default:
 		if !serveBindingRoute(response, request, binding) {
 			writeHTTPError(response, &notificationsdk.Error{StatusCode: http.StatusNotFound, Code: "notification.route_not_found"})
