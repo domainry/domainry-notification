@@ -2,8 +2,11 @@ package module
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
+	"github.com/domainry/domainry-notification"
+	notificationsdk "github.com/domainry/domainry-notification-sdk"
 	"github.com/domainry/domainry-notification-sdk/contract"
 	"github.com/domainry/domainry-notification-sdk/modulehost"
 	"github.com/domainry/domainry-notification/inbox"
@@ -28,9 +31,33 @@ func (m moduleTransactions) CompileIntent(value contract.NotificationIntent) (co
 	}
 	event, err := m.binding.compiler.Compile(intent)
 	if err != nil {
-		return contract.NotificationEvent{}, err
+		return contract.NotificationEvent{}, moduleError(err)
 	}
 	return convert[contract.NotificationEvent](event)
+}
+
+func moduleError(err error) error {
+	if err == nil {
+		return nil
+	}
+	var domainError *notification.Error
+	if !errors.As(err, &domainError) {
+		return err
+	}
+	status := 500
+	switch domainError.Kind {
+	case notification.ErrorInvalid:
+		status = 400
+	case notification.ErrorNotFound:
+		status = 404
+	case notification.ErrorConflict:
+		status = 409
+	case notification.ErrorForbidden:
+		status = 403
+	case notification.ErrorUnavailable:
+		status = 503
+	}
+	return &notificationsdk.Error{StatusCode: status, Code: domainError.Code, Cause: err, Retryable: domainError.Kind == notification.ErrorUnavailable}
 }
 
 func (m moduleTransactions) InsertEvent(ctx context.Context, executor modulehost.Executor, value contract.NotificationEvent) error {
