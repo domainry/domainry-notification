@@ -1,0 +1,276 @@
+package module
+
+import (
+	"context"
+
+	"github.com/domainry/domainry-notification"
+	notificationsdk "github.com/domainry/domainry-notification-sdk"
+	"github.com/domainry/domainry-notification-sdk/contract"
+	"github.com/domainry/domainry-notification/delivery"
+	"github.com/domainry/domainry-notification/inbox"
+	"github.com/domainry/domainry-notification/template"
+)
+
+type moduleTemplates struct{ b *binding }
+
+func (s moduleTemplates) actor(ctx context.Context, a notificationsdk.UserAuthority) (string, error) {
+	p, err := s.b.authenticate(ctx, a)
+	return p.UserID, err
+}
+func (s moduleTemplates) List(ctx context.Context, a notificationsdk.UserAuthority) ([]contract.NotificationTemplateRecord, error) {
+	if _, err := s.actor(ctx, a); err != nil {
+		return nil, err
+	}
+	values, err := s.b.templates.List(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return convertSlice[contract.NotificationTemplateRecord](values)
+}
+func (s moduleTemplates) Get(ctx context.Context, a notificationsdk.UserAuthority, key string) (contract.NotificationTemplateRecord, bool, error) {
+	if _, err := s.actor(ctx, a); err != nil {
+		return contract.NotificationTemplateRecord{}, false, err
+	}
+	value, found, err := s.b.templates.Get(ctx, key)
+	if err != nil || !found {
+		return contract.NotificationTemplateRecord{}, found, err
+	}
+	result, err := convert[contract.NotificationTemplateRecord](value)
+	return result, found, err
+}
+func (s moduleTemplates) ListVersions(ctx context.Context, a notificationsdk.UserAuthority, key string) ([]contract.NotificationTemplateVersion, error) {
+	if _, err := s.actor(ctx, a); err != nil {
+		return nil, err
+	}
+	values, err := s.b.templates.ListVersions(ctx, key)
+	if err != nil {
+		return nil, err
+	}
+	return convertSlice[contract.NotificationTemplateVersion](values)
+}
+func (s moduleTemplates) SaveDraft(ctx context.Context, a notificationsdk.UserAuthority, key string, v contract.NotificationTemplate, expected string) (contract.NotificationTemplateRecord, error) {
+	actor, err := s.actor(ctx, a)
+	if err != nil {
+		return contract.NotificationTemplateRecord{}, err
+	}
+	source, err := convert[template.Template](v)
+	if err != nil {
+		return contract.NotificationTemplateRecord{}, err
+	}
+	value, err := s.b.templates.SaveDraft(ctx, key, source, expected, actor)
+	if err != nil {
+		return contract.NotificationTemplateRecord{}, err
+	}
+	return convert[contract.NotificationTemplateRecord](value)
+}
+func (s moduleTemplates) RestoreVersionDraft(ctx context.Context, a notificationsdk.UserAuthority, key string, version int, expected string) (contract.NotificationTemplateRecord, error) {
+	actor, err := s.actor(ctx, a)
+	if err != nil {
+		return contract.NotificationTemplateRecord{}, err
+	}
+	value, err := s.b.templates.RestoreVersionDraft(ctx, key, version, expected, actor)
+	if err != nil {
+		return contract.NotificationTemplateRecord{}, err
+	}
+	return convert[contract.NotificationTemplateRecord](value)
+}
+func (s moduleTemplates) Disable(ctx context.Context, a notificationsdk.UserAuthority, key, expected string) (contract.NotificationTemplateRecord, error) {
+	actor, err := s.actor(ctx, a)
+	if err != nil {
+		return contract.NotificationTemplateRecord{}, err
+	}
+	value, err := s.b.templates.Disable(ctx, key, expected, actor)
+	if err != nil {
+		return contract.NotificationTemplateRecord{}, err
+	}
+	return convert[contract.NotificationTemplateRecord](value)
+}
+func (s moduleTemplates) Preview(ctx context.Context, a notificationsdk.UserAuthority, key, locale string, recipients []string, variables map[string]any) (contract.RenderedNotification, error) {
+	p, err := s.b.authenticate(ctx, a)
+	if err != nil {
+		return contract.RenderedNotification{}, err
+	}
+	ids := make([]notification.UserID, len(recipients))
+	for i := range recipients {
+		ids[i] = notification.UserID(recipients[i])
+	}
+	value, err := s.b.templates.Preview(ctx, notification.WorkspaceID(p.WorkspaceID), key, locale, ids, variables)
+	if err != nil {
+		return contract.RenderedNotification{}, err
+	}
+	return convert[contract.RenderedNotification](value)
+}
+func (s moduleTemplates) PreviewTemplate(ctx context.Context, a notificationsdk.UserAuthority, v contract.NotificationTemplate, locale string, recipients []string, variables map[string]any) (contract.RenderedNotification, error) {
+	p, err := s.b.authenticate(ctx, a)
+	if err != nil {
+		return contract.RenderedNotification{}, err
+	}
+	source, err := convert[template.Template](v)
+	if err != nil {
+		return contract.RenderedNotification{}, err
+	}
+	ids := make([]notification.UserID, len(recipients))
+	for i := range recipients {
+		ids[i] = notification.UserID(recipients[i])
+	}
+	value, err := s.b.templates.PreviewTemplate(ctx, notification.WorkspaceID(p.WorkspaceID), source, locale, ids, variables)
+	if err != nil {
+		return contract.RenderedNotification{}, err
+	}
+	return convert[contract.RenderedNotification](value)
+}
+func (s moduleTemplates) ListPublicationRequests(ctx context.Context, a notificationsdk.UserAuthority, key string) ([]contract.NotificationPublicationRequest, error) {
+	if _, err := s.actor(ctx, a); err != nil {
+		return nil, err
+	}
+	values, err := s.b.publications.List(ctx, key)
+	if err != nil {
+		return nil, err
+	}
+	return convertSlice[contract.NotificationPublicationRequest](values)
+}
+func (s moduleTemplates) RequestPublication(ctx context.Context, a notificationsdk.UserAuthority, key, scheduled, expected string) (contract.NotificationPublicationRequest, error) {
+	actor, err := s.actor(ctx, a)
+	if err != nil {
+		return contract.NotificationPublicationRequest{}, err
+	}
+	value, err := s.b.publications.Request(ctx, key, scheduled, expected, actor)
+	if err != nil {
+		return contract.NotificationPublicationRequest{}, err
+	}
+	return convert[contract.NotificationPublicationRequest](value)
+}
+func (s moduleTemplates) ApprovePublication(ctx context.Context, a notificationsdk.UserAuthority, id string) (contract.NotificationPublicationRequest, error) {
+	actor, err := s.actor(ctx, a)
+	if err != nil {
+		return contract.NotificationPublicationRequest{}, err
+	}
+	value, err := s.b.publications.Approve(ctx, id, actor)
+	if err != nil {
+		return contract.NotificationPublicationRequest{}, err
+	}
+	return convert[contract.NotificationPublicationRequest](value)
+}
+func (s moduleTemplates) RejectPublication(ctx context.Context, a notificationsdk.UserAuthority, id, reason string) (contract.NotificationPublicationRequest, error) {
+	actor, err := s.actor(ctx, a)
+	if err != nil {
+		return contract.NotificationPublicationRequest{}, err
+	}
+	value, err := s.b.publications.Reject(ctx, id, actor, reason)
+	if err != nil {
+		return contract.NotificationPublicationRequest{}, err
+	}
+	return convert[contract.NotificationPublicationRequest](value)
+}
+func (s moduleTemplates) CancelPublication(ctx context.Context, a notificationsdk.UserAuthority, id string) (contract.NotificationPublicationRequest, error) {
+	actor, err := s.actor(ctx, a)
+	if err != nil {
+		return contract.NotificationPublicationRequest{}, err
+	}
+	value, err := s.b.publications.Cancel(ctx, id, actor)
+	if err != nil {
+		return contract.NotificationPublicationRequest{}, err
+	}
+	return convert[contract.NotificationPublicationRequest](value)
+}
+
+type moduleDelivery struct{ b *binding }
+
+func (s moduleDelivery) GetPolicy(ctx context.Context, a notificationsdk.UserAuthority) (contract.NotificationDeliveryPolicy, error) {
+	if _, err := s.b.authenticate(ctx, a); err != nil {
+		return contract.NotificationDeliveryPolicy{}, err
+	}
+	value, err := s.b.policy.GetPolicy(ctx)
+	if err != nil {
+		return contract.NotificationDeliveryPolicy{}, err
+	}
+	return convert[contract.NotificationDeliveryPolicy](value)
+}
+func (s moduleDelivery) SavePolicy(ctx context.Context, a notificationsdk.UserAuthority, v contract.NotificationDeliveryPolicy) (contract.NotificationDeliveryPolicy, error) {
+	p, err := s.b.authenticate(ctx, a)
+	if err != nil {
+		return contract.NotificationDeliveryPolicy{}, err
+	}
+	source, err := convert[delivery.Policy](v)
+	if err != nil {
+		return contract.NotificationDeliveryPolicy{}, err
+	}
+	value, err := s.b.policy.SavePolicy(ctx, source, p.UserID)
+	if err != nil {
+		return contract.NotificationDeliveryPolicy{}, err
+	}
+	return convert[contract.NotificationDeliveryPolicy](value)
+}
+func (s moduleDelivery) ListRecipientPreferences(ctx context.Context, a notificationsdk.UserAuthority) ([]contract.NotificationRecipientPreference, error) {
+	p, err := s.b.authenticate(ctx, a)
+	if err != nil {
+		return nil, err
+	}
+	values, err := s.b.policy.ListRecipientPreferences(ctx, notification.WorkspaceID(p.WorkspaceID))
+	if err != nil {
+		return nil, err
+	}
+	return convertSlice[contract.NotificationRecipientPreference](values)
+}
+func (s moduleDelivery) Metrics(ctx context.Context, a notificationsdk.UserAuthority, since string) (contract.NotificationDeliveryMetrics, error) {
+	p, err := s.b.authenticate(ctx, a)
+	if err != nil {
+		return contract.NotificationDeliveryMetrics{}, err
+	}
+	if s.b.metrics == nil {
+		return contract.NotificationDeliveryMetrics{}, &notificationsdk.Error{StatusCode: 503, Code: "notification.delivery_metrics_unavailable"}
+	}
+	return s.b.metrics.Metrics(ctx, p.WorkspaceID, since)
+}
+
+type moduleAdministration struct{ b *binding }
+
+func (s moduleAdministration) GovernanceCatalog(ctx context.Context, a notificationsdk.UserAuthority) (contract.NotificationGovernanceCatalog, error) {
+	if _, err := s.b.authenticate(ctx, a); err != nil {
+		return contract.NotificationGovernanceCatalog{}, err
+	}
+	return convert[contract.NotificationGovernanceCatalog](inbox.GovernanceCatalog{EventTypes: s.b.eventTypes, Rules: s.b.rules})
+}
+func (s moduleAdministration) InboxGovernanceMetrics(ctx context.Context, a notificationsdk.UserAuthority, since string) (contract.NotificationInboxGovernanceMetrics, error) {
+	p, err := s.b.authenticate(ctx, a)
+	if err != nil {
+		return contract.NotificationInboxGovernanceMetrics{}, err
+	}
+	value, err := s.b.mailbox.GovernanceMetrics(ctx, notification.WorkspaceID(p.WorkspaceID), since)
+	if err != nil {
+		return contract.NotificationInboxGovernanceMetrics{}, err
+	}
+	return convert[contract.NotificationInboxGovernanceMetrics](value)
+}
+
+type moduleWorkers struct{ b *binding }
+
+func (s moduleWorkers) ProcessDuePublications(ctx context.Context, limit int) (int, error) {
+	return s.b.publications.ProcessDue(ctx, limit)
+}
+func (s moduleWorkers) ProcessPublication(ctx context.Context, locator notificationsdk.WorkLocator) (bool, error) {
+	return s.b.publications.Process(ctx, locator.TaskID)
+}
+func (s moduleWorkers) RefreshPublished(ctx context.Context) error {
+	return s.b.templates.RefreshPublished(ctx)
+}
+func (s moduleWorkers) ProcessDueInboxEvents(ctx context.Context, limit int) (int, error) {
+	return s.b.inboxProcessor.ProcessDue(ctx, limit)
+}
+func (s moduleWorkers) ProcessInboxEvent(ctx context.Context, locator notificationsdk.WorkLocator) (bool, error) {
+	return s.b.inboxProcessor.Process(ctx, notification.WorkspaceID(locator.WorkspaceID), locator.TaskID)
+}
+func (s moduleWorkers) ProcessDueChannelPlans(ctx context.Context, limit int) (int, error) {
+	return s.b.deliveryProcessor.ProcessDue(ctx, limit)
+}
+func (s moduleWorkers) ProcessChannelPlan(ctx context.Context, locator notificationsdk.WorkLocator) (bool, error) {
+	return s.b.deliveryProcessor.Process(ctx, notification.WorkspaceID(locator.WorkspaceID), locator.TaskID)
+}
+func (b *binding) RefreshPublished(ctx context.Context) error {
+	return b.templates.RefreshPublished(ctx)
+}
+
+var _ notificationsdk.Templates = moduleTemplates{}
+var _ notificationsdk.Delivery = moduleDelivery{}
+var _ notificationsdk.Administration = moduleAdministration{}
+var _ notificationsdk.LocalWorkers = moduleWorkers{}

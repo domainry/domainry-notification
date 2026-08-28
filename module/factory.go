@@ -1,0 +1,155 @@
+// Package module provides the in-process Notification SDK Factory. It borrows
+// the Runtime Host database and Identity Binding and owns neither lifecycle.
+package module
+
+import (
+	"context"
+	"fmt"
+	"strings"
+	"time"
+
+	identityprincipal "github.com/domainry/domainry-identity-sdk/authorization/principal"
+	"github.com/domainry/domainry-notification"
+	notificationsdk "github.com/domainry/domainry-notification-sdk"
+	"github.com/domainry/domainry-notification-sdk/contract"
+	"github.com/domainry/domainry-notification-sdk/modulehost"
+	"github.com/domainry/domainry-notification/delivery"
+	"github.com/domainry/domainry-notification/inbox"
+	"github.com/domainry/domainry-notification/sqlstore"
+	"github.com/domainry/domainry-notification/template"
+)
+
+type Options struct{}
+
+func OptionsFromEnvironment() Options { return Options{} }
+
+type Factory struct{ options Options }
+
+func NewFactory(options Options) *Factory { return &Factory{options: options} }
+func (f *Factory) Open(context.Context, notificationsdk.ApplicationRef) (notificationsdk.Binding, error) {
+	return nil, &notificationsdk.Error{StatusCode: 500, Code: "notification.module_host_required"}
+}
+
+func (f *Factory) OpenModule(ctx context.Context, application notificationsdk.ApplicationRef, host modulehost.Host) (notificationsdk.Binding, error) {
+	if err := application.Validate(); err != nil {
+		return nil, err
+	}
+	if host == nil || host.Database() == nil || host.Dialect() == nil || host.WorkspaceScope() == nil || host.QueueScopes() == nil || host.Identity() == nil || host.Clock() == nil || strings.TrimSpace(host.WorkerID()) == "" || host.WorkNotifier() == nil || host.RecipientDirectory() == nil || host.DeliveryGateway() == nil {
+		return nil, fmt.Errorf("notification Module host is incomplete")
+	}
+	store, err := sqlstore.New(sqlstore.Config{Database: host.Database(), Dialect: host.Dialect(), WorkspaceScope: workspaceScopeAdapter{host.WorkspaceScope()}, QueueScopes: queueScopeAdapter{host.QueueScopes()}, Clock: host.Clock()})
+	if err != nil {
+		return nil, err
+	}
+	catalog := host.Catalog()
+	capabilities := make([]template.Provider, len(catalog.TemplateCapabilities))
+	for index, value := range catalog.TemplateCapabilities {
+		provider := template.Provider{Capability: template.Capability{Channel: value.Channel, Provider: value.Provider, SupportsHTML: value.SupportsHTML, SupportsMarkdown: value.SupportsMarkdown, SupportsFacts: value.SupportsFacts, SupportsURLActions: value.SupportsURLActions, SupportsProviderTemplate: value.SupportsProviderTemplate, MaxFacts: value.MaxFacts, MaxActions: value.MaxActions}}
+		if value.SupportsProviderTemplate {
+			validator := host.ProviderTemplateValidator()
+			if validator == nil {
+				return nil, fmt.Errorf("provider template validator is required for %s/%s", value.Channel, value.Provider)
+			}
+			channel, providerKey := value.Channel, value.Provider
+			provider.ValidateProviderTemplate = func(input *template.ProviderTemplate) error {
+				wire, convertErr := convert[contract.NotificationProviderTemplate](input)
+				if convertErr != nil {
+					return convertErr
+				}
+				return validator.ValidateProviderTemplate(channel, providerKey, wire)
+			}
+		}
+		capabilities[index] = provider
+	}
+	templateCapabilities, err := template.NewCapabilities(capabilities)
+	if err != nil {
+		return nil, err
+	}
+	templateValidator, err := template.NewValidator(templateCapabilities)
+	if err != nil {
+		return nil, err
+	}
+	installedTemplates, err := convertSlice[template.Template](catalog.Templates)
+	if err != nil {
+		return nil, err
+	}
+	templateEngine, err := template.NewEngine(catalog.DefaultLocale, installedTemplates, templateValidator, recipientDirectoryAdapter{host.RecipientDirectory()})
+	if err != nil {
+		return nil, err
+	}
+	templateManager, err := template.NewManager(template.ManagerDependencies{Store: store, Engine: templateEngine, Validator: templateValidator})
+	if err != nil {
+		return nil, err
+	}
+	notifier := workNotifierAdapter{host.WorkNotifier()}
+	publicationProcessor, err := template.NewPublicationProcessor(template.PublicationProcessorDependencies{Store: store, Manager: templateManager, Clock: host.Clock(), WorkerID: host.WorkerID(), WorkNotifier: notifier})
+	if err != nil {
+		return nil, err
+	}
+	surfaces := make([]string, len(catalog.Surfaces))
+	copy(surfaces, catalog.Surfaces)
+	configurationSurfaces := make([]notification.Surface, len(surfaces))
+	for i := range surfaces {
+		configurationSurfaces[i] = notification.Surface(surfaces[i])
+	}
+	inboxConfiguration, err := inbox.NewConfiguration(configurationSurfaces, catalog.ExternalChannels)
+	if err != nil {
+		return nil, err
+	}
+	inboxValidator, err := inbox.NewValidator(inboxConfiguration)
+	if err != nil {
+		return nil, err
+	}
+	eventTypes, err := convertSlice[inbox.EventType](catalog.EventTypes)
+	if err != nil {
+		return nil, err
+	}
+	rules, err := convertSlice[inbox.Rule](catalog.Rules)
+	if err != nil {
+		return nil, err
+	}
+	eventCatalog, err := inbox.NewCatalog(inboxValidator, eventTypes, rules)
+	if err != nil {
+		return nil, err
+	}
+	compiler, err := inbox.NewCompiler(eventCatalog, inboxValidator, host.Clock())
+	if err != nil {
+		return nil, err
+	}
+	publisher, err := inbox.NewPublisher(compiler, store, notifier)
+	if err != nil {
+		return nil, err
+	}
+	inboxProcessor, err := inbox.NewProcessor(inbox.ProcessorDependencies{Events: store, Clock: host.Clock(), WorkerID: host.WorkerID(), Audiences: audienceAdapter{host.AudienceResolver()}, RecipientLocale: recipientLocaleAdapter{host.RecipientDirectory()}, WorkNotifier: notifier})
+	if err != nil {
+		return nil, err
+	}
+	policyManager, err := delivery.NewPolicyManager(delivery.PolicyManagerDependencies{Store: store, Clock: host.Clock()})
+	if err != nil {
+		return nil, err
+	}
+	deliveryProcessor, err := delivery.NewProcessor(delivery.ProcessorDependencies{Plans: store, Renderer: templateEngine, Dispatcher: deliveryGatewayAdapter{host.DeliveryGateway()}, Policy: policyManager, Clock: host.Clock(), WorkerID: host.WorkerID()})
+	if err != nil {
+		return nil, err
+	}
+	mailbox, err := inbox.NewMailboxManager(inbox.MailboxManagerDependencies{Validator: inboxValidator, Mailboxes: store, SavedViews: store, Delegations: store, Metrics: store, Clock: host.Clock()})
+	if err != nil {
+		return nil, err
+	}
+	actions, err := inbox.NewActionResolver(mailbox, eventCatalog, host.Clock())
+	if err != nil {
+		return nil, err
+	}
+	principalResolver, err := identityprincipal.NewResolver(host.Identity(), identityprincipal.Options{Clock: host.Clock(), MaxCacheTTL: time.Minute})
+	if err != nil {
+		return nil, err
+	}
+	b := &binding{application: application, identity: host.Identity(), principals: principalResolver, templates: templateManager, publications: publicationProcessor, engine: templateEngine, publisher: publisher, inboxProcessor: inboxProcessor, policy: policyManager, deliveryProcessor: deliveryProcessor, mailbox: mailbox, actions: actions, catalog: eventCatalog, eventTypes: eventTypes, rules: rules, metrics: host.DeliveryMetrics()}
+	if err := b.RefreshPublished(ctx); err != nil {
+		return nil, err
+	}
+	return b, nil
+}
+
+var _ notificationsdk.Factory = (*Factory)(nil)
+var _ modulehost.Factory = (*Factory)(nil)
