@@ -146,7 +146,7 @@ func (f *Factory) openHosted(ctx context.Context, application notificationsdk.Ap
 			}
 			principal := resolution.Principal
 			principal.AccessBundle = &resolution.AccessBundle
-			return principal.Known && principal.WorkspaceID == application.WorkspaceID && principal.UserID == strings.TrimSpace(actor) && principal.HasPermission("notification_publication.approve"), nil
+			return principal.Known && principal.WorkspaceID == application.WorkspaceID && principal.UserID == strings.TrimSpace(actor) && (principal.HasPermission("notification_publication.approve") || principal.HasPermission("workspace.admin")), nil
 		},
 	})
 	if err != nil {

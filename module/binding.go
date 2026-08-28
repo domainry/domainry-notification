@@ -88,15 +88,20 @@ func (b *binding) authorize(ctx context.Context, authority notificationsdk.UserA
 	if err != nil {
 		return principal, err
 	}
-	if !principal.HasPermission(strings.TrimSpace(resource) + "." + strings.TrimSpace(action)) {
+	adminOverride := principal.HasPermission("workspace.admin")
+	if !principal.HasPermission(strings.TrimSpace(resource)+"."+strings.TrimSpace(action)) && !adminOverride {
 		return identitysdk.Principal{}, &notificationsdk.Error{StatusCode: 403, Code: "notification.permission_denied"}
 	}
 	if !reauthorize {
 		return principal, nil
 	}
+	decisionResource, decisionAction := resource, action
+	if adminOverride {
+		decisionResource, decisionAction = "workspace", "admin"
+	}
 	decision, err := b.identity.Authorization().Reauthorize(ctx, identitysdk.DecisionRequest{
 		Identity: identitysdk.RequestIdentity{Principal: principal, AccessToken: authority.AccessToken},
-		Access:   identitysdk.AccessRequest{ObjectKey: resource, Action: action},
+		Access:   identitysdk.AccessRequest{ObjectKey: decisionResource, Action: decisionAction},
 		Facts: identitysdk.ResourceFacts{
 			"tenant_id": b.application.TenantID, "workspace_id": b.application.WorkspaceID, "application_key": b.application.ApplicationKey,
 		},
