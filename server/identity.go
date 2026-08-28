@@ -93,11 +93,12 @@ func nilIdentityCapability(value any) bool {
 }
 
 func notificationIdentityCatalog(application identitysdk.ApplicationRef) identitysdk.AuthorizationCatalog {
+	applicationFacts := []string{"tenant_id", "workspace_id", "application_key"}
 	resources := []identitysdk.ResourceDefinition{
-		{Key: "notification_event", SupportedFacts: []string{"tenant_id", "workspace_id", "application_key"}}, {Key: "notification_inbox"}, {Key: "notification_template"},
-		{Key: "notification_publication"}, {Key: "notification_delivery_policy"},
-		{Key: "notification_preference"}, {Key: "notification_team_mailbox"},
-		{Key: "notification_delegation"}, {Key: "notification_governance"},
+		{Key: "notification_event", SupportedFacts: applicationFacts}, {Key: "notification_inbox", SupportedFacts: applicationFacts}, {Key: "notification_template", SupportedFacts: applicationFacts},
+		{Key: "notification_publication", SupportedFacts: applicationFacts}, {Key: "notification_delivery_policy", SupportedFacts: applicationFacts},
+		{Key: "notification_preference", SupportedFacts: applicationFacts}, {Key: "notification_team_mailbox", SupportedFacts: applicationFacts},
+		{Key: "notification_delegation", SupportedFacts: applicationFacts}, {Key: "notification_governance", SupportedFacts: applicationFacts},
 	}
 	actions := []identitysdk.ActionDefinition{}
 	for _, entry := range []struct {
