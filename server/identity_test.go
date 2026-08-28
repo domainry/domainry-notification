@@ -133,8 +133,9 @@ func sameApplication(left, right identitysdk.ApplicationRef) bool {
 func TestOpenIdentityFailsClosedForModuleAndCatalogFailure(t *testing.T) {
 	application := identitysdk.ApplicationRef{TenantID: "tenant-a", WorkspaceID: "workspace-a", ApplicationKey: "domainry-notification"}
 	for name, binding := range map[string]*identityBindingStub{
-		"module":  {descriptor: identitysdk.Descriptor{ProtocolVersion: identitysdk.CurrentProtocolVersion, BundleVersion: identitysdk.CurrentPolicyBundleVersion, CatalogVersion: identitysdk.CatalogVersionV1, Mode: identitysdk.DeploymentModeModule, Issuer: "issuer", Audience: string(application.ApplicationKey)}, catalog: &catalogStub{}},
-		"catalog": {descriptor: identitysdk.Descriptor{ProtocolVersion: identitysdk.CurrentProtocolVersion, BundleVersion: identitysdk.CurrentPolicyBundleVersion, CatalogVersion: identitysdk.CatalogVersionV1, Mode: identitysdk.DeploymentModeSaaS, Issuer: "issuer", Audience: string(application.ApplicationKey)}, catalog: &catalogStub{err: errors.New("identity unavailable")}},
+		"module":       {descriptor: identitysdk.Descriptor{ProtocolVersion: identitysdk.CurrentProtocolVersion, BundleVersion: identitysdk.CurrentPolicyBundleVersion, CatalogVersion: identitysdk.CatalogVersionV1, Mode: identitysdk.DeploymentModeModule, Issuer: "issuer", Audience: string(application.ApplicationKey)}, catalog: &catalogStub{}},
+		"capabilities": {descriptor: identitysdk.Descriptor{ProtocolVersion: identitysdk.CurrentProtocolVersion, BundleVersion: identitysdk.CurrentPolicyBundleVersion, CatalogVersion: identitysdk.CatalogVersionV1, Mode: identitysdk.DeploymentModeSaaS, Issuer: "issuer", Audience: string(application.ApplicationKey)}},
+		"catalog":      {descriptor: identitysdk.Descriptor{ProtocolVersion: identitysdk.CurrentProtocolVersion, BundleVersion: identitysdk.CurrentPolicyBundleVersion, CatalogVersion: identitysdk.CatalogVersionV1, Mode: identitysdk.DeploymentModeSaaS, Issuer: "issuer", Audience: string(application.ApplicationKey)}, catalog: &catalogStub{err: errors.New("identity unavailable")}},
 	} {
 		t.Run(name, func(t *testing.T) {
 			if _, err := OpenIdentity(t.Context(), IdentityOptions{Factory: &identityFactoryStub{binding: binding}, Application: application}); err == nil {

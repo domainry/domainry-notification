@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"reflect"
 	"strings"
 
 	identitysdk "github.com/domainry/domainry-identity-sdk"
@@ -62,7 +63,7 @@ func OpenIdentity(ctx context.Context, options IdentityOptions) (identitysdk.Bin
 		_ = binding.Close(ctx)
 		return nil, fmt.Errorf("Notification SaaS Identity issuer/audience scope is invalid")
 	}
-	if binding.Tokens() == nil || binding.Authorization() == nil || binding.Principals() == nil || binding.Directory() == nil || binding.Catalog() == nil {
+	if nilIdentityCapability(binding.Tokens()) || nilIdentityCapability(binding.Authorization()) || nilIdentityCapability(binding.Principals()) || nilIdentityCapability(binding.Directory()) || nilIdentityCapability(binding.Catalog()) {
 		_ = binding.Close(ctx)
 		return nil, fmt.Errorf("Notification SaaS Identity capabilities are incomplete")
 	}
@@ -76,6 +77,19 @@ func OpenIdentity(ctx context.Context, options IdentityOptions) (identitysdk.Bin
 		return nil, fmt.Errorf("publish Notification Identity catalog: %w", err)
 	}
 	return binding, nil
+}
+
+func nilIdentityCapability(value any) bool {
+	if value == nil {
+		return true
+	}
+	reflected := reflect.ValueOf(value)
+	switch reflected.Kind() {
+	case reflect.Chan, reflect.Func, reflect.Interface, reflect.Map, reflect.Pointer, reflect.Slice:
+		return reflected.IsNil()
+	default:
+		return false
+	}
 }
 
 func notificationIdentityCatalog(application identitysdk.ApplicationRef) identitysdk.AuthorizationCatalog {

@@ -63,6 +63,8 @@ func TestServiceAuthenticatorFailsClosedForScopeDenialAndIdentityOutage(t *testi
 	baseToken := identitysdk.VerifiedToken{Audience: "domainry-notification", SubjectID: "runtime-service", TenantID: "tenant-a", WorkspaceID: "workspace-a"}
 	tenantMismatch := baseToken
 	tenantMismatch.TenantID = "tenant-b"
+	workspaceMismatch := baseToken
+	workspaceMismatch.WorkspaceID = "workspace-b"
 	tests := []struct {
 		name          string
 		token         identitysdk.VerifiedToken
@@ -70,6 +72,7 @@ func TestServiceAuthenticatorFailsClosedForScopeDenialAndIdentityOutage(t *testi
 		code          string
 	}{
 		{"tenant mismatch", tenantMismatch, &configuredAuthorization{decision: identitysdk.AccessDecision{Allowed: true}}, "notification.application_scope_mismatch"},
+		{"workspace mismatch", workspaceMismatch, &configuredAuthorization{decision: identitysdk.AccessDecision{Allowed: true}}, "notification.application_scope_mismatch"},
 		{"denied", baseToken, &configuredAuthorization{decision: identitysdk.AccessDecision{Allowed: false}}, "notification.service_not_authorized"},
 		{"outage", baseToken, &configuredAuthorization{err: errors.New("identity unavailable")}, "notification.identity_reauthorization_failed"},
 	}
