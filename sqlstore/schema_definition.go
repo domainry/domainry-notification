@@ -156,3 +156,10 @@ func ownedSchemaTables() []schemaTable {
 	tables = append(tables, migrationControlTables...)
 	return tables
 }
+
+func portableSchemaTables() []schemaTable {
+	tables := make([]schemaTable, 0, len(baseSchemaTables)+len(retentionArchiveTables))
+	tables = append(tables, baseSchemaTables...)
+	tables = append(tables, retentionArchiveTables...)
+	return tables
+}

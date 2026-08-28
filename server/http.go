@@ -193,7 +193,7 @@ func (h *Handler) ServeHTTP(response http.ResponseWriter, request *http.Request)
 			return
 		}
 		writeJSON(response, http.StatusOK, output)
-	case "/v1/system/migration:export", "/v1/system/migration:import":
+	case "/v1/system/migration:status", "/v1/system/migration:freeze", "/v1/system/migration:export", "/v1/system/migration:import", "/v1/system/migration:activate", "/v1/system/migration:rollback":
 		if request.Method != http.MethodPost {
 			writeHTTPError(response, &notificationsdk.Error{StatusCode: http.StatusMethodNotAllowed, Code: "notification.method_not_allowed"})
 			return
@@ -205,6 +205,36 @@ func (h *Handler) ServeHTTP(response http.ResponseWriter, request *http.Request)
 		}
 		if request.URL.Path == "/v1/system/migration:export" {
 			output, err := migrationBinding.SystemMigration().Export(request.Context())
+			if err != nil {
+				writeHTTPError(response, err)
+				return
+			}
+			writeJSON(response, http.StatusOK, output)
+			return
+		}
+		if request.URL.Path == "/v1/system/migration:status" {
+			output, err := migrationBinding.SystemMigration().Status(request.Context())
+			if err != nil {
+				writeHTTPError(response, err)
+				return
+			}
+			writeJSON(response, http.StatusOK, output)
+			return
+		}
+		if request.URL.Path == "/v1/system/migration:freeze" || request.URL.Path == "/v1/system/migration:activate" || request.URL.Path == "/v1/system/migration:rollback" {
+			var command contract.NotificationMigrationCommand
+			if err := decodeJSON(request.Body, &command); err != nil {
+				writeHTTPError(response, err)
+				return
+			}
+			var output contract.NotificationMigrationStatus
+			if request.URL.Path == "/v1/system/migration:freeze" {
+				output, err = migrationBinding.SystemMigration().Freeze(request.Context(), command)
+			} else if request.URL.Path == "/v1/system/migration:activate" {
+				output, err = migrationBinding.SystemMigration().Activate(request.Context(), command)
+			} else {
+				output, err = migrationBinding.SystemMigration().Rollback(request.Context(), command)
+			}
 			if err != nil {
 				writeHTTPError(response, err)
 				return

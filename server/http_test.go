@@ -96,6 +96,19 @@ type httpSystemSubjectsStub struct{ calls int }
 type httpSystemRetentionStub struct{ calls int }
 type httpSystemMigrationStub struct{ imports int }
 
+func (*httpSystemMigrationStub) Status(context.Context) (contract.NotificationMigrationStatus, error) {
+	return contract.NotificationMigrationStatus{State: contract.NotificationMigrationActive}, nil
+}
+func (*httpSystemMigrationStub) Freeze(_ context.Context, command contract.NotificationMigrationCommand) (contract.NotificationMigrationStatus, error) {
+	return contract.NotificationMigrationStatus{MigrationID: command.MigrationID, State: contract.NotificationMigrationFrozen}, nil
+}
+func (*httpSystemMigrationStub) Activate(_ context.Context, command contract.NotificationMigrationCommand) (contract.NotificationMigrationStatus, error) {
+	return contract.NotificationMigrationStatus{MigrationID: command.MigrationID, State: contract.NotificationMigrationCutover}, nil
+}
+func (*httpSystemMigrationStub) Rollback(_ context.Context, command contract.NotificationMigrationCommand) (contract.NotificationMigrationStatus, error) {
+	return contract.NotificationMigrationStatus{MigrationID: command.MigrationID, State: contract.NotificationMigrationActive}, nil
+}
+
 func (s *httpSystemMigrationStub) Export(context.Context) (contract.NotificationPortableExport, error) {
 	return contract.NotificationPortableExport{}, nil
 }

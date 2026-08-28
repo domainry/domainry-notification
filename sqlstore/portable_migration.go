@@ -22,6 +22,7 @@ type PortableScope struct {
 
 type PortableBundle struct {
 	FormatVersion string          `json:"format_version"`
+	MigrationID   string          `json:"migration_id,omitempty"`
 	Source        PortableScope   `json:"source"`
 	Tables        []PortableTable `json:"tables"`
 	Fingerprint   string          `json:"fingerprint"`
@@ -54,6 +55,20 @@ func (s *Store) ExportPortable(ctx context.Context, scope PortableScope) (Portab
 	return ExportPortable(ctx, s.database, s.dialect, scope)
 }
 
+func (s *Store) ExportPortableMigration(ctx context.Context, scope PortableScope, migrationID string) (PortableBundle, PortableInventory, error) {
+	bundle, inventory, err := s.ExportPortable(ctx, scope)
+	if err != nil {
+		return bundle, inventory, err
+	}
+	bundle.MigrationID = strings.TrimSpace(migrationID)
+	if bundle.MigrationID == "" {
+		return PortableBundle{}, PortableInventory{}, fmt.Errorf("notification portable migration id is required")
+	}
+	bundle.Fingerprint, err = portableFingerprint(bundle)
+	inventory.Fingerprint = bundle.Fingerprint
+	return bundle, inventory, err
+}
+
 func (s *Store) ImportPortable(ctx context.Context, scope PortableScope, bundle PortableBundle) (PortableImportReceipt, error) {
 	if s == nil {
 		return PortableImportReceipt{}, fmt.Errorf("notification portable store is unavailable")
@@ -66,7 +81,7 @@ func ExportPortable(ctx context.Context, database Queryer, dialect Dialect, scop
 		return PortableBundle{}, PortableInventory{}, fmt.Errorf("notification portable export dependencies and scope are required")
 	}
 	ownership := ownershipByTable()
-	definitions := ownedSchemaTables()
+	definitions := portableSchemaTables()
 	bundle := PortableBundle{FormatVersion: PortableFormatV1, Source: scope, Tables: make([]PortableTable, 0, len(definitions))}
 	inventory := PortableInventory{Tables: map[string]int{}}
 	for _, definition := range definitions {
@@ -141,6 +156,11 @@ func ImportPortable(ctx context.Context, database Database, dialect Dialect, tar
 		return PortableImportReceipt{}, err
 	}
 	if inventory.Rows > 0 {
+		existing.MigrationID = bundle.MigrationID
+		existing.Fingerprint, err = portableFingerprint(existing)
+		if err != nil {
+			return PortableImportReceipt{}, err
+		}
 		if existing.Fingerprint != bundle.Fingerprint {
 			return PortableImportReceipt{}, fmt.Errorf("notification portable import target is not empty and does not match the bundle")
 		}
@@ -180,6 +200,11 @@ func ImportPortable(ctx context.Context, database Database, dialect Dialect, tar
 	if err != nil {
 		return PortableImportReceipt{}, err
 	}
+	imported.MigrationID = bundle.MigrationID
+	imported.Fingerprint, err = portableFingerprint(imported)
+	if err != nil {
+		return PortableImportReceipt{}, err
+	}
 	if imported.Fingerprint != bundle.Fingerprint || importedInventory.Rows != rowCount {
 		return PortableImportReceipt{}, fmt.Errorf("notification portable import reconciliation failed")
 	}
@@ -193,7 +218,7 @@ func ValidatePortable(bundle PortableBundle, target PortableScope) error {
 	if bundle.Source.TenantID != target.TenantID || bundle.Source.WorkspaceID != target.WorkspaceID || bundle.Source.ApplicationKey != target.ApplicationKey {
 		return fmt.Errorf("notification portable bundle target scope mismatch")
 	}
-	definitions := ownedSchemaTables()
+	definitions := portableSchemaTables()
 	if len(bundle.Tables) != len(definitions) {
 		return fmt.Errorf("notification portable bundle table inventory is incomplete")
 	}
@@ -220,7 +245,7 @@ func ValidatePortable(bundle PortableBundle, target PortableScope) error {
 			}
 		}
 	}
-	fingerprint, err := portableFingerprint(PortableBundle{FormatVersion: bundle.FormatVersion, Source: bundle.Source, Tables: bundle.Tables})
+	fingerprint, err := portableFingerprint(PortableBundle{FormatVersion: bundle.FormatVersion, MigrationID: bundle.MigrationID, Source: bundle.Source, Tables: bundle.Tables})
 	if err != nil || fingerprint != bundle.Fingerprint {
 		return fmt.Errorf("notification portable bundle fingerprint mismatch")
 	}
@@ -228,7 +253,7 @@ func ValidatePortable(bundle PortableBundle, target PortableScope) error {
 }
 
 func tableDefinition(name string) (schemaTable, bool) {
-	for _, table := range ownedSchemaTables() {
+	for _, table := range portableSchemaTables() {
 		if table.name == name {
 			return table, true
 		}

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 
 	identitysdk "github.com/domainry/domainry-identity-sdk"
 	identityprincipal "github.com/domainry/domainry-identity-sdk/authorization/principal"
@@ -38,7 +39,9 @@ type binding struct {
 	eventTypes           []inbox.EventType
 	rules                []inbox.Rule
 	metrics              modulehost.DeliveryMetrics
+	clock                modulehost.Clock
 	templateCapabilities []contract.NotificationTemplateCapability
+	migrationMu          sync.RWMutex
 }
 
 func (b *binding) Descriptor() notificationsdk.Descriptor {
@@ -99,7 +102,29 @@ func requireSurface(authority notificationsdk.UserAuthority) error {
 
 type modulePublisher struct{ b *binding }
 
+func (b *binding) beginMigrationSensitiveWrite(ctx context.Context) (func(), error) {
+	if b == nil || b.store == nil {
+		return nil, &notificationsdk.Error{StatusCode: 503, Code: "notification.binding_unavailable", Retryable: true}
+	}
+	b.migrationMu.RLock()
+	status, err := b.store.MigrationStatus(ctx, b.application.WorkspaceID)
+	if err != nil {
+		b.migrationMu.RUnlock()
+		return nil, err
+	}
+	if status.State == sqlstore.MigrationStateFrozen || status.State == sqlstore.MigrationStateImported {
+		b.migrationMu.RUnlock()
+		return nil, &notificationsdk.Error{StatusCode: 503, Code: "notification.migration_writes_frozen", Retryable: true}
+	}
+	return b.migrationMu.RUnlock, nil
+}
+
 func (s modulePublisher) PublishIntent(ctx context.Context, value contract.NotificationIntent) (contract.NotificationEvent, bool, error) {
+	release, err := s.b.beginMigrationSensitiveWrite(ctx)
+	if err != nil {
+		return contract.NotificationEvent{}, false, err
+	}
+	defer release()
 	if err := value.Validate(); err != nil {
 		return contract.NotificationEvent{}, false, err
 	}

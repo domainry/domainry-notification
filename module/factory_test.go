@@ -3,6 +3,7 @@ package module
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"testing"
 	"time"
 
@@ -182,16 +183,61 @@ func TestModuleSystemMigrationExportsAndIdempotentlyReconcilesExactApplication(t
 	if _, err := host.database.Exec(`INSERT INTO notification_retention_archive (id, workspace_id, policy_key, policy_version, job_id, source_table, resource_id, payload_hash, payload_json, archived_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, "archive", "workspace", "notification.history.v1", "1", "job", "notification_events", "event", "hash", `{}`, "now"); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := host.database.Exec(`INSERT INTO notification_events (id, workspace_id, source, source_event_id, status, payload_json, lease_owner, occurred_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, "leased-event", "workspace", "test", "source", "processing", `{}`, "worker", "now", "now", "now"); err != nil {
+		t.Fatal(err)
+	}
+	command := contract.NotificationMigrationCommand{MigrationID: "migration", At: time.Date(2026, 8, 29, 2, 0, 0, 0, time.UTC)}
+	if status, err := migration.SystemMigration().Freeze(t.Context(), command); err != nil || status.State != contract.NotificationMigrationFrozen {
+		t.Fatalf("freeze status=%+v err=%v", status, err)
+	}
+	if _, _, err := binding.Publisher().PublishIntent(t.Context(), contract.NotificationIntent{}); err == nil {
+		t.Fatal("frozen source accepted a publication")
+	} else {
+		var sdkError *notificationsdk.Error
+		if !errors.As(err, &sdkError) || sdkError.Code != "notification.migration_writes_frozen" || !sdkError.Retryable {
+			t.Fatalf("frozen publication error=%v", err)
+		}
+	}
+	workers, _ := binding.LocalWorkers()
+	if _, err := workers.ProcessDueInboxEvents(t.Context(), 1); err == nil {
+		t.Fatal("frozen source worker accepted work")
+	}
+	if _, err := migration.SystemMigration().Export(t.Context()); err == nil {
+		t.Fatal("source exported while an active lease remained")
+	}
+	if _, err := host.database.Exec(`UPDATE notification_events SET lease_owner = '' WHERE id = ?`, "leased-event"); err != nil {
+		t.Fatal(err)
+	}
 	exported, err := migration.SystemMigration().Export(t.Context())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if exported.Bundle.Source != (contract.NotificationPortableScope{TenantID: "tenant", WorkspaceID: "workspace", ApplicationKey: "runtime"}) || exported.Bundle.Fingerprint == "" || len(exported.Bundle.Tables) != 16 {
+	if exported.Bundle.Source != (contract.NotificationPortableScope{TenantID: "tenant", WorkspaceID: "workspace", ApplicationKey: "runtime"}) || exported.Bundle.Fingerprint == "" || len(exported.Bundle.Tables) != 15 {
 		t.Fatalf("export=%+v", exported)
 	}
-	receipt, err := migration.SystemMigration().Import(t.Context(), exported.Bundle)
-	if err != nil || !receipt.AlreadyPresent || receipt.Fingerprint != exported.Bundle.Fingerprint {
+	if status, err := migration.SystemMigration().Status(t.Context()); err != nil || status.BundleFingerprint != exported.Bundle.Fingerprint || status.ActiveLeases != 0 {
+		t.Fatalf("source status=%+v err=%v", status, err)
+	}
+	targetHost := newTestHost(t)
+	targetBinding, err := NewFactory(Options{}).OpenModule(t.Context(), application, targetHost)
+	if err != nil {
+		t.Fatal(err)
+	}
+	target := targetBinding.(notificationsdk.SystemMigrationBinding).SystemMigration()
+	receipt, err := target.Import(t.Context(), exported.Bundle)
+	if err != nil || receipt.AlreadyPresent || receipt.Fingerprint != exported.Bundle.Fingerprint {
 		t.Fatalf("receipt=%+v err=%v", receipt, err)
+	}
+	repeated, err := target.Import(t.Context(), exported.Bundle)
+	if err != nil || !repeated.AlreadyPresent || repeated.Fingerprint != receipt.Fingerprint {
+		t.Fatalf("repeated receipt=%+v err=%v", repeated, err)
+	}
+	transition := contract.NotificationMigrationCommand{MigrationID: command.MigrationID, BundleFingerprint: exported.Bundle.Fingerprint, At: command.At.Add(time.Minute)}
+	if status, err := target.Activate(t.Context(), transition); err != nil || status.State != contract.NotificationMigrationCutover || status.Role != sqlstore.MigrationRoleTarget {
+		t.Fatalf("target activation=%+v err=%v", status, err)
+	}
+	if status, err := migration.SystemMigration().Rollback(t.Context(), transition); err != nil || status.State != contract.NotificationMigrationActive || status.Role != sqlstore.MigrationRoleSource {
+		t.Fatalf("source rollback=%+v err=%v", status, err)
 	}
 }
 

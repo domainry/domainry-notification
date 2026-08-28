@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"strings"
+	"time"
 
 	"github.com/domainry/domainry-notification"
 	notificationsdk "github.com/domainry/domainry-notification-sdk"
@@ -20,13 +21,47 @@ type moduleSystemSubjects struct{ b *binding }
 type moduleSystemRetention struct{ b *binding }
 type moduleSystemMigration struct{ b *binding }
 
+func (s moduleSystemMigration) Status(ctx context.Context) (contract.NotificationMigrationStatus, error) {
+	if s.b == nil || s.b.store == nil {
+		return contract.NotificationMigrationStatus{}, &notificationsdk.Error{StatusCode: 503, Code: "notification.system_migration_unavailable"}
+	}
+	status, err := s.b.store.MigrationStatus(ctx, s.b.application.WorkspaceID)
+	if err != nil {
+		return contract.NotificationMigrationStatus{}, err
+	}
+	return migrationStatusContract(status), nil
+}
+
+func (s moduleSystemMigration) Freeze(ctx context.Context, command contract.NotificationMigrationCommand) (contract.NotificationMigrationStatus, error) {
+	if err := command.Validate(false); err != nil {
+		return contract.NotificationMigrationStatus{}, err
+	}
+	s.b.migrationMu.Lock()
+	defer s.b.migrationMu.Unlock()
+	status, err := s.b.store.FreezeMigration(ctx, s.b.application.WorkspaceID, command.MigrationID, command.At)
+	if err != nil {
+		return contract.NotificationMigrationStatus{}, err
+	}
+	return migrationStatusContract(status), nil
+}
+
 func (s moduleSystemMigration) Export(ctx context.Context) (contract.NotificationPortableExport, error) {
 	if s.b == nil || s.b.store == nil {
 		return contract.NotificationPortableExport{}, &notificationsdk.Error{StatusCode: 503, Code: "notification.system_migration_unavailable"}
 	}
 	scope := sqlstore.PortableScope{TenantID: s.b.application.TenantID, WorkspaceID: s.b.application.WorkspaceID, ApplicationKey: s.b.application.ApplicationKey}
-	bundle, inventory, err := s.b.store.ExportPortable(ctx, scope)
+	status, err := s.b.store.MigrationStatus(ctx, s.b.application.WorkspaceID)
 	if err != nil {
+		return contract.NotificationPortableExport{}, err
+	}
+	if status.Role != sqlstore.MigrationRoleSource || status.State != sqlstore.MigrationStateFrozen || status.ActiveLeases != 0 {
+		return contract.NotificationPortableExport{}, &notificationsdk.Error{StatusCode: 409, Code: "notification.migration_not_quiescent", Retryable: status.ActiveLeases != 0}
+	}
+	bundle, inventory, err := s.b.store.ExportPortableMigration(ctx, scope, status.MigrationID)
+	if err != nil {
+		return contract.NotificationPortableExport{}, err
+	}
+	if _, err := s.b.store.RecordMigrationFingerprint(ctx, s.b.application.WorkspaceID, status.MigrationID, bundle.Fingerprint, s.b.clock.Now()); err != nil {
 		return contract.NotificationPortableExport{}, err
 	}
 	convertedBundle, err := convert[contract.NotificationPortableBundle](bundle)
@@ -45,6 +80,13 @@ func (s moduleSystemMigration) Import(ctx context.Context, bundle contract.Notif
 		return contract.NotificationPortableImportReceipt{}, err
 	}
 	scope := sqlstore.PortableScope{TenantID: s.b.application.TenantID, WorkspaceID: s.b.application.WorkspaceID, ApplicationKey: s.b.application.ApplicationKey}
+	status, err := s.b.store.MigrationStatus(ctx, s.b.application.WorkspaceID)
+	if err != nil {
+		return contract.NotificationPortableImportReceipt{}, err
+	}
+	if status.Role == sqlstore.MigrationRoleTarget && status.State == sqlstore.MigrationStateImported && status.MigrationID == bundle.MigrationID && status.BundleFingerprint == bundle.Fingerprint {
+		return contract.NotificationPortableImportReceipt{FormatVersion: bundle.FormatVersion, Fingerprint: bundle.Fingerprint, Rows: portableRowCount(bundle), AlreadyPresent: true}, nil
+	}
 	portable, err := convert[sqlstore.PortableBundle](bundle)
 	if err != nil {
 		return contract.NotificationPortableImportReceipt{}, err
@@ -53,7 +95,47 @@ func (s moduleSystemMigration) Import(ctx context.Context, bundle contract.Notif
 	if err != nil {
 		return contract.NotificationPortableImportReceipt{}, err
 	}
+	if _, err := s.b.store.RecordImportedMigration(ctx, s.b.application.WorkspaceID, bundle.MigrationID, bundle.Fingerprint, s.b.clock.Now()); err != nil {
+		return contract.NotificationPortableImportReceipt{}, err
+	}
 	return convert[contract.NotificationPortableImportReceipt](receipt)
+}
+
+func (s moduleSystemMigration) Activate(ctx context.Context, command contract.NotificationMigrationCommand) (contract.NotificationMigrationStatus, error) {
+	if err := command.Validate(true); err != nil {
+		return contract.NotificationMigrationStatus{}, err
+	}
+	status, err := s.b.store.ActivateMigration(ctx, s.b.application.WorkspaceID, command.MigrationID, command.BundleFingerprint, command.At)
+	if err != nil {
+		return contract.NotificationMigrationStatus{}, err
+	}
+	return migrationStatusContract(status), nil
+}
+
+func (s moduleSystemMigration) Rollback(ctx context.Context, command contract.NotificationMigrationCommand) (contract.NotificationMigrationStatus, error) {
+	if err := command.Validate(true); err != nil {
+		return contract.NotificationMigrationStatus{}, err
+	}
+	status, err := s.b.store.RollbackMigration(ctx, s.b.application.WorkspaceID, command.MigrationID, command.BundleFingerprint, command.At)
+	if err != nil {
+		return contract.NotificationMigrationStatus{}, err
+	}
+	return migrationStatusContract(status), nil
+}
+
+func migrationStatusContract(status sqlstore.MigrationControl) contract.NotificationMigrationStatus {
+	result := contract.NotificationMigrationStatus{MigrationID: status.MigrationID, Role: status.Role, State: contract.NotificationMigrationState(status.State), BundleFingerprint: status.BundleFingerprint, ActiveLeases: status.ActiveLeases}
+	result.FrozenAt, _ = time.Parse(time.RFC3339Nano, status.FrozenAt)
+	result.ActivatedAt, _ = time.Parse(time.RFC3339Nano, status.ActivatedAt)
+	return result
+}
+
+func portableRowCount(bundle contract.NotificationPortableBundle) int {
+	rows := 0
+	for _, table := range bundle.Tables {
+		rows += len(table.Rows)
+	}
+	return rows
 }
 
 func (s moduleSystemRetention) Preview(ctx context.Context, request contract.NotificationRetentionPreviewRequest) (contract.NotificationRetentionPreview, error) {
@@ -374,24 +456,54 @@ func (s moduleAdministration) InboxGovernanceMetrics(ctx context.Context, a noti
 type moduleWorkers struct{ b *binding }
 
 func (s moduleWorkers) ProcessDuePublications(ctx context.Context, limit int) (int, error) {
+	release, err := s.b.beginMigrationSensitiveWrite(ctx)
+	if err != nil {
+		return 0, err
+	}
+	defer release()
 	return s.b.publications.ProcessDue(ctx, limit)
 }
 func (s moduleWorkers) ProcessPublication(ctx context.Context, locator notificationsdk.WorkLocator) (bool, error) {
+	release, err := s.b.beginMigrationSensitiveWrite(ctx)
+	if err != nil {
+		return false, err
+	}
+	defer release()
 	return s.b.publications.Process(ctx, locator.TaskID)
 }
 func (s moduleWorkers) RefreshPublished(ctx context.Context) error {
 	return s.b.templates.RefreshPublished(ctx)
 }
 func (s moduleWorkers) ProcessDueInboxEvents(ctx context.Context, limit int) (int, error) {
+	release, err := s.b.beginMigrationSensitiveWrite(ctx)
+	if err != nil {
+		return 0, err
+	}
+	defer release()
 	return s.b.inboxProcessor.ProcessDue(ctx, limit)
 }
 func (s moduleWorkers) ProcessInboxEvent(ctx context.Context, locator notificationsdk.WorkLocator) (bool, error) {
+	release, err := s.b.beginMigrationSensitiveWrite(ctx)
+	if err != nil {
+		return false, err
+	}
+	defer release()
 	return s.b.inboxProcessor.Process(ctx, notification.WorkspaceID(locator.WorkspaceID), locator.TaskID)
 }
 func (s moduleWorkers) ProcessDueChannelPlans(ctx context.Context, limit int) (int, error) {
+	release, err := s.b.beginMigrationSensitiveWrite(ctx)
+	if err != nil {
+		return 0, err
+	}
+	defer release()
 	return s.b.deliveryProcessor.ProcessDue(ctx, limit)
 }
 func (s moduleWorkers) ProcessChannelPlan(ctx context.Context, locator notificationsdk.WorkLocator) (bool, error) {
+	release, err := s.b.beginMigrationSensitiveWrite(ctx)
+	if err != nil {
+		return false, err
+	}
+	defer release()
 	return s.b.deliveryProcessor.Process(ctx, notification.WorkspaceID(locator.WorkspaceID), locator.TaskID)
 }
 func (b *binding) RefreshPublished(ctx context.Context) error {
