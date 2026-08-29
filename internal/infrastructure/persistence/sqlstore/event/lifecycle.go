@@ -1,4 +1,4 @@
-package sqlstore
+package eventstore
 
 import (
 	"context"

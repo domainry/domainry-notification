@@ -6,7 +6,11 @@ import (
 	"github.com/domainry/domainry-notification-sdk/modulehost"
 	notification "github.com/domainry/domainry-notification/internal/domain/notification/model"
 	deliverystore "github.com/domainry/domainry-notification/internal/infrastructure/persistence/sqlstore/delivery"
+	eventstore "github.com/domainry/domainry-notification/internal/infrastructure/persistence/sqlstore/event"
 	inboxstore "github.com/domainry/domainry-notification/internal/infrastructure/persistence/sqlstore/inbox"
+	lifecyclestore "github.com/domainry/domainry-notification/internal/infrastructure/persistence/sqlstore/lifecycle"
+	migrationstore "github.com/domainry/domainry-notification/internal/infrastructure/persistence/sqlstore/migration"
+	templatestore "github.com/domainry/domainry-notification/internal/infrastructure/persistence/sqlstore/template"
 	"github.com/domainry/domainry-orm/sqlhost"
 )
 
@@ -33,13 +37,12 @@ type Config struct {
 }
 
 type Store struct {
-	*inboxstore.Store
+	*inboxPersistence
 	*deliveryPersistence
-	database       sqlhost.Database
-	dialect        modulehost.Dialect
-	workspaceScope WorkspaceScope
-	queueScopes    QueueScopeIndex
-	clock          notification.Clock
+	*eventPersistence
+	*templatePersistence
+	*lifecyclePersistence
+	*migrationPersistence
 }
 
 func New(config Config) (*Store, error) {
@@ -47,16 +50,26 @@ func New(config Config) (*Store, error) {
 		return nil, ErrIncompleteConfig
 	}
 	return &Store{
-		Store: inboxstore.New(inboxstore.Config{
+		inboxPersistence: &inboxPersistence{inboxstore.New(inboxstore.Config{
 			Database: config.Database, Dialect: config.Dialect, WorkspaceScope: config.WorkspaceScope, Clock: config.Clock,
-		}),
+		})},
 		deliveryPersistence: &deliveryPersistence{deliverystore.New(deliverystore.Config{
 			Database: config.Database, Dialect: config.Dialect, WorkspaceScope: config.WorkspaceScope, QueueScopes: config.QueueScopes,
 		})},
-		database: config.Database, dialect: config.Dialect, workspaceScope: config.WorkspaceScope, queueScopes: config.QueueScopes, clock: config.Clock,
+		eventPersistence: &eventPersistence{eventstore.New(eventstore.Config{
+			Database: config.Database, Dialect: config.Dialect, WorkspaceScope: config.WorkspaceScope, QueueScopes: config.QueueScopes,
+		})},
+		templatePersistence:  &templatePersistence{templatestore.New(templatestore.Config{Database: config.Database, Dialect: config.Dialect, Clock: config.Clock})},
+		lifecyclePersistence: &lifecyclePersistence{lifecyclestore.New(lifecyclestore.Config{Database: config.Database, Dialect: config.Dialect})},
+		migrationPersistence: &migrationPersistence{migrationstore.New(migrationstore.Config{Database: config.Database, Dialect: config.Dialect, WorkspaceScope: config.WorkspaceScope})},
 	}, nil
 }
 
 // deliveryPersistence gives the composed delivery store a distinct embedding
 // name while still promoting its persistence methods through Store.
 type deliveryPersistence struct{ *deliverystore.Store }
+type inboxPersistence struct{ *inboxstore.Store }
+type eventPersistence struct{ *eventstore.Store }
+type templatePersistence struct{ *templatestore.Store }
+type lifecyclePersistence struct{ *lifecyclestore.Store }
+type migrationPersistence struct{ *migrationstore.Store }

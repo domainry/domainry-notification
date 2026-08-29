@@ -1,15 +1,15 @@
-package sqlstore
+package lifecyclestore_test
 
 import (
 	"encoding/json"
 	"testing"
 
+	lifecyclestore "github.com/domainry/domainry-notification/internal/infrastructure/persistence/sqlstore/lifecycle"
 	ormdialect "github.com/domainry/domainry-orm/dialect"
 )
 
 func TestSubjectLifecyclePreviewExportAndEraseOwnedRows(t *testing.T) {
-	database := openPortableDatabase(t, "subject")
-	applyPortableMigrations(t, database, mustSchemaMigrations(t, ""))
+	database, _ := migratedStore(t)
 	if _, err := database.Exec(`INSERT INTO notification_recipient_preferences (workspace_id, recipient_key, payload_json, updated_by, updated_at) VALUES (?, ?, ?, ?, ?)`, "workspace", "user", `{}`, "user", "now"); err != nil {
 		t.Fatal(err)
 	}
@@ -17,7 +17,7 @@ func TestSubjectLifecyclePreviewExportAndEraseOwnedRows(t *testing.T) {
 		t.Fatal(err)
 	}
 	dialect, _ := ormdialect.ParseRenderer("sqlite", "", "")
-	store := &Store{database: database, dialect: dialect}
+	store := lifecyclestore.New(lifecyclestore.Config{Database: database, Dialect: dialect})
 	preview, err := store.PreviewSubject(t.Context(), "workspace", "user")
 	if err != nil {
 		t.Fatal(err)
@@ -44,7 +44,7 @@ func TestSubjectLifecyclePreviewExportAndEraseOwnedRows(t *testing.T) {
 }
 
 func TestSubjectLifecycleRequiresExactScope(t *testing.T) {
-	store := &Store{}
+	store := lifecyclestore.New(lifecyclestore.Config{})
 	if _, err := store.PreviewSubject(t.Context(), "", "user"); err == nil {
 		t.Fatal("blank workspace was accepted")
 	}

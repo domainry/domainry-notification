@@ -1,4 +1,4 @@
-package sqlstore_test
+package eventstore_test
 
 import (
 	"context"

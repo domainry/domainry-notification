@@ -2,12 +2,12 @@ package deliverystore
 
 import (
 	"context"
-	"errors"
 	"regexp"
 	"strings"
 
 	"github.com/domainry/domainry-notification-sdk/modulehost"
 	notification "github.com/domainry/domainry-notification/internal/domain/notification/model"
+	"github.com/domainry/domainry-notification/internal/infrastructure/persistence/sqlstore/shared"
 	"github.com/domainry/domainry-orm/sqlhost"
 )
 
@@ -34,7 +34,7 @@ type Store struct {
 }
 
 var (
-	ErrLeaseLost       = errors.New("notification durable-work lease was lost")
+	ErrLeaseLost       = shared.ErrLeaseLost
 	failureCodePattern = regexp.MustCompile(`^[a-z][a-z0-9_.-]{0,159}$`)
 )
 

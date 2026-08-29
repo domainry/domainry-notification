@@ -1,4 +1,4 @@
-package sqlstore
+package migrationstore
 
 import (
 	"database/sql"

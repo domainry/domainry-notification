@@ -1,4 +1,4 @@
-package sqlstore_test
+package templatestore_test
 
 import (
 	"errors"

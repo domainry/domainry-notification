@@ -1,4 +1,4 @@
-package sqlstore_test
+package lifecyclestore_test
 
 import (
 	"testing"

@@ -3,13 +3,12 @@ package sqlstore
 import (
 	"errors"
 
-	deliverystore "github.com/domainry/domainry-notification/internal/infrastructure/persistence/sqlstore/delivery"
-	inboxstore "github.com/domainry/domainry-notification/internal/infrastructure/persistence/sqlstore/inbox"
+	"github.com/domainry/domainry-notification/internal/infrastructure/persistence/sqlstore/shared"
 )
 
 var (
 	ErrIncompleteConfig    = errors.New("notification sqlstore configuration is incomplete")
-	ErrLeaseLost           = deliverystore.ErrLeaseLost
-	ErrMutationConflict    = inboxstore.ErrMutationConflict
-	ErrIdempotencyConflict = errors.New("notification request identity was reused with different content")
+	ErrLeaseLost           = shared.ErrLeaseLost
+	ErrMutationConflict    = shared.ErrMutationConflict
+	ErrIdempotencyConflict = shared.ErrIdempotencyConflict
 )
