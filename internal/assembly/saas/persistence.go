@@ -5,7 +5,6 @@ import (
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
-	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -14,9 +13,8 @@ import (
 	notificationsdk "github.com/domainry/domainry-notification-sdk"
 	"github.com/domainry/domainry-notification-sdk/modulehost"
 	sqlstore "github.com/domainry/domainry-notification/internal/infrastructure/persistence"
+	storemigration "github.com/domainry/domainry-notification/internal/infrastructure/persistence/database/migration"
 )
-
-const migrationLedgerTable = "_schema_migrations"
 
 // SQLPersistence owns the standalone Notification SaaS database lifecycle and
 // its migration history. Runtime databases must never be passed here.
@@ -110,22 +108,11 @@ func (p *SQLPersistence) PrepareApplication(ctx context.Context, application not
 }
 
 func (p *SQLPersistence) ensureApplicationBinding(ctx context.Context, connection migrationQueryer, namespace string) error {
-	dialect, err := p.engine.Renderer(p.schema, "")
+	renderer, err := p.engine.Renderer(p.schema, "")
 	if err != nil {
 		return err
 	}
-	query := "SELECT " + dialect.Identifier("namespace") + " FROM " + dialect.Table(migrationLedgerTable) + " ORDER BY " + dialect.Identifier("namespace") + " LIMIT 1"
-	var existing string
-	if err := connection.QueryRowContext(ctx, query).Scan(&existing); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return nil
-		}
-		return fmt.Errorf("read Notification SaaS application binding: %w", err)
-	}
-	if existing != namespace {
-		return fmt.Errorf("Notification SaaS database is already bound to application %s", existing)
-	}
-	return nil
+	return storemigration.NewLedger(renderer).ValidateApplicationBinding(ctx, connection, namespace)
 }
 
 func (p *SQLPersistence) Close() error {
@@ -144,19 +131,11 @@ type migrationConnection interface {
 }
 
 func (p *SQLPersistence) ensureLedger(ctx context.Context, connection migrationConnection) error {
-	dialect, err := p.engine.Renderer(p.schema, "")
+	renderer, err := p.engine.Renderer(p.schema, "")
 	if err != nil {
 		return err
 	}
-	statement := "CREATE TABLE IF NOT EXISTS " + dialect.Table(migrationLedgerTable) + " (" +
-		dialect.Identifier("namespace") + " VARCHAR(512) NOT NULL, " +
-		dialect.Identifier("version") + " BIGINT NOT NULL, " +
-		dialect.Identifier("checksum") + " VARCHAR(64) NOT NULL, " +
-		dialect.Identifier("applied_at") + " VARCHAR(64) NOT NULL, PRIMARY KEY (" + dialect.Identifier("namespace") + ", " + dialect.Identifier("version") + "))"
-	if _, err := connection.ExecContext(ctx, statement); err != nil {
-		return fmt.Errorf("create Notification SaaS migration ledger: %w", err)
-	}
-	return nil
+	return storemigration.NewLedger(renderer).Ensure(ctx, connection)
 }
 
 func (p *SQLPersistence) applyMigration(ctx context.Context, connection migrationConnection, namespace string, migration sqlstore.SchemaMigration) error {
@@ -192,12 +171,11 @@ func (p *SQLPersistence) applyMigration(ctx context.Context, connection migratio
 			return fmt.Errorf("apply Notification SaaS migration %s/%d (%s): %w", namespace, migration.Version, migration.Name, err)
 		}
 	}
-	dialect, err := p.engine.Renderer(p.schema, "")
+	renderer, err := p.engine.Renderer(p.schema, "")
 	if err != nil {
 		return err
 	}
-	insert := dialect.Insert(migrationLedgerTable, []string{"namespace", "version", "checksum", "applied_at"})
-	if _, err := tx.ExecContext(ctx, insert, namespace, migration.Version, checksum, time.Now().UTC().Format(time.RFC3339Nano)); err != nil {
+	if err := storemigration.NewLedger(renderer).Record(ctx, tx, namespace, migration.Version, checksum, time.Now().UTC().Format(time.RFC3339Nano)); err != nil {
 		return fmt.Errorf("record Notification SaaS migration %s/%d: %w", namespace, migration.Version, err)
 	}
 	if err := tx.Commit(); err != nil {
@@ -211,19 +189,11 @@ type migrationQueryer interface {
 }
 
 func (p *SQLPersistence) migrationChecksum(ctx context.Context, queryer migrationQueryer, namespace string, version uint) (string, bool, error) {
-	dialect, err := p.engine.Renderer(p.schema, "")
+	renderer, err := p.engine.Renderer(p.schema, "")
 	if err != nil {
 		return "", false, err
 	}
-	query := "SELECT " + dialect.Identifier("checksum") + " FROM " + dialect.Table(migrationLedgerTable) + " WHERE " + dialect.Identifier("namespace") + " = " + dialect.Placeholder(1) + " AND " + dialect.Identifier("version") + " = " + dialect.Placeholder(2)
-	var checksum string
-	if err := queryer.QueryRowContext(ctx, query, namespace, version).Scan(&checksum); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return "", false, nil
-		}
-		return "", false, fmt.Errorf("read Notification SaaS migration ledger: %w", err)
-	}
-	return checksum, true, nil
+	return storemigration.NewLedger(renderer).Checksum(ctx, queryer, namespace, version)
 }
 
 func migrationChecksum(migration sqlstore.SchemaMigration) string {
