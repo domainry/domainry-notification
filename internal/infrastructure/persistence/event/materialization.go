@@ -10,6 +10,7 @@ import (
 	"github.com/domainry/domainry-notification/internal/domain/delivery/service"
 	"github.com/domainry/domainry-notification/internal/domain/inbox/service"
 	notification "github.com/domainry/domainry-notification/internal/domain/notification/model"
+	"github.com/domainry/domainry-orm/builder"
 )
 
 var _ inbox.EventStore = (*Store)(nil)
@@ -61,12 +62,11 @@ func (s *Store) Materialize(ctx context.Context, event inbox.Event, items []inbo
 			return err
 		}
 	}
-	query := "UPDATE " + s.Renderer.Table("notification_events") + " SET " + s.Renderer.Identifier("status") + " = 'materialized', " +
-		s.Renderer.Identifier("lease_owner") + " = '', " + s.Renderer.Identifier("lease_expires_at") + " = '', " + s.Renderer.Identifier("last_error_code") + " = '', " +
-		s.Renderer.Identifier("updated_at") + " = " + s.Renderer.Placeholder(1) + " WHERE " + s.Renderer.Identifier("workspace_id") + " = " + s.Renderer.Placeholder(2) +
-		" AND " + s.Renderer.Identifier("id") + " = " + s.Renderer.Placeholder(3) + " AND " + s.Renderer.Identifier("status") + " = 'processing' AND " +
-		s.Renderer.Identifier("lease_owner") + " = " + s.Renderer.Placeholder(4) + " AND " + s.Renderer.Identifier("fencing_token") + " = " + s.Renderer.Placeholder(5)
-	result, err := tx.ExecContext(ctx, query, event.UpdatedAt, event.WorkspaceID.String(), event.ID, event.LeaseOwner, event.FencingToken)
+	query, args, err := builder.NewUpdateBuilder(s.Renderer, "notification_events").Set("status", "materialized").Set("lease_owner", "").Set("lease_expires_at", "").Set("last_error_code", "").Set("updated_at", event.UpdatedAt).Where(builder.And(builder.Equal("workspace_id", event.WorkspaceID.String()), builder.Equal("id", event.ID), builder.Equal("status", "processing"), builder.Equal("lease_owner", event.LeaseOwner), builder.Equal("fencing_token", event.FencingToken))).Build()
+	if err != nil {
+		return err
+	}
+	result, err := tx.ExecContext(ctx, query, args...)
 	if err != nil {
 		return fmt.Errorf("finish notification event: %w", err)
 	}
@@ -91,16 +91,11 @@ func (s *Store) transitionAlertGroup(ctx context.Context, tx *sql.Tx, event inbo
 	if event.AlertState == inbox.AlertFiring {
 		increment = 1
 	}
-	update := "UPDATE " + s.Renderer.Table("notification_alert_groups") + " SET " + s.Renderer.Identifier("state") + " = " + s.Renderer.Placeholder(1) + ", " +
-		s.Renderer.Identifier("occurrence_count") + " = " + s.Renderer.Identifier("occurrence_count") + " + " + fmt.Sprint(increment) + ", " +
-		s.Renderer.Identifier("last_occurred_at") + " = " + s.Renderer.Placeholder(2) + ", " + s.Renderer.Identifier("acknowledged_at") + " = '', " +
-		s.Renderer.Identifier("acknowledged_by") + " = '', " + s.Renderer.Identifier("resolved_at") + " = " + s.Renderer.Placeholder(3) + ", " +
-		s.Renderer.Identifier("last_event_id") + " = " + s.Renderer.Placeholder(4) + ", " + s.Renderer.Identifier("updated_at") + " = " + s.Renderer.Placeholder(5) +
-		" WHERE " + s.Renderer.Identifier("workspace_id") + " = " + s.Renderer.Placeholder(6) + " AND " + s.Renderer.Identifier("recipient_user_id") + " = " + s.Renderer.Placeholder(7) +
-		" AND " + s.Renderer.Identifier("surface") + " = " + s.Renderer.Placeholder(8) + " AND " + s.Renderer.Identifier("group_key") + " = " + s.Renderer.Placeholder(9) +
-		" AND " + s.Renderer.Identifier("last_occurred_at") + " <= " + s.Renderer.Placeholder(10)
-	result, err := tx.ExecContext(ctx, update, string(event.AlertState), event.OccurredAt, resolvedAt, event.ID, event.UpdatedAt,
-		event.WorkspaceID.String(), item.RecipientUserID.String(), string(event.Surface), event.GroupKey, event.OccurredAt)
+	update, updateArgs, err := builder.NewUpdateBuilder(s.Renderer, "notification_alert_groups").Set("state", string(event.AlertState)).SetExpression("occurrence_count", builder.Add(builder.Column("occurrence_count"), builder.Value(increment))).Set("last_occurred_at", event.OccurredAt).Set("acknowledged_at", "").Set("acknowledged_by", "").Set("resolved_at", resolvedAt).Set("last_event_id", event.ID).Set("updated_at", event.UpdatedAt).Where(builder.And(builder.Equal("workspace_id", event.WorkspaceID.String()), builder.Equal("recipient_user_id", item.RecipientUserID.String()), builder.Equal("surface", string(event.Surface)), builder.Equal("group_key", event.GroupKey), builder.LessThanOrEqual("last_occurred_at", event.OccurredAt))).Build()
+	if err != nil {
+		return err
+	}
+	result, err := tx.ExecContext(ctx, update, updateArgs...)
 	if err != nil {
 		return fmt.Errorf("update notification alert group: %w", err)
 	}
@@ -109,10 +104,11 @@ func (s *Store) transitionAlertGroup(ctx context.Context, tx *sql.Tx, event inbo
 		return err
 	}
 	var exists int
-	lookup := "SELECT COUNT(*) FROM " + s.Renderer.Table("notification_alert_groups") + " WHERE " + s.Renderer.Identifier("workspace_id") + " = " + s.Renderer.Placeholder(1) +
-		" AND " + s.Renderer.Identifier("recipient_user_id") + " = " + s.Renderer.Placeholder(2) + " AND " + s.Renderer.Identifier("surface") + " = " + s.Renderer.Placeholder(3) +
-		" AND " + s.Renderer.Identifier("group_key") + " = " + s.Renderer.Placeholder(4)
-	if err := tx.QueryRowContext(ctx, lookup, event.WorkspaceID.String(), item.RecipientUserID.String(), string(event.Surface), event.GroupKey).Scan(&exists); err != nil {
+	lookup, lookupArgs, err := builder.NewSelectBuilder(s.Renderer, "notification_alert_groups").Projections(builder.Project(builder.CountAll())).Where(builder.And(builder.Equal("workspace_id", event.WorkspaceID.String()), builder.Equal("recipient_user_id", item.RecipientUserID.String()), builder.Equal("surface", string(event.Surface)), builder.Equal("group_key", event.GroupKey))).Build()
+	if err != nil {
+		return err
+	}
+	if err := tx.QueryRowContext(ctx, lookup, lookupArgs...).Scan(&exists); err != nil {
 		return err
 	}
 	if exists == 1 { // a newer transition already won
@@ -135,17 +131,17 @@ func (s *Store) upsertInboxItem(ctx context.Context, tx *sql.Tx, item inbox.Item
 	if item.AlertState == inbox.AlertResolved {
 		increment = 0
 	}
-	mutable := []string{"event_id", "event_type", "source", "category", "severity", "title", "body", "search_text", "payload_json", "subject_type", "subject_id", "action_state", "alert_state", "last_occurred_at", "expires_at", "updated_at"}
-	args := []any{item.EventID, item.EventType, item.Source, item.Category, item.Severity, item.Title, item.Body, inboxSearchText(item), string(raw), item.SubjectType, item.SubjectID, string(item.ActionState), string(item.AlertState), item.LastOccurredAt, item.ExpiresAt, item.UpdatedAt}
-	assignments := make([]string, 0, len(mutable)+1)
-	for index, column := range mutable {
-		assignments = append(assignments, s.Renderer.Identifier(column)+" = "+s.Renderer.Placeholder(index+1))
+	queryBuilder := builder.NewUpdateBuilder(s.Renderer, "notification_inbox_items").
+		Set("event_id", item.EventID).Set("event_type", item.EventType).Set("source", item.Source).
+		Set("category", item.Category).Set("severity", item.Severity).Set("title", item.Title).
+		Set("body", item.Body).Set("search_text", inboxSearchText(item)).Set("payload_json", string(raw)).
+		Set("subject_type", item.SubjectType).Set("subject_id", item.SubjectID).
+		Set("action_state", string(item.ActionState)).Set("alert_state", string(item.AlertState)).
+		Set("last_occurred_at", item.LastOccurredAt).Set("expires_at", item.ExpiresAt).Set("updated_at", item.UpdatedAt)
+	query, args, err := queryBuilder.SetExpression("occurrence_count", builder.Add(builder.Column("occurrence_count"), builder.Value(increment))).Where(builder.And(builder.Equal("workspace_id", item.WorkspaceID.String()), builder.Equal("id", item.ID), builder.LessThanOrEqual("last_occurred_at", item.LastOccurredAt))).Build()
+	if err != nil {
+		return err
 	}
-	assignments = append(assignments, s.Renderer.Identifier("occurrence_count")+" = "+s.Renderer.Identifier("occurrence_count")+" + "+fmt.Sprint(increment))
-	query := "UPDATE " + s.Renderer.Table("notification_inbox_items") + " SET " + strings.Join(assignments, ", ") + " WHERE " +
-		s.Renderer.Identifier("workspace_id") + " = " + s.Renderer.Placeholder(17) + " AND " + s.Renderer.Identifier("id") + " = " + s.Renderer.Placeholder(18) +
-		" AND " + s.Renderer.Identifier("last_occurred_at") + " <= " + s.Renderer.Placeholder(19)
-	args = append(args, item.WorkspaceID.String(), item.ID, item.LastOccurredAt)
 	result, err := tx.ExecContext(ctx, query, args...)
 	if err != nil {
 		return fmt.Errorf("update notification inbox item: %w", err)
@@ -155,8 +151,11 @@ func (s *Store) upsertInboxItem(ctx context.Context, tx *sql.Tx, item inbox.Item
 		return err
 	}
 	var exists int
-	lookup := "SELECT COUNT(*) FROM " + s.Renderer.Table("notification_inbox_items") + " WHERE " + s.Renderer.Identifier("workspace_id") + " = " + s.Renderer.Placeholder(1) + " AND " + s.Renderer.Identifier("id") + " = " + s.Renderer.Placeholder(2)
-	if err := tx.QueryRowContext(ctx, lookup, item.WorkspaceID.String(), item.ID).Scan(&exists); err != nil {
+	lookup, lookupArgs, err := builder.NewSelectBuilder(s.Renderer, "notification_inbox_items").Projections(builder.Project(builder.CountAll())).Where(builder.And(builder.Equal("workspace_id", item.WorkspaceID.String()), builder.Equal("id", item.ID))).Build()
+	if err != nil {
+		return err
+	}
+	if err := tx.QueryRowContext(ctx, lookup, lookupArgs...).Scan(&exists); err != nil {
 		return err
 	}
 	if exists == 1 { // a newer occurrence already won

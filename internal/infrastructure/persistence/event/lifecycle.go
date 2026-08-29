@@ -15,6 +15,7 @@ import (
 	"github.com/domainry/domainry-notification/internal/domain/delivery/service"
 	"github.com/domainry/domainry-notification/internal/domain/inbox/service"
 	notification "github.com/domainry/domainry-notification/internal/domain/notification/model"
+	"github.com/domainry/domainry-orm/builder"
 )
 
 var failureCodePattern = regexp.MustCompile(`^[a-z][a-z0-9_.-]{0,159}$`)
@@ -113,11 +114,12 @@ func (s *Store) ListDue(ctx context.Context, now string, limit int) ([]inbox.Eve
 }
 
 func (s *Store) listDueForWorkspace(ctx context.Context, workspaceID notification.WorkspaceID, now string, limit int) ([]inbox.Event, error) {
-	query := "SELECT " + s.columns(eventColumns) + " FROM " + s.Renderer.Table("notification_events") +
-		" WHERE " + s.Renderer.Identifier("workspace_id") + " = " + s.Renderer.Placeholder(1) + " AND ((" + s.Renderer.Identifier("status") + " = 'queued' AND (" + s.Renderer.Identifier("next_attempt_at") + " = '' OR " + s.Renderer.Identifier("next_attempt_at") + " <= " + s.Renderer.Placeholder(2) + "))" +
-		" OR (" + s.Renderer.Identifier("status") + " = 'processing' AND " + s.Renderer.Identifier("lease_expires_at") + " <= " + s.Renderer.Placeholder(3) + "))" +
-		" ORDER BY " + s.Renderer.Identifier("occurred_at") + " ASC LIMIT " + fmt.Sprint(limit)
-	rows, err := s.Database.QueryContext(ctx, query, workspaceID.String(), now, now)
+	due := builder.Or(builder.And(builder.Equal("status", "queued"), builder.Or(builder.Equal("next_attempt_at", ""), builder.LessThanOrEqual("next_attempt_at", now))), builder.And(builder.Equal("status", "processing"), builder.LessThanOrEqual("lease_expires_at", now)))
+	query, args, err := builder.NewSelectBuilder(s.Renderer, "notification_events").Columns(eventColumns...).Where(builder.And(builder.Equal("workspace_id", workspaceID.String()), due)).OrderBy(builder.Ascending("occurred_at")).Limit(limit).Build()
+	if err != nil {
+		return nil, err
+	}
+	rows, err := s.Database.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("list due notification events: %w", err)
 	}
@@ -139,14 +141,12 @@ func (s *Store) Claim(ctx context.Context, workspaceID notification.WorkspaceID,
 		return inbox.Event{}, false, fmt.Errorf("notification event claim identity and lease are required")
 	}
 	ctx = s.workspaceScope.Context(ctx, workspaceID)
-	query := "UPDATE " + s.Renderer.Table("notification_events") + " SET " +
-		s.Renderer.Identifier("status") + " = 'processing', " + s.Renderer.Identifier("lease_owner") + " = " + s.Renderer.Placeholder(1) + ", " +
-		s.Renderer.Identifier("lease_expires_at") + " = " + s.Renderer.Placeholder(2) + ", " + s.Renderer.Identifier("fencing_token") + " = " + s.Renderer.Identifier("fencing_token") + " + 1, " +
-		s.Renderer.Identifier("updated_at") + " = " + s.Renderer.Placeholder(3) + " WHERE " + s.Renderer.Identifier("workspace_id") + " = " + s.Renderer.Placeholder(4) +
-		" AND " + s.Renderer.Identifier("id") + " = " + s.Renderer.Placeholder(5) +
-		" AND ((" + s.Renderer.Identifier("status") + " = 'queued' AND (" + s.Renderer.Identifier("next_attempt_at") + " = '' OR " + s.Renderer.Identifier("next_attempt_at") + " <= " + s.Renderer.Placeholder(6) + ")) OR (" +
-		s.Renderer.Identifier("status") + " = 'processing' AND " + s.Renderer.Identifier("lease_expires_at") + " <= " + s.Renderer.Placeholder(7) + "))"
-	result, err := s.Database.ExecContext(ctx, query, owner, expiresAt, now, workspaceID.String(), eventID, now, now)
+	due := builder.Or(builder.And(builder.Equal("status", "queued"), builder.Or(builder.Equal("next_attempt_at", ""), builder.LessThanOrEqual("next_attempt_at", now))), builder.And(builder.Equal("status", "processing"), builder.LessThanOrEqual("lease_expires_at", now)))
+	query, args, err := builder.NewUpdateBuilder(s.Renderer, "notification_events").Set("status", "processing").Set("lease_owner", owner).Set("lease_expires_at", expiresAt).SetExpression("fencing_token", builder.Add(builder.Column("fencing_token"), builder.Value(1))).Set("updated_at", now).Where(builder.And(builder.Equal("workspace_id", workspaceID.String()), builder.Equal("id", eventID), due)).Build()
+	if err != nil {
+		return inbox.Event{}, false, err
+	}
+	result, err := s.Database.ExecContext(ctx, query, args...)
 	if err != nil {
 		return inbox.Event{}, false, fmt.Errorf("claim notification event: %w", err)
 	}
@@ -176,13 +176,11 @@ func (s *Store) transitionFailure(ctx context.Context, event inbox.Event, status
 		return err
 	}
 	defer tx.Rollback()
-	query := "UPDATE " + s.Renderer.Table("notification_events") + " SET " + s.Renderer.Identifier("status") + " = " + s.Renderer.Placeholder(1) + ", " +
-		s.Renderer.Identifier("attempt_count") + " = " + s.Renderer.Identifier("attempt_count") + " + 1, " + s.Renderer.Identifier("next_attempt_at") + " = " + s.Renderer.Placeholder(2) + ", " +
-		s.Renderer.Identifier("last_error_code") + " = " + s.Renderer.Placeholder(3) + ", " + s.Renderer.Identifier("lease_owner") + " = '', " + s.Renderer.Identifier("lease_expires_at") + " = '', " +
-		s.Renderer.Identifier("updated_at") + " = " + s.Renderer.Placeholder(4) + " WHERE " + s.Renderer.Identifier("workspace_id") + " = " + s.Renderer.Placeholder(5) +
-		" AND " + s.Renderer.Identifier("id") + " = " + s.Renderer.Placeholder(6) + " AND " + s.Renderer.Identifier("status") + " = 'processing' AND " +
-		s.Renderer.Identifier("lease_owner") + " = " + s.Renderer.Placeholder(7) + " AND " + s.Renderer.Identifier("fencing_token") + " = " + s.Renderer.Placeholder(8)
-	result, err := tx.ExecContext(ctx, query, string(status), strings.TrimSpace(nextAttemptAt), errorCode, strings.TrimSpace(updatedAt), event.WorkspaceID.String(), event.ID, event.LeaseOwner, event.FencingToken)
+	query, args, err := builder.NewUpdateBuilder(s.Renderer, "notification_events").Set("status", string(status)).SetExpression("attempt_count", builder.Add(builder.Column("attempt_count"), builder.Value(1))).Set("next_attempt_at", strings.TrimSpace(nextAttemptAt)).Set("last_error_code", errorCode).Set("lease_owner", "").Set("lease_expires_at", "").Set("updated_at", strings.TrimSpace(updatedAt)).Where(builder.And(builder.Equal("workspace_id", event.WorkspaceID.String()), builder.Equal("id", event.ID), builder.Equal("status", "processing"), builder.Equal("lease_owner", event.LeaseOwner), builder.Equal("fencing_token", event.FencingToken))).Build()
+	if err != nil {
+		return err
+	}
+	result, err := tx.ExecContext(ctx, query, args...)
 	if err != nil {
 		return fmt.Errorf("transition notification event failure: %w", err)
 	}
@@ -213,8 +211,11 @@ func (s *Store) transitionFailure(ctx context.Context, event inbox.Event, status
 
 func (s *Store) eventByID(ctx context.Context, workspaceID notification.WorkspaceID, eventID string) (inbox.Event, bool, error) {
 	ctx = s.workspaceScope.Context(ctx, workspaceID)
-	query := "SELECT " + s.columns(eventColumns) + " FROM " + s.Renderer.Table("notification_events") + " WHERE " + s.Renderer.Identifier("workspace_id") + " = " + s.Renderer.Placeholder(1) + " AND " + s.Renderer.Identifier("id") + " = " + s.Renderer.Placeholder(2)
-	value, err := scanEvent(s.Database.QueryRowContext(ctx, query, workspaceID.String(), strings.TrimSpace(eventID)))
+	query, args, err := builder.NewSelectBuilder(s.Renderer, "notification_events").Columns(eventColumns...).Where(builder.And(builder.Equal("workspace_id", workspaceID.String()), builder.Equal("id", strings.TrimSpace(eventID)))).Build()
+	if err != nil {
+		return inbox.Event{}, false, err
+	}
+	value, err := scanEvent(s.Database.QueryRowContext(ctx, query, args...))
 	if errors.Is(err, sql.ErrNoRows) {
 		return inbox.Event{}, false, nil
 	}
@@ -223,8 +224,11 @@ func (s *Store) eventByID(ctx context.Context, workspaceID notification.Workspac
 
 func (s *Store) eventBySource(ctx context.Context, workspaceID notification.WorkspaceID, source, sourceEventID string) (inbox.Event, bool, error) {
 	ctx = s.workspaceScope.Context(ctx, workspaceID)
-	query := "SELECT " + s.columns(eventColumns) + " FROM " + s.Renderer.Table("notification_events") + " WHERE " + s.Renderer.Identifier("workspace_id") + " = " + s.Renderer.Placeholder(1) + " AND " + s.Renderer.Identifier("source") + " = " + s.Renderer.Placeholder(2) + " AND " + s.Renderer.Identifier("source_event_id") + " = " + s.Renderer.Placeholder(3)
-	value, err := scanEvent(s.Database.QueryRowContext(ctx, query, workspaceID.String(), strings.TrimSpace(source), strings.TrimSpace(sourceEventID)))
+	query, args, err := builder.NewSelectBuilder(s.Renderer, "notification_events").Columns(eventColumns...).Where(builder.And(builder.Equal("workspace_id", workspaceID.String()), builder.Equal("source", strings.TrimSpace(source)), builder.Equal("source_event_id", strings.TrimSpace(sourceEventID)))).Build()
+	if err != nil {
+		return inbox.Event{}, false, err
+	}
+	value, err := scanEvent(s.Database.QueryRowContext(ctx, query, args...))
 	if errors.Is(err, sql.ErrNoRows) {
 		return inbox.Event{}, false, nil
 	}
