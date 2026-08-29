@@ -2,12 +2,18 @@ package notification_test
 
 import (
 	"encoding/json"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
+
+	storeschema "github.com/domainry/domainry-notification/internal/infrastructure/persistence/database/schema"
 )
 
 func TestDDDPackageBoundaries(t *testing.T) {
@@ -55,6 +61,52 @@ func TestDDDPackageBoundaries(t *testing.T) {
 		if info, err := os.Stat(filepath.FromSlash(required)); err != nil || !info.IsDir() {
 			t.Errorf("required DDD package directory %q is missing", required)
 		}
+	}
+}
+
+func TestWorkspaceTablesCannotUseSystemBuilders(t *testing.T) {
+	workspaceTables := map[string]bool{}
+	for _, table := range storeschema.SchemaOwnership() {
+		workspaceTables[table.Name] = table.Scope == storeschema.WorkspaceData
+	}
+	files, err := filepath.Glob("internal/infrastructure/persistence/database/**/*.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range files {
+		if strings.HasSuffix(name, "_test.go") {
+			continue
+		}
+		source, err := os.ReadFile(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(strings.ToUpper(string(source)), " OFFSET ") {
+			t.Errorf("positive-offset pagination is forbidden in persistence: %s", name)
+		}
+		parsed, err := parser.ParseFile(token.NewFileSet(), name, source, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ast.Inspect(parsed, func(node ast.Node) bool {
+			call, ok := node.(*ast.CallExpr)
+			if !ok || len(call.Args) < 2 {
+				return true
+			}
+			selector, ok := call.Fun.(*ast.SelectorExpr)
+			if !ok || !strings.HasPrefix(selector.Sel.Name, "New") || !strings.HasSuffix(selector.Sel.Name, "Builder") || strings.Contains(selector.Sel.Name, "Workspace") {
+				return true
+			}
+			tableLiteral, ok := call.Args[1].(*ast.BasicLit)
+			if !ok || tableLiteral.Kind != token.STRING {
+				return true
+			}
+			table, err := strconv.Unquote(tableLiteral.Value)
+			if err == nil && workspaceTables[table] {
+				t.Errorf("workspace table %q uses system builder %s in %s", table, selector.Sel.Name, name)
+			}
+			return true
+		})
 	}
 }
 
