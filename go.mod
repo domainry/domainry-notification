@@ -9,7 +9,7 @@ require (
 	github.com/domainry/domainry-foundation v0.1.0-dev.3
 	github.com/domainry/domainry-identity-sdk v0.1.0-dev8
 	github.com/domainry/domainry-notification-sdk v0.1.0-dev.3
-	github.com/domainry/domainry-orm v0.1.3
+	github.com/domainry/domainry-orm v0.1.4
 	github.com/go-sql-driver/mysql v1.10.0
 	github.com/jackc/pgx/v5 v5.10.0
 	go.opentelemetry.io/otel v1.44.0
