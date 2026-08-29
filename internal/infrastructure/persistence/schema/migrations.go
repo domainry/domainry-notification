@@ -5,11 +5,13 @@ import (
 	"strings"
 
 	"github.com/domainry/domainry-notification-sdk/modulehost"
+	ormbuilder "github.com/domainry/domainry-orm/builder"
 	ormmigration "github.com/domainry/domainry-orm/migration"
 )
 
 type Profile interface {
 	ColumnType(ColumnKind) (string, error)
+	SchemaColumn(string, ColumnKind) (ormbuilder.SchemaColumn, error)
 }
 
 type ApplicationScope struct {
@@ -113,11 +115,12 @@ func ApplicationSchemaMigrations(profile Profile, dialect modulehost.Dialect, ta
 }
 
 type schemaColumn struct {
-	name       string
-	kind       schemaColumnKind
-	nullable   bool
-	defaultSQL string
-	primaryKey bool
+	name         string
+	kind         schemaColumnKind
+	nullable     bool
+	defaultValue any
+	defaultSet   bool
+	primaryKey   bool
 }
 
 type ColumnKind uint8
@@ -165,42 +168,48 @@ func renderSchema(profile Profile, indexPrefix string, dialect modulehost.Dialec
 		columns := append([]schemaColumn(nil), table.columns...)
 		if application != nil {
 			columns = append([]schemaColumn{
-				defaulted("tenant_id", identifierColumn, sqlStringLiteral(application.TenantID)),
-				defaulted("application_key", identifierColumn, sqlStringLiteral(application.ApplicationKey)),
+				defaulted("tenant_id", identifierColumn, application.TenantID),
+				defaulted("application_key", identifierColumn, application.ApplicationKey),
 			}, columns...)
 		}
-		parts := make([]string, len(columns))
+		definitions := make([]ormbuilder.SchemaColumn, len(columns))
+		primaryColumns := []string{}
 		for index, column := range columns {
-			columnType, err := profile.ColumnType(column.kind)
+			definition, err := profile.SchemaColumn(column.name, column.kind)
 			if err != nil {
 				return nil, err
 			}
-			part := dialect.Identifier(column.name) + " " + columnType
 			if !column.nullable {
-				part += " NOT NULL"
+				definition = definition.NotNull()
 			}
-			if column.defaultSQL != "" {
-				part += " DEFAULT " + column.defaultSQL
+			if column.defaultSet {
+				definition = definition.DefaultValue(column.defaultValue)
 			}
 			if column.primaryKey {
-				part += " PRIMARY KEY"
+				primaryColumns = append(primaryColumns, column.name)
 			}
-			parts[index] = part
+			definitions[index] = definition
 		}
-		statements = append(statements, "CREATE TABLE "+dialect.Table(table.name)+" ("+strings.Join(parts, ", ")+")")
+		create := ormbuilder.NewCreateTableBuilder(dialect, table.name).WithoutSystemColumns().Columns(definitions...)
+		if len(primaryColumns) > 0 {
+			create.PrimaryKey(primaryColumns...)
+		}
+		statement, _, err := create.Build()
+		if err != nil {
+			return nil, err
+		}
+		statements = append(statements, statement)
 	}
 	for _, index := range indexes {
-		columns := make([]string, len(index.columns))
-		for position, column := range index.columns {
-			columns[position] = dialect.Identifier(column)
-		}
-		unique := ""
+		create := ormbuilder.NewCreateIndexBuilder(dialect, indexPrefix+index.name, index.table).Columns(index.columns...)
 		if index.unique {
-			unique = "UNIQUE "
+			create.Unique()
 		}
-		statements = append(statements, "CREATE "+unique+"INDEX "+dialect.Identifier(indexPrefix+index.name)+" ON "+dialect.Table(index.table)+" ("+strings.Join(columns, ", ")+")")
+		statement, _, err := create.Build()
+		if err != nil {
+			return nil, err
+		}
+		statements = append(statements, statement)
 	}
 	return statements, nil
 }
-
-func sqlStringLiteral(value string) string { return "'" + strings.ReplaceAll(value, "'", "''") + "'" }

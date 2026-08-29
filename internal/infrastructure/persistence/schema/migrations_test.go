@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	ormbuilder "github.com/domainry/domainry-orm/builder"
 	ormdialect "github.com/domainry/domainry-orm/dialect"
 	_ "modernc.org/sqlite"
 )
@@ -35,6 +36,31 @@ func (p testSchemaProfile) ColumnType(kind ColumnKind) (string, error) {
 	default:
 		return "", fmt.Errorf("test column kind %d is unsupported", kind)
 	}
+}
+
+func (p testSchemaProfile) SchemaColumn(name string, kind ColumnKind) (ormbuilder.SchemaColumn, error) {
+	var columnType ormbuilder.ColumnType
+	switch kind {
+	case IdentifierColumn, IndexedTextColumn:
+		columnType = ormbuilder.TextKeyType(191)
+	case DocumentColumn:
+		columnType = ormbuilder.LongTextType()
+	case PlainTextColumn:
+		columnType = ormbuilder.TextType()
+	case IntegerColumn:
+		columnType = ormbuilder.IntegerType()
+	case BigIntegerColumn:
+		columnType = ormbuilder.BigIntType()
+	case BooleanColumn:
+		columnType = ormbuilder.BooleanType()
+	default:
+		return ormbuilder.SchemaColumn{}, fmt.Errorf("test column kind %d is unsupported", kind)
+	}
+	column := ormbuilder.DefineColumn(name, columnType)
+	if p.driver == "mysql" && kind == IndexedTextColumn {
+		column = column.CharacterSet("ascii").Collation("ascii_bin")
+	}
+	return column, nil
 }
 
 func testSchemaMigrations(driver, schemaName, prefix string) ([]SchemaMigration, error) {
@@ -125,7 +151,7 @@ func TestSchemaMigrationsRenderPhysicalNamesAndMySQLTypes(t *testing.T) {
 		"`failure` TEXT NOT NULL",
 	} {
 		if !strings.Contains(joined, fragment) {
-			t.Fatalf("migration does not contain %q", fragment)
+			t.Fatalf("migration does not contain %q:\n%s", fragment, joined)
 		}
 	}
 }

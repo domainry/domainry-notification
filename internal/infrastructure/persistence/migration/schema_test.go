@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	storeschema "github.com/domainry/domainry-notification/internal/infrastructure/persistence/schema"
+	ormbuilder "github.com/domainry/domainry-orm/builder"
 	ormdialect "github.com/domainry/domainry-orm/dialect"
 )
 
@@ -27,6 +28,27 @@ func (portableTestProfile) ColumnType(kind storeschema.ColumnKind) (string, erro
 	default:
 		return "", fmt.Errorf("portable test column kind %d is unsupported", kind)
 	}
+}
+
+func (portableTestProfile) SchemaColumn(name string, kind storeschema.ColumnKind) (ormbuilder.SchemaColumn, error) {
+	var columnType ormbuilder.ColumnType
+	switch kind {
+	case storeschema.IdentifierColumn, storeschema.IndexedTextColumn:
+		columnType = ormbuilder.TextKeyType(191)
+	case storeschema.DocumentColumn:
+		columnType = ormbuilder.LongTextType()
+	case storeschema.PlainTextColumn:
+		columnType = ormbuilder.TextType()
+	case storeschema.IntegerColumn:
+		columnType = ormbuilder.IntegerType()
+	case storeschema.BigIntegerColumn:
+		columnType = ormbuilder.BigIntType()
+	case storeschema.BooleanColumn:
+		columnType = ormbuilder.BooleanType()
+	default:
+		return ormbuilder.SchemaColumn{}, fmt.Errorf("portable test column kind %d is unsupported", kind)
+	}
+	return ormbuilder.DefineColumn(name, columnType), nil
 }
 
 func SchemaMigrations(_ string, schemaName, prefix string) ([]SchemaMigration, error) {
