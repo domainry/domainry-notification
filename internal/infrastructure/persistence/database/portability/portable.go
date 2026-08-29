@@ -96,7 +96,7 @@ func ExportPortable(ctx context.Context, database sqlhost.Queryer, dialect modul
 		}
 		selectBuilder := builder.NewSelectBuilder(dialect, definition.Name).Columns(columns...)
 		if ownership[definition.Name] == storeschema.WorkspaceData {
-			selectBuilder.Where(builder.Equal("workspace_id", scope.WorkspaceID))
+			selectBuilder = builder.NewWorkspaceSelectBuilder(dialect, definition.Name, scope.WorkspaceID).Columns(columns...)
 		}
 		statement, args, err := selectBuilder.Build()
 		if err != nil {
@@ -192,7 +192,18 @@ func ImportPortable(ctx context.Context, database sqlhost.Database, dialect modu
 				}
 				values[index] = value
 			}
-			statement, args, buildErr := builder.NewInsertBuilder(dialect, table.Name).Columns(table.Columns...).Values(values...).Build()
+			columns := append([]string(nil), table.Columns...)
+			insertBuilder := builder.NewInsertBuilder(dialect, table.Name)
+			if ownershipByTable()[table.Name] == storeschema.WorkspaceData {
+				workspaceIndex := slices.Index(columns, builder.WorkspaceIDColumn)
+				if workspaceIndex < 0 || strings.TrimSpace(fmt.Sprint(values[workspaceIndex])) != target.WorkspaceID {
+					return PortableImportReceipt{}, fmt.Errorf("notification portable table %s contains an invalid workspace row", table.Name)
+				}
+				columns = slices.Delete(columns, workspaceIndex, workspaceIndex+1)
+				values = slices.Delete(values, workspaceIndex, workspaceIndex+1)
+				insertBuilder = builder.NewWorkspaceInsertBuilder(dialect, table.Name, target.WorkspaceID)
+			}
+			statement, args, buildErr := insertBuilder.Columns(columns...).Values(values...).Build()
 			if buildErr != nil {
 				return PortableImportReceipt{}, buildErr
 			}
