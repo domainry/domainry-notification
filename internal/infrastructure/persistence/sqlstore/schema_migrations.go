@@ -3,6 +3,8 @@ package sqlstore
 import (
 	"fmt"
 	"strings"
+
+	ormmigration "github.com/domainry/domainry-orm/migration"
 )
 
 type ApplicationScope struct {
@@ -12,37 +14,15 @@ type ApplicationScope struct {
 // SchemaMigration is one ordered, immutable schema change. Hosts execute and
 // record these versions with their existing migration ledger; this library does
 // not create a second migration-history table inside the same database.
-type SchemaMigration struct {
-	Version    uint
-	Name       string
-	Statements []string
-}
+type SchemaMigration = ormmigration.Migration
 
 // SchemaBaseline is the complete physical contract used only to adopt a
 // pre-extraction Module schema. It deliberately excludes database-generated
 // indexes while including every source-declared index.
-type SchemaBaseline struct {
-	Tables []SchemaBaselineTable
-}
-
-type SchemaBaselineTable struct {
-	Name    string
-	Columns []SchemaBaselineColumn
-	Indexes []SchemaBaselineIndex
-}
-
-type SchemaBaselineColumn struct {
-	Name       string
-	Type       string
-	Nullable   bool
-	PrimaryKey bool
-}
-
-type SchemaBaselineIndex struct {
-	Name    string
-	Unique  bool
-	Columns []string
-}
+type SchemaBaseline = ormmigration.Baseline
+type SchemaBaselineTable = ormmigration.Table
+type SchemaBaselineColumn = ormmigration.Column
+type SchemaBaselineIndex = ormmigration.Index
 
 // SchemaMigrations renders the complete migration history for one physical
 // naming configuration. Existing installations must verify and baseline

@@ -2,25 +2,14 @@ package sqlstore
 
 import (
 	"context"
-	"database/sql"
 
 	notification "github.com/domainry/domainry-notification/internal/domain/notification/model"
+	"github.com/domainry/domainry-orm/sqlhost"
 )
 
-type Executor interface {
-	ExecContext(context.Context, string, ...any) (sql.Result, error)
-}
-
-type Queryer interface {
-	QueryContext(context.Context, string, ...any) (*sql.Rows, error)
-	QueryRowContext(context.Context, string, ...any) *sql.Row
-}
-
-type Database interface {
-	Executor
-	Queryer
-	BeginTx(context.Context, *sql.TxOptions) (*sql.Tx, error)
-}
+type Executor = sqlhost.Executor
+type Queryer = sqlhost.Queryer
+type Database = sqlhost.Database
 
 // Dialect supplies only SQL construction that differs between the host's
 // supported databases. Implementations must quote identifiers defensively.

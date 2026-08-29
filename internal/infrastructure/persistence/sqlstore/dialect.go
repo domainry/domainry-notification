@@ -2,8 +2,9 @@ package sqlstore
 
 import (
 	"fmt"
-	"regexp"
 	"strings"
+
+	ormdialect "github.com/domainry/domainry-orm/dialect"
 )
 
 type Driver string
@@ -14,40 +15,32 @@ const (
 	MySQL    Driver = "mysql"
 )
 
-var identifierPattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
-
 type standardDialect struct {
-	driver Driver
-	schema string
-	prefix string
+	dialect ormdialect.Dialect
+	schema  string
+	prefix  string
 }
 
 // NewDialect constructs the standalone SQL dialect used when a host does not
 // adapt an existing database abstraction. Schema and prefix must be static
 // trusted identifiers; dynamic domain values never enter SQL identifiers.
 func NewDialect(driver Driver, schema, tablePrefix string) (Dialect, error) {
-	if driver != SQLite && driver != Postgres && driver != MySQL {
+	dialect, err := ormdialect.Parse(string(driver))
+	if err != nil || driver != SQLite && driver != Postgres && driver != MySQL {
 		return nil, fmt.Errorf("notification SQL driver %q is unsupported", driver)
 	}
 	schema, tablePrefix = strings.TrimSpace(schema), strings.TrimSpace(tablePrefix)
-	if schema != "" && !identifierPattern.MatchString(schema) {
+	if schema != "" && !ormdialect.ValidIdentifier(schema) {
 		return nil, fmt.Errorf("notification SQL schema is invalid")
 	}
-	if tablePrefix != "" && !identifierPattern.MatchString(tablePrefix) {
+	if tablePrefix != "" && !ormdialect.ValidIdentifier(tablePrefix) {
 		return nil, fmt.Errorf("notification SQL table prefix is invalid")
 	}
-	return standardDialect{driver: driver, schema: schema, prefix: tablePrefix}, nil
+	return standardDialect{dialect: dialect, schema: schema, prefix: tablePrefix}, nil
 }
 
 func (d standardDialect) Identifier(value string) string {
-	if !identifierPattern.MatchString(value) {
-		panic("notification sqlstore: unsafe identifier")
-	}
-	quote := `"`
-	if d.driver == MySQL {
-		quote = "`"
-	}
-	return quote + value + quote
+	return d.dialect.Identifier(value)
 }
 
 func (d standardDialect) Table(value string) string {
@@ -59,16 +52,13 @@ func (d standardDialect) Table(value string) string {
 }
 
 func (d standardDialect) Placeholder(position int) string {
-	if d.driver == Postgres {
-		return fmt.Sprintf("$%d", position)
-	}
-	return "?"
+	return d.dialect.Placeholder(position)
 }
 
 func (d standardDialect) Insert(table string, columns []string) string {
-	quoted, placeholders := make([]string, len(columns)), make([]string, len(columns))
+	quoted, placeholders := make([]string, len(columns)), d.dialect.Placeholders(len(columns))
 	for index, column := range columns {
-		quoted[index], placeholders[index] = d.Identifier(column), d.Placeholder(index+1)
+		quoted[index] = d.Identifier(column)
 	}
 	return "INSERT INTO " + d.Table(table) + " (" + strings.Join(quoted, ", ") + ") VALUES (" + strings.Join(placeholders, ", ") + ")"
 }
