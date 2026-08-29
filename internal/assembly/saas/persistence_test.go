@@ -9,6 +9,7 @@ import (
 	"github.com/DATA-DOG/go-sqlmock"
 	notificationsdk "github.com/domainry/domainry-notification-sdk"
 	sqlstore "github.com/domainry/domainry-notification/internal/infrastructure/persistence"
+	"github.com/domainry/domainry-notification/internal/infrastructure/persistence/base"
 
 	_ "modernc.org/sqlite"
 )
@@ -106,9 +107,9 @@ func TestApplicationTablePrefixDoesNotExposeScopeValues(t *testing.T) {
 }
 
 func TestMigrationLockKeyIsDeterministicBoundedAndOpaque(t *testing.T) {
-	first := migrationLockKey("tenant-secret/workspace-secret/application-secret")
-	second := migrationLockKey("tenant-secret/workspace-secret/application-secret")
-	other := migrationLockKey("tenant-secret/workspace-secret/other")
+	first := base.MigrationLockKey("tenant-secret/workspace-secret/application-secret")
+	second := base.MigrationLockKey("tenant-secret/workspace-secret/application-secret")
+	other := base.MigrationLockKey("tenant-secret/workspace-secret/other")
 	if first != second || first == other || len(first) > 64 || strings.Contains(first, "secret") {
 		t.Fatalf("lock keys first=%q second=%q other=%q", first, second, other)
 	}
@@ -129,7 +130,7 @@ func TestMigrationLocksUseOneDatabaseSession(t *testing.T) {
 				t.Fatal(err)
 			}
 			defer db.Close()
-			key := migrationLockKey("tenant/workspace/application")
+			key := base.MigrationLockKey("tenant/workspace/application")
 			var acquire *sqlmock.ExpectedQuery
 			if test.driver == sqlstore.MySQL {
 				acquire = mock.ExpectQuery(regexp.QuoteMeta(test.acquire)).WithArgs(key, 30)
@@ -143,8 +144,11 @@ func TestMigrationLocksUseOneDatabaseSession(t *testing.T) {
 				t.Fatal(err)
 			}
 			defer connection.Close()
-			persistence := &SQLPersistence{driver: test.driver}
-			release, err := persistence.acquireMigrationLock(t.Context(), connection, "tenant/workspace/application")
+			locker, err := sqlstore.MigrationLocker(test.driver)
+			if err != nil {
+				t.Fatal(err)
+			}
+			release, err := locker.Acquire(t.Context(), connection, "tenant/workspace/application")
 			if err != nil {
 				t.Fatal(err)
 			}

@@ -14,6 +14,7 @@ import (
 	notificationsdk "github.com/domainry/domainry-notification-sdk"
 	"github.com/domainry/domainry-notification-sdk/modulehost"
 	sqlstore "github.com/domainry/domainry-notification/internal/infrastructure/persistence"
+	"github.com/domainry/domainry-notification/internal/infrastructure/persistence/base"
 	ormdialect "github.com/domainry/domainry-orm/dialect"
 )
 
@@ -24,6 +25,7 @@ const migrationLedgerTable = "_schema_migrations"
 type SQLPersistence struct {
 	database *sql.DB
 	driver   sqlstore.Driver
+	locker   base.MigrationLocker
 	schema   string
 	owns     bool
 	mu       sync.Mutex
@@ -43,7 +45,11 @@ func NewSQLPersistence(options SQLPersistenceOptions) (*SQLPersistence, error) {
 	if _, err := ormdialect.ParseRenderer(string(options.Driver), options.Schema, ""); err != nil {
 		return nil, err
 	}
-	return &SQLPersistence{database: options.Database, driver: options.Driver, schema: strings.TrimSpace(options.Schema), owns: options.OwnsDatabase}, nil
+	locker, err := sqlstore.MigrationLocker(options.Driver)
+	if err != nil {
+		return nil, err
+	}
+	return &SQLPersistence{database: options.Database, driver: options.Driver, locker: locker, schema: strings.TrimSpace(options.Schema), owns: options.OwnsDatabase}, nil
 }
 
 func (p *SQLPersistence) Database() *sql.DB {
@@ -86,7 +92,7 @@ func (p *SQLPersistence) PrepareApplication(ctx context.Context, application not
 	}
 	defer connection.Close()
 	namespace := applicationKey(application)
-	release, err := p.acquireMigrationLock(ctx, connection, namespace)
+	release, err := p.locker.Acquire(ctx, connection, namespace)
 	if err != nil {
 		return nil, err
 	}
@@ -178,54 +184,6 @@ func (p *SQLPersistence) applyMigration(ctx context.Context, connection migratio
 		return fmt.Errorf("commit Notification SaaS migration %s/%d: %w", namespace, migration.Version, err)
 	}
 	return nil
-}
-
-func (p *SQLPersistence) acquireMigrationLock(ctx context.Context, connection migrationConnection, namespace string) (func(context.Context) error, error) {
-	lockKey := migrationLockKey(namespace)
-	switch p.driver {
-	case sqlstore.Postgres:
-		var ignored any
-		if err := connection.QueryRowContext(ctx, "SELECT pg_advisory_lock(hashtextextended($1, 0))", lockKey).Scan(&ignored); err != nil {
-			return nil, fmt.Errorf("acquire Notification SaaS PostgreSQL migration lock: %w", err)
-		}
-		return func(releaseContext context.Context) error {
-			var released bool
-			if err := connection.QueryRowContext(releaseContext, "SELECT pg_advisory_unlock(hashtextextended($1, 0))", lockKey).Scan(&released); err != nil {
-				return err
-			}
-			if !released {
-				return fmt.Errorf("Notification SaaS PostgreSQL migration lock was not held")
-			}
-			return nil
-		}, nil
-	case sqlstore.MySQL:
-		var acquired sql.NullInt64
-		if err := connection.QueryRowContext(ctx, "SELECT GET_LOCK(?, ?)", lockKey, 30).Scan(&acquired); err != nil {
-			return nil, fmt.Errorf("acquire Notification SaaS MySQL migration lock: %w", err)
-		}
-		if !acquired.Valid || acquired.Int64 != 1 {
-			return nil, fmt.Errorf("acquire Notification SaaS MySQL migration lock timed out")
-		}
-		return func(releaseContext context.Context) error {
-			var released sql.NullInt64
-			if err := connection.QueryRowContext(releaseContext, "SELECT RELEASE_LOCK(?)", lockKey).Scan(&released); err != nil {
-				return err
-			}
-			if !released.Valid || released.Int64 != 1 {
-				return fmt.Errorf("Notification SaaS MySQL migration lock was not held")
-			}
-			return nil
-		}, nil
-	case sqlstore.SQLite:
-		return func(context.Context) error { return nil }, nil
-	default:
-		return nil, fmt.Errorf("Notification SaaS migration driver %q is unsupported", p.driver)
-	}
-}
-
-func migrationLockKey(namespace string) string {
-	sum := sha256.Sum256([]byte(strings.TrimSpace(namespace)))
-	return "notification-migration-" + hex.EncodeToString(sum[:16])
 }
 
 type migrationQueryer interface {
