@@ -1,4 +1,4 @@
-package sqlstore
+package schema
 
 // DataScope describes the tenancy boundary of a notification-owned table. It
 // is schema metadata, not an authorization mechanism: callers still provide

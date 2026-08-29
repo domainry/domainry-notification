@@ -1,4 +1,4 @@
-package sqlstore
+package schema
 
 import (
 	"fmt"

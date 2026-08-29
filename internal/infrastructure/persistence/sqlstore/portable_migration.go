@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/domainry/domainry-notification-sdk/modulehost"
+	storeschema "github.com/domainry/domainry-notification/internal/infrastructure/persistence/sqlstore/schema"
 	"github.com/domainry/domainry-orm/sqlhost"
 )
 
@@ -84,26 +85,26 @@ func ExportPortable(ctx context.Context, database sqlhost.Queryer, dialect modul
 		return PortableBundle{}, PortableInventory{}, fmt.Errorf("notification portable export dependencies and scope are required")
 	}
 	ownership := ownershipByTable()
-	definitions := portableSchemaTables()
+	definitions := storeschema.PortableTables()
 	bundle := PortableBundle{FormatVersion: PortableFormatV1, Source: scope, Tables: make([]PortableTable, 0, len(definitions))}
 	inventory := PortableInventory{Tables: map[string]int{}}
 	for _, definition := range definitions {
-		columns := make([]string, len(definition.columns))
-		quoted := make([]string, len(definition.columns))
-		for index, column := range definition.columns {
-			columns[index], quoted[index] = column.name, dialect.Identifier(column.name)
+		columns := make([]string, len(definition.Columns))
+		quoted := make([]string, len(definition.Columns))
+		for index, column := range definition.Columns {
+			columns[index], quoted[index] = column.Name, dialect.Identifier(column.Name)
 		}
-		statement := "SELECT " + strings.Join(quoted, ", ") + " FROM " + dialect.Table(definition.name)
+		statement := "SELECT " + strings.Join(quoted, ", ") + " FROM " + dialect.Table(definition.Name)
 		args := []any{}
-		if ownership[definition.name] == WorkspaceData {
+		if ownership[definition.Name] == storeschema.WorkspaceData {
 			statement += " WHERE " + dialect.Identifier("workspace_id") + " = " + dialect.Placeholder(1)
 			args = append(args, scope.WorkspaceID)
 		}
 		rows, err := database.QueryContext(ctx, statement, args...)
 		if err != nil {
-			return PortableBundle{}, PortableInventory{}, fmt.Errorf("export notification table %s: %w", definition.name, err)
+			return PortableBundle{}, PortableInventory{}, fmt.Errorf("export notification table %s: %w", definition.Name, err)
 		}
-		table := PortableTable{Name: definition.name, Columns: columns, Rows: [][]json.RawMessage{}}
+		table := PortableTable{Name: definition.Name, Columns: columns, Rows: [][]json.RawMessage{}}
 		for rows.Next() {
 			values := make([]any, len(columns))
 			destinations := make([]any, len(columns))
@@ -134,7 +135,7 @@ func ExportPortable(ctx context.Context, database sqlhost.Queryer, dialect modul
 		}
 		_ = rows.Close()
 		sort.Slice(table.Rows, func(i, j int) bool { return portableRowKey(table.Rows[i]) < portableRowKey(table.Rows[j]) })
-		inventory.Tables[definition.name] = len(table.Rows)
+		inventory.Tables[definition.Name] = len(table.Rows)
 		inventory.Rows += len(table.Rows)
 		inventory.ActiveLeases += activePortableLeases(table)
 		bundle.Tables = append(bundle.Tables, table)
@@ -184,7 +185,7 @@ func ImportPortable(ctx context.Context, database sqlhost.Database, dialect modu
 		for _, row := range table.Rows {
 			values := make([]any, len(row))
 			for index, raw := range row {
-				value, decodeErr := decodePortableCell(raw, definition.columns[index].kind)
+				value, decodeErr := decodePortableCell(raw, definition.Columns[index].Kind)
 				if decodeErr != nil {
 					return PortableImportReceipt{}, fmt.Errorf("decode notification portable cell: %w", decodeErr)
 				}
@@ -221,17 +222,17 @@ func ValidatePortable(bundle PortableBundle, target PortableScope) error {
 	if bundle.Source.TenantID != target.TenantID || bundle.Source.WorkspaceID != target.WorkspaceID || bundle.Source.ApplicationKey != target.ApplicationKey {
 		return fmt.Errorf("notification portable bundle target scope mismatch")
 	}
-	definitions := portableSchemaTables()
+	definitions := storeschema.PortableTables()
 	if len(bundle.Tables) != len(definitions) {
 		return fmt.Errorf("notification portable bundle table inventory is incomplete")
 	}
 	for index, definition := range definitions {
 		table := bundle.Tables[index]
-		if table.Name != definition.name || len(table.Columns) != len(definition.columns) {
+		if table.Name != definition.Name || len(table.Columns) != len(definition.Columns) {
 			return fmt.Errorf("notification portable table %d schema mismatch", index)
 		}
-		for columnIndex, column := range definition.columns {
-			if table.Columns[columnIndex] != column.name {
+		for columnIndex, column := range definition.Columns {
+			if table.Columns[columnIndex] != column.Name {
 				return fmt.Errorf("notification portable table %s columns mismatch", table.Name)
 			}
 		}
@@ -239,7 +240,7 @@ func ValidatePortable(bundle PortableBundle, target PortableScope) error {
 			if len(row) != len(table.Columns) {
 				return fmt.Errorf("notification portable table %s row width mismatch", table.Name)
 			}
-			if ownershipByTable()[table.Name] == WorkspaceData {
+			if ownershipByTable()[table.Name] == storeschema.WorkspaceData {
 				workspaceIndex := slices.Index(table.Columns, "workspace_id")
 				var workspaceID string
 				if workspaceIndex < 0 || json.Unmarshal(row[workspaceIndex], &workspaceID) != nil || workspaceID != target.WorkspaceID {
@@ -255,27 +256,27 @@ func ValidatePortable(bundle PortableBundle, target PortableScope) error {
 	return nil
 }
 
-func tableDefinition(name string) (schemaTable, bool) {
-	for _, table := range portableSchemaTables() {
-		if table.name == name {
+func tableDefinition(name string) (storeschema.PortableTableDefinition, bool) {
+	for _, table := range storeschema.PortableTables() {
+		if table.Name == name {
 			return table, true
 		}
 	}
-	return schemaTable{}, false
+	return storeschema.PortableTableDefinition{}, false
 }
 
-func decodePortableCell(raw json.RawMessage, kind schemaColumnKind) (any, error) {
+func decodePortableCell(raw json.RawMessage, kind storeschema.PortableColumnKind) (any, error) {
 	if string(raw) == "null" {
 		return nil, nil
 	}
 	switch kind {
-	case integerColumn, bigIntegerColumn:
+	case storeschema.PortableInteger:
 		var value int64
 		if err := json.Unmarshal(raw, &value); err != nil {
 			return nil, err
 		}
 		return value, nil
-	case booleanColumn:
+	case storeschema.PortableBoolean:
 		var value bool
 		if err := json.Unmarshal(raw, &value); err == nil {
 			return value, nil
@@ -294,9 +295,10 @@ func decodePortableCell(raw json.RawMessage, kind schemaColumnKind) (any, error)
 	}
 }
 
-func ownershipByTable() map[string]DataScope {
-	result := make(map[string]DataScope, len(tableOwnership))
-	for _, table := range tableOwnership {
+func ownershipByTable() map[string]storeschema.DataScope {
+	ownership := storeschema.SchemaOwnership()
+	result := make(map[string]storeschema.DataScope, len(ownership))
+	for _, table := range ownership {
 		result[table.Name] = table.Scope
 	}
 	return result

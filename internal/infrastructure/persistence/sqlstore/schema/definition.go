@@ -1,4 +1,4 @@
-package sqlstore
+package schema
 
 func required(name string, kind schemaColumnKind) schemaColumn {
 	return schemaColumn{name: name, kind: kind}
@@ -162,4 +162,42 @@ func portableSchemaTables() []schemaTable {
 	tables = append(tables, baseSchemaTables...)
 	tables = append(tables, retentionArchiveTables...)
 	return tables
+}
+
+type PortableColumnKind uint8
+
+const (
+	PortableText PortableColumnKind = iota
+	PortableInteger
+	PortableBoolean
+)
+
+type PortableTableDefinition struct {
+	Name    string
+	Columns []PortableColumnDefinition
+}
+
+type PortableColumnDefinition struct {
+	Name string
+	Kind PortableColumnKind
+}
+
+func PortableTables() []PortableTableDefinition {
+	source := portableSchemaTables()
+	result := make([]PortableTableDefinition, len(source))
+	for tableIndex, table := range source {
+		result[tableIndex].Name = table.name
+		result[tableIndex].Columns = make([]PortableColumnDefinition, len(table.columns))
+		for columnIndex, column := range table.columns {
+			kind := PortableText
+			switch column.kind {
+			case integerColumn, bigIntegerColumn:
+				kind = PortableInteger
+			case booleanColumn:
+				kind = PortableBoolean
+			}
+			result[tableIndex].Columns[columnIndex] = PortableColumnDefinition{Name: column.name, Kind: kind}
+		}
+	}
+	return result
 }
