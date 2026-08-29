@@ -23,6 +23,8 @@ github.com/domainry/domainry-orm v0.0.0-20260829053429-13d9a1be6768 h1:de6yb37yJ
 github.com/domainry/domainry-orm v0.0.0-20260829053429-13d9a1be6768/go.mod h1:NKMojLuridkYCS4i5L7BO7LMTMsf/uOkWQ9OQ+9Vdn4=
 github.com/domainry/domainry-orm v0.0.0-20260829054001-0e9dcde4b015 h1:zMObhZLCzUW8VpaP/uscjYnRb7Zie9pPhNVOuZ/156w=
 github.com/domainry/domainry-orm v0.0.0-20260829054001-0e9dcde4b015/go.mod h1:NKMojLuridkYCS4i5L7BO7LMTMsf/uOkWQ9OQ+9Vdn4=
+github.com/domainry/domainry-orm v0.0.0-20260829054237-9a43db06e404 h1:ovEaviv3Ocw3KQNC1eaeIj+AnR4lyQUo9GchzEZikVE=
+github.com/domainry/domainry-orm v0.0.0-20260829054237-9a43db06e404/go.mod h1:NKMojLuridkYCS4i5L7BO7LMTMsf/uOkWQ9OQ+9Vdn4=
 github.com/dustin/go-humanize v1.0.1 h1:GzkhY7T5VNhEkwH0PVJgjz+fX1rhBrR7pRT3mDkpeCY=
 github.com/dustin/go-humanize v1.0.1/go.mod h1:Mu1zIs6XwVuF/gI1OepvI0qD18qycQx+mFykh5fBlto=
 github.com/go-logr/logr v1.2.2/go.mod h1:jdQByPbusPIv2/zmleS9BjJVeZ6kBagPoEUsqbVz/1A=

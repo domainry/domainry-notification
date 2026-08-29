@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/domainry/domainry-notification/internal/domain/template/service"
+	"github.com/domainry/domainry-orm/builder"
 	"github.com/domainry/domainry-orm/sqlhost"
 )
 
@@ -21,13 +22,14 @@ var publicationRequestColumns = []string{
 }
 
 func (s *Store) ListPublicationRequests(ctx context.Context, templateKey string) ([]template.PublicationRequest, error) {
-	query := "SELECT " + s.columns(publicationRequestColumns) + " FROM " + s.Renderer.Table("notification_template_publication_requests")
-	args := []any{}
+	selectBuilder := builder.NewSelectBuilder(s.Renderer, "notification_template_publication_requests").Columns(publicationRequestColumns...).OrderBy(builder.Descending("requested_at"))
 	if templateKey = strings.TrimSpace(templateKey); templateKey != "" {
-		query += " WHERE " + s.Renderer.Identifier("template_key") + " = " + s.Renderer.Placeholder(1)
-		args = append(args, templateKey)
+		selectBuilder.Where(builder.Equal("template_key", templateKey))
 	}
-	query += " ORDER BY " + s.Renderer.Identifier("requested_at") + " DESC"
+	query, args, err := selectBuilder.Build()
+	if err != nil {
+		return nil, err
+	}
 	rows, err := s.Database.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("list notification publication requests: %w", err)
@@ -98,17 +100,13 @@ func (s *Store) TransitionPublicationRequest(ctx context.Context, requestID stri
 		return template.PublicationRequest{}, err
 	}
 	defer tx.Rollback()
-	query := "UPDATE " + s.Renderer.Table("notification_template_publication_requests") + " SET " + s.Renderer.Identifier("status") + " = " + s.Renderer.Placeholder(1) +
-		", " + s.Renderer.Identifier("scheduled_for") + " = " + s.Renderer.Placeholder(2) + ", " + s.Renderer.Identifier("reviewed_by") + " = " + s.Renderer.Placeholder(3) +
-		", " + s.Renderer.Identifier("reviewed_at") + " = " + s.Renderer.Placeholder(4) + ", " + s.Renderer.Identifier("published_version") + " = " + s.Renderer.Placeholder(5) +
-		", " + s.Renderer.Identifier("failure") + " = " + s.Renderer.Placeholder(6) + ", " + s.Renderer.Identifier("lease_owner") + " = '', " +
-		s.Renderer.Identifier("lease_expires_at") + " = '', " + s.Renderer.Identifier("updated_at") + " = " + s.Renderer.Placeholder(7) +
-		" WHERE " + s.Renderer.Identifier("id") + " = " + s.Renderer.Placeholder(8) + " AND " + s.Renderer.Identifier("status") + " = " + s.Renderer.Placeholder(9)
-	args := []any{string(transition.Status), transition.ScheduledFor, transition.ReviewedBy, transition.ReviewedAt, transition.PublishedVersion, transition.Failure,
-		transition.UpdatedAt, requestID, string(expectedStatus)}
+	predicate := builder.Predicate(builder.And(builder.Equal("id", requestID), builder.Equal("status", string(expectedStatus))))
 	if transition.ExpectedLeaseOwner = strings.TrimSpace(transition.ExpectedLeaseOwner); transition.ExpectedLeaseOwner != "" && transition.ExpectedFencingToken > 0 {
-		query += " AND " + s.Renderer.Identifier("lease_owner") + " = " + s.Renderer.Placeholder(10) + " AND " + s.Renderer.Identifier("fencing_token") + " = " + s.Renderer.Placeholder(11)
-		args = append(args, transition.ExpectedLeaseOwner, transition.ExpectedFencingToken)
+		predicate = builder.And(predicate, builder.Equal("lease_owner", transition.ExpectedLeaseOwner), builder.Equal("fencing_token", transition.ExpectedFencingToken))
+	}
+	query, args, err := builder.NewUpdateBuilder(s.Renderer, "notification_template_publication_requests").Set("status", string(transition.Status)).Set("scheduled_for", transition.ScheduledFor).Set("reviewed_by", transition.ReviewedBy).Set("reviewed_at", transition.ReviewedAt).Set("published_version", transition.PublishedVersion).Set("failure", transition.Failure).Set("lease_owner", "").Set("lease_expires_at", "").Set("updated_at", transition.UpdatedAt).Where(predicate).Build()
+	if err != nil {
+		return template.PublicationRequest{}, err
 	}
 	result, err := tx.ExecContext(ctx, query, args...)
 	if err != nil {
@@ -122,8 +120,11 @@ func (s *Store) TransitionPublicationRequest(ctx context.Context, requestID stri
 		return template.PublicationRequest{}, template.ErrPublicationConflict
 	}
 	if !publicationStatusOpen(transition.Status) {
-		query = "DELETE FROM " + s.Renderer.Table("notification_template_publication_locks") + " WHERE " + s.Renderer.Identifier("request_id") + " = " + s.Renderer.Placeholder(1)
-		if _, err := tx.ExecContext(ctx, query, requestID); err != nil {
+		query, args, err = builder.NewDeleteBuilder(s.Renderer, "notification_template_publication_locks").Where(builder.Equal("request_id", requestID)).Build()
+		if err != nil {
+			return template.PublicationRequest{}, err
+		}
+		if _, err := tx.ExecContext(ctx, query, args...); err != nil {
 			return template.PublicationRequest{}, fmt.Errorf("release notification publication lock: %w", err)
 		}
 	}
@@ -144,11 +145,12 @@ func (s *Store) ListDuePublicationRequests(ctx context.Context, now, staleBefore
 	if limit <= 0 || limit > 100 {
 		limit = 25
 	}
-	query := "SELECT " + s.columns(publicationRequestColumns) + " FROM " + s.Renderer.Table("notification_template_publication_requests") + " WHERE (" +
-		s.Renderer.Identifier("status") + " = 'scheduled' AND " + s.Renderer.Identifier("scheduled_for") + " <= " + s.Renderer.Placeholder(1) + ") OR (" +
-		s.Renderer.Identifier("status") + " = 'publishing' AND " + s.Renderer.Identifier("lease_expires_at") + " <= " + s.Renderer.Placeholder(2) + ") ORDER BY " +
-		s.Renderer.Identifier("scheduled_for") + ", " + s.Renderer.Identifier("requested_at") + " LIMIT " + fmt.Sprint(limit)
-	rows, err := s.Database.QueryContext(ctx, query, strings.TrimSpace(now), strings.TrimSpace(staleBefore))
+	due := builder.Or(builder.And(builder.Equal("status", "scheduled"), builder.LessThanOrEqual("scheduled_for", strings.TrimSpace(now))), builder.And(builder.Equal("status", "publishing"), builder.LessThanOrEqual("lease_expires_at", strings.TrimSpace(staleBefore))))
+	query, args, err := builder.NewSelectBuilder(s.Renderer, "notification_template_publication_requests").Columns(publicationRequestColumns...).Where(due).OrderBy(builder.Ascending("scheduled_for"), builder.Ascending("requested_at")).Limit(limit).Build()
+	if err != nil {
+		return nil, err
+	}
+	rows, err := s.Database.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("list due notification publication requests: %w", err)
 	}
@@ -169,13 +171,12 @@ func (s *Store) ClaimPublicationRequest(ctx context.Context, requestID, owner, n
 	if requestID == "" || owner == "" || now == "" || expiresAt == "" {
 		return template.PublicationRequest{}, false, fmt.Errorf("notification publication claim identity and lease are required")
 	}
-	query := "UPDATE " + s.Renderer.Table("notification_template_publication_requests") + " SET " + s.Renderer.Identifier("status") + " = 'publishing', " +
-		s.Renderer.Identifier("lease_owner") + " = " + s.Renderer.Placeholder(1) + ", " + s.Renderer.Identifier("lease_expires_at") + " = " + s.Renderer.Placeholder(2) +
-		", " + s.Renderer.Identifier("fencing_token") + " = " + s.Renderer.Identifier("fencing_token") + " + 1, " + s.Renderer.Identifier("updated_at") + " = " + s.Renderer.Placeholder(3) +
-		" WHERE " + s.Renderer.Identifier("id") + " = " + s.Renderer.Placeholder(4) + " AND ((" + s.Renderer.Identifier("status") + " = 'scheduled' AND " +
-		s.Renderer.Identifier("scheduled_for") + " <= " + s.Renderer.Placeholder(5) + ") OR (" + s.Renderer.Identifier("status") + " = 'publishing' AND " +
-		s.Renderer.Identifier("lease_expires_at") + " <= " + s.Renderer.Placeholder(6) + "))"
-	result, err := s.Database.ExecContext(ctx, query, owner, expiresAt, now, requestID, now, now)
+	due := builder.Or(builder.And(builder.Equal("status", "scheduled"), builder.LessThanOrEqual("scheduled_for", now)), builder.And(builder.Equal("status", "publishing"), builder.LessThanOrEqual("lease_expires_at", now)))
+	query, args, err := builder.NewUpdateBuilder(s.Renderer, "notification_template_publication_requests").Set("status", "publishing").Set("lease_owner", owner).Set("lease_expires_at", expiresAt).SetExpression("fencing_token", builder.Add(builder.Column("fencing_token"), builder.Value(1))).Set("updated_at", now).Where(builder.And(builder.Equal("id", requestID), due)).Build()
+	if err != nil {
+		return template.PublicationRequest{}, false, err
+	}
+	result, err := s.Database.ExecContext(ctx, query, args...)
 	if err != nil {
 		return template.PublicationRequest{}, false, fmt.Errorf("claim notification publication request: %w", err)
 	}
@@ -188,16 +189,20 @@ func (s *Store) ClaimPublicationRequest(ctx context.Context, requestID, owner, n
 
 func (s *Store) HasOpenPublicationRequest(ctx context.Context, templateKey string) (bool, error) {
 	var count int
-	query := "SELECT COUNT(*) FROM " + s.Renderer.Table("notification_template_publication_locks") + " WHERE " +
-		s.Renderer.Identifier("template_key") + " = " + s.Renderer.Placeholder(1)
-	err := s.Database.QueryRowContext(ctx, query, strings.TrimSpace(templateKey)).Scan(&count)
+	query, args, err := builder.NewSelectBuilder(s.Renderer, "notification_template_publication_locks").Projections(builder.Project(builder.CountAll())).Where(builder.Equal("template_key", strings.TrimSpace(templateKey))).Build()
+	if err != nil {
+		return false, err
+	}
+	err = s.Database.QueryRowContext(ctx, query, args...).Scan(&count)
 	return count > 0, err
 }
 
 func (s *Store) publicationRequestByID(ctx context.Context, queryer sqlhost.Queryer, requestID string) (template.PublicationRequest, bool, error) {
-	query := "SELECT " + s.columns(publicationRequestColumns) + " FROM " + s.Renderer.Table("notification_template_publication_requests") +
-		" WHERE " + s.Renderer.Identifier("id") + " = " + s.Renderer.Placeholder(1)
-	value, err := scanPublicationRequest(queryer.QueryRowContext(ctx, query, requestID))
+	query, args, err := builder.NewSelectBuilder(s.Renderer, "notification_template_publication_requests").Columns(publicationRequestColumns...).Where(builder.Equal("id", requestID)).Build()
+	if err != nil {
+		return template.PublicationRequest{}, false, err
+	}
+	value, err := scanPublicationRequest(queryer.QueryRowContext(ctx, query, args...))
 	if errors.Is(err, sql.ErrNoRows) {
 		return template.PublicationRequest{}, false, nil
 	}
