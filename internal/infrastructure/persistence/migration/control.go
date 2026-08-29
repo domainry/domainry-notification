@@ -9,6 +9,7 @@ import (
 	"time"
 
 	notification "github.com/domainry/domainry-notification/internal/domain/notification/model"
+	"github.com/domainry/domainry-orm/builder"
 )
 
 const (
@@ -38,8 +39,11 @@ func (s *Store) MigrationStatus(ctx context.Context, workspaceID string) (Migrat
 		return MigrationControl{}, fmt.Errorf("notification migration workspace is required")
 	}
 	control := MigrationControl{WorkspaceID: workspaceID, State: MigrationStateActive}
-	query := "SELECT " + s.columns([]string{"migration_id", "role", "state", "bundle_fingerprint", "frozen_at", "activated_at", "updated_at"}) + " FROM " + s.Renderer.Table("notification_migration_controls") + " WHERE " + s.Renderer.Identifier("workspace_id") + " = " + s.Renderer.Placeholder(1)
-	err := s.Database.QueryRowContext(s.workspaceScope.Context(ctx, notification.WorkspaceID(workspaceID)), query, workspaceID).Scan(&control.MigrationID, &control.Role, &control.State, &control.BundleFingerprint, &control.FrozenAt, &control.ActivatedAt, &control.UpdatedAt)
+	query, args, err := builder.NewSelectBuilder(s.Renderer, "notification_migration_controls").Columns("migration_id", "role", "state", "bundle_fingerprint", "frozen_at", "activated_at", "updated_at").Where(builder.Equal("workspace_id", workspaceID)).Build()
+	if err != nil {
+		return MigrationControl{}, err
+	}
+	err = s.Database.QueryRowContext(s.workspaceScope.Context(ctx, notification.WorkspaceID(workspaceID)), query, args...).Scan(&control.MigrationID, &control.Role, &control.State, &control.BundleFingerprint, &control.FrozenAt, &control.ActivatedAt, &control.UpdatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return control, nil
 	}
@@ -69,8 +73,11 @@ func (s *Store) FreezeMigration(ctx context.Context, workspaceID, migrationID st
 	if current.MigrationID == "" {
 		_, err = s.Insert(s.workspaceScope.Context(ctx, notification.WorkspaceID(workspaceID)), s.Database, "notification_migration_controls", []string{"workspace_id", "migration_id", "role", "state", "bundle_fingerprint", "frozen_at", "activated_at", "updated_at"}, workspaceID, migrationID, MigrationRoleSource, MigrationStateFrozen, "", atText, "", atText)
 	} else {
-		query := "UPDATE " + s.Renderer.Table("notification_migration_controls") + " SET " + s.Renderer.Identifier("migration_id") + "=" + s.Renderer.Placeholder(1) + "," + s.Renderer.Identifier("role") + "=" + s.Renderer.Placeholder(2) + "," + s.Renderer.Identifier("state") + "=" + s.Renderer.Placeholder(3) + "," + s.Renderer.Identifier("bundle_fingerprint") + "=''," + s.Renderer.Identifier("frozen_at") + "=" + s.Renderer.Placeholder(4) + "," + s.Renderer.Identifier("activated_at") + "=''," + s.Renderer.Identifier("updated_at") + "=" + s.Renderer.Placeholder(5) + " WHERE " + s.Renderer.Identifier("workspace_id") + "=" + s.Renderer.Placeholder(6) + " AND " + s.Renderer.Identifier("state") + "=" + s.Renderer.Placeholder(7)
-		_, err = s.Database.ExecContext(s.workspaceScope.Context(ctx, notification.WorkspaceID(workspaceID)), query, migrationID, MigrationRoleSource, MigrationStateFrozen, atText, atText, workspaceID, MigrationStateActive)
+		query, args, buildErr := builder.NewUpdateBuilder(s.Renderer, "notification_migration_controls").Set("migration_id", migrationID).Set("role", MigrationRoleSource).Set("state", MigrationStateFrozen).Set("bundle_fingerprint", "").Set("frozen_at", atText).Set("activated_at", "").Set("updated_at", atText).Where(builder.And(builder.Equal("workspace_id", workspaceID), builder.Equal("state", MigrationStateActive))).Build()
+		if buildErr != nil {
+			return MigrationControl{}, buildErr
+		}
+		_, err = s.Database.ExecContext(s.workspaceScope.Context(ctx, notification.WorkspaceID(workspaceID)), query, args...)
 	}
 	if err != nil {
 		return MigrationControl{}, fmt.Errorf("freeze notification migration: %w", err)
@@ -120,8 +127,12 @@ func (s *Store) transitionMigration(ctx context.Context, workspaceID, migrationI
 	if toState == MigrationStateCutover {
 		activatedAt = atText
 	}
-	query := "UPDATE " + s.Renderer.Table("notification_migration_controls") + " SET " + s.Renderer.Identifier("role") + "=" + s.Renderer.Placeholder(1) + "," + s.Renderer.Identifier("state") + "=" + s.Renderer.Placeholder(2) + "," + s.Renderer.Identifier("bundle_fingerprint") + "=" + s.Renderer.Placeholder(3) + "," + s.Renderer.Identifier("activated_at") + "=" + s.Renderer.Placeholder(4) + "," + s.Renderer.Identifier("updated_at") + "=" + s.Renderer.Placeholder(5) + " WHERE " + s.Renderer.Identifier("workspace_id") + "=" + s.Renderer.Placeholder(6) + " AND " + s.Renderer.Identifier("migration_id") + "=" + s.Renderer.Placeholder(7) + " AND " + s.Renderer.Identifier("role") + "=" + s.Renderer.Placeholder(8) + " AND " + s.Renderer.Identifier("state") + "=" + s.Renderer.Placeholder(9) + " AND (" + s.Renderer.Identifier("bundle_fingerprint") + "='' OR " + s.Renderer.Identifier("bundle_fingerprint") + "=" + s.Renderer.Placeholder(10) + ")"
-	result, err := s.Database.ExecContext(s.workspaceScope.Context(ctx, notification.WorkspaceID(workspaceID)), query, toRole, toState, fingerprint, activatedAt, atText, workspaceID, migrationID, fromRole, fromState, fingerprint)
+	predicate := builder.And(builder.Equal("workspace_id", workspaceID), builder.Equal("migration_id", migrationID), builder.Equal("role", fromRole), builder.Equal("state", fromState), builder.Or(builder.Equal("bundle_fingerprint", ""), builder.Equal("bundle_fingerprint", fingerprint)))
+	query, args, err := builder.NewUpdateBuilder(s.Renderer, "notification_migration_controls").Set("role", toRole).Set("state", toState).Set("bundle_fingerprint", fingerprint).Set("activated_at", activatedAt).Set("updated_at", atText).Where(predicate).Build()
+	if err != nil {
+		return MigrationControl{}, err
+	}
+	result, err := s.Database.ExecContext(s.workspaceScope.Context(ctx, notification.WorkspaceID(workspaceID)), query, args...)
 	if err != nil {
 		return MigrationControl{}, fmt.Errorf("transition notification migration: %w", err)
 	}
@@ -135,16 +146,22 @@ func (s *Store) transitionMigration(ctx context.Context, workspaceID, migrationI
 func (s *Store) activeMigrationLeases(ctx context.Context, workspaceID string) (int, error) {
 	total := 0
 	for _, table := range []string{"notification_events", "notification_channel_plans"} {
-		query := "SELECT COUNT(*) FROM " + s.Renderer.Table(table) + " WHERE " + s.Renderer.Identifier("workspace_id") + "=" + s.Renderer.Placeholder(1) + " AND " + s.Renderer.Identifier("lease_owner") + "<>''"
+		query, args, err := builder.NewSelectBuilder(s.Renderer, table).Projections(builder.Project(builder.CountAll())).Where(builder.And(builder.Equal("workspace_id", workspaceID), builder.NotEqual("lease_owner", ""))).Build()
+		if err != nil {
+			return 0, err
+		}
 		var count int
-		if err := s.Database.QueryRowContext(s.workspaceScope.Context(ctx, notification.WorkspaceID(workspaceID)), query, workspaceID).Scan(&count); err != nil {
+		if err := s.Database.QueryRowContext(s.workspaceScope.Context(ctx, notification.WorkspaceID(workspaceID)), query, args...).Scan(&count); err != nil {
 			return 0, fmt.Errorf("count notification migration leases in %s: %w", table, err)
 		}
 		total += count
 	}
-	query := "SELECT COUNT(*) FROM " + s.Renderer.Table("notification_template_publication_requests") + " WHERE " + s.Renderer.Identifier("lease_owner") + "<>''"
+	query, args, err := builder.NewSelectBuilder(s.Renderer, "notification_template_publication_requests").Projections(builder.Project(builder.CountAll())).Where(builder.NotEqual("lease_owner", "")).Build()
+	if err != nil {
+		return 0, err
+	}
 	var count int
-	if err := s.Database.QueryRowContext(ctx, query).Scan(&count); err != nil {
+	if err := s.Database.QueryRowContext(ctx, query, args...).Scan(&count); err != nil {
 		return 0, fmt.Errorf("count notification publication migration leases: %w", err)
 	}
 	return total + count, nil

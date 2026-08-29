@@ -7,30 +7,28 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/domainry/domainry-notification-sdk/contract"
+	"github.com/domainry/domainry-orm/builder"
 )
 
 type retentionSpec struct {
 	policyKey, table, idColumn, workspaceColumn, timeColumn, statusColumn string
 	eligibleStatuses                                                      []string
-	additionalWhere                                                       string
+	additionalPredicate                                                   builder.Predicate
 	referenceTable, referenceColumn                                       string
 }
 
 func (s *Store) retentionSpecs(policyKey string) []retentionSpec {
-	id := s.Renderer.Identifier
-	table := s.Renderer.Table
 	specs := []retentionSpec{
-		{policyKey: contract.NotificationRetentionHistoryPolicy, table: "notification_inbox_items", idColumn: "id", workspaceColumn: "workspace_id", timeColumn: "updated_at", additionalWhere: id("action_state") + " <> 'open' AND " + id("alert_state") + " <> 'firing'"},
+		{policyKey: contract.NotificationRetentionHistoryPolicy, table: "notification_inbox_items", idColumn: "id", workspaceColumn: "workspace_id", timeColumn: "updated_at", additionalPredicate: builder.And(builder.NotEqual("action_state", "open"), builder.NotEqual("alert_state", "firing"))},
 		{policyKey: contract.NotificationRetentionHistoryPolicy, table: "notification_alert_groups", idColumn: "last_event_id", workspaceColumn: "workspace_id", timeColumn: "updated_at", statusColumn: "state", eligibleStatuses: []string{"resolved"}},
 		{policyKey: contract.NotificationRetentionHistoryPolicy, table: "notification_channel_plans", idColumn: "id", workspaceColumn: "workspace_id", timeColumn: "updated_at", statusColumn: "status", eligibleStatuses: []string{"planned", "failed", "cancelled"}},
 		{policyKey: contract.NotificationRetentionHistoryPolicy, table: "notification_events", idColumn: "id", workspaceColumn: "workspace_id", timeColumn: "updated_at", statusColumn: "status", eligibleStatuses: []string{"materialized", "failed"}},
 		{policyKey: contract.NotificationRetentionHistoryPolicy, table: "notification_event_failures", idColumn: "id", workspaceColumn: "workspace_id", timeColumn: "occurred_at"},
 		{policyKey: contract.NotificationRetentionHistoryPolicy, table: "notification_delivery_reservations", idColumn: "id", workspaceColumn: "workspace_id", timeColumn: "created_at"},
-		{policyKey: contract.NotificationRetentionPublicationPolicy, table: "notification_template_versions", idColumn: "id", timeColumn: "published_at", additionalWhere: table("notification_template_versions") + "." + id("version") + " < COALESCE((SELECT " + id("published_version") + " FROM " + table("notification_template_records") + " WHERE " + table("notification_template_records") + "." + id("template_key") + " = " + table("notification_template_versions") + "." + id("template_key") + "), " + table("notification_template_versions") + "." + id("version") + ")"},
+		{policyKey: contract.NotificationRetentionPublicationPolicy, table: "notification_template_versions", idColumn: "id", timeColumn: "published_at", additionalPredicate: builder.LessThanExpressions(builder.TableColumn("notification_template_versions", "version"), builder.Coalesce(builder.ScalarSubquery("notification_template_records", builder.Column("published_version"), builder.EqualExpressions(builder.TableColumn("notification_template_records", "template_key"), builder.TableColumn("notification_template_versions", "template_key"))), builder.TableColumn("notification_template_versions", "version")))},
 		{policyKey: contract.NotificationRetentionPublicationPolicy, table: "notification_template_publication_requests", idColumn: "id", timeColumn: "updated_at", statusColumn: "status", eligibleStatuses: []string{"published", "rejected", "failed", "cancelled"}, referenceTable: "notification_template_publication_locks", referenceColumn: "request_id"},
 	}
 	result := []retentionSpec{}
@@ -52,9 +50,11 @@ func (s *Store) PreviewRetention(ctx context.Context, request contract.Notificat
 	}
 	result := contract.NotificationRetentionPreview{}
 	for _, spec := range specs {
-		where, args := s.retentionWhere(spec, request.WorkspaceID, request.Now.Add(-time.Duration(request.Policy.DefaultRetentionSeconds)*time.Second), 1)
-		where, args = s.excludeArchived(where, args, spec, request.WorkspaceID, request.Policy.Key)
-		query := "SELECT COUNT(*), MIN(" + s.Renderer.Identifier(spec.timeColumn) + ") FROM " + s.Renderer.Table(spec.table) + " WHERE " + where
+		predicate := s.excludeArchived(s.retentionPredicate(spec, request.WorkspaceID, request.Now.Add(-time.Duration(request.Policy.DefaultRetentionSeconds)*time.Second)), spec, request.WorkspaceID, request.Policy.Key)
+		query, args, err := builder.NewSelectBuilder(s.Renderer, spec.table).Projections(builder.Project(builder.CountAll()), builder.Project(builder.Min(builder.Column(spec.timeColumn)))).Where(predicate).Build()
+		if err != nil {
+			return contract.NotificationRetentionPreview{}, err
+		}
 		var count int64
 		var oldest sql.NullString
 		if err := s.Database.QueryRowContext(ctx, query, args...).Scan(&count, &oldest); err != nil {
@@ -107,12 +107,14 @@ func (s *Store) ProcessRetentionBatch(ctx context.Context, request contract.Noti
 }
 
 func (s *Store) processRetentionSpec(ctx context.Context, request contract.NotificationRetentionBatchRequest, spec retentionSpec, limit int) (contract.NotificationRetentionBatchResult, error) {
-	where, args := s.retentionWhere(spec, request.WorkspaceID, request.Now.Add(-time.Duration(request.Policy.DefaultRetentionSeconds)*time.Second), 1)
+	predicate := s.retentionPredicate(spec, request.WorkspaceID, request.Now.Add(-time.Duration(request.Policy.DefaultRetentionSeconds)*time.Second))
 	if request.Operation == "archive" {
-		where, args = s.excludeArchived(where, args, spec, request.WorkspaceID, request.Policy.Key)
+		predicate = s.excludeArchived(predicate, spec, request.WorkspaceID, request.Policy.Key)
 	}
-	args = append(args, limit)
-	query := "SELECT " + s.Renderer.Identifier(spec.idColumn) + ", " + s.Renderer.Identifier(spec.timeColumn) + " FROM " + s.Renderer.Table(spec.table) + " WHERE " + where + " ORDER BY " + s.Renderer.Identifier(spec.timeColumn) + ", " + s.Renderer.Identifier(spec.idColumn) + " LIMIT " + s.Renderer.Placeholder(len(args))
+	query, args, err := builder.NewSelectBuilder(s.Renderer, spec.table).Columns(spec.idColumn, spec.timeColumn).Where(predicate).OrderBy(builder.Ascending(spec.timeColumn), builder.Ascending(spec.idColumn)).Limit(limit).Build()
+	if err != nil {
+		return contract.NotificationRetentionBatchResult{}, err
+	}
 	rows, err := s.Database.QueryContext(ctx, query, args...)
 	if err != nil {
 		return contract.NotificationRetentionBatchResult{}, err
@@ -146,8 +148,11 @@ func (s *Store) processRetentionSpec(ctx context.Context, request contract.Notif
 		}
 		if spec.referenceTable != "" && request.Operation == "purge" {
 			var references int
-			query := "SELECT COUNT(*) FROM " + s.Renderer.Table(spec.referenceTable) + " WHERE " + s.Renderer.Identifier(spec.referenceColumn) + " = " + s.Renderer.Placeholder(1)
-			if err := s.Database.QueryRowContext(ctx, query, candidate.id).Scan(&references); err != nil {
+			query, args, err := builder.NewSelectBuilder(s.Renderer, spec.referenceTable).Projections(builder.Project(builder.CountAll())).Where(builder.Equal(spec.referenceColumn, candidate.id)).Build()
+			if err != nil {
+				return result, err
+			}
+			if err := s.Database.QueryRowContext(ctx, query, args...).Scan(&references); err != nil {
 				return result, err
 			}
 			if references > 0 {
@@ -179,37 +184,28 @@ func (s *Store) processRetentionSpec(ctx context.Context, request contract.Notif
 	return result, nil
 }
 
-func (s *Store) retentionWhere(spec retentionSpec, workspaceID string, cutoff time.Time, start int) (string, []any) {
-	position := start
-	parts, args := []string{}, []any{}
+func (s *Store) retentionPredicate(spec retentionSpec, workspaceID string, cutoff time.Time) builder.Predicate {
+	predicates := []builder.Predicate{}
 	if spec.workspaceColumn != "" {
-		parts = append(parts, s.Renderer.Identifier(spec.workspaceColumn)+" = "+s.Renderer.Placeholder(position))
-		args = append(args, workspaceID)
-		position++
+		predicates = append(predicates, builder.Equal(spec.workspaceColumn, workspaceID))
 	}
-	parts = append(parts, s.Renderer.Identifier(spec.timeColumn)+" <> ''", s.Renderer.Identifier(spec.timeColumn)+" <= "+s.Renderer.Placeholder(position))
-	args = append(args, cutoff.UTC().Format(time.RFC3339Nano))
-	position++
+	predicates = append(predicates, builder.NotEqual(spec.timeColumn, ""), builder.LessThanOrEqual(spec.timeColumn, cutoff.UTC().Format(time.RFC3339Nano)))
 	if len(spec.eligibleStatuses) > 0 {
-		placeholders := make([]string, len(spec.eligibleStatuses))
+		values := make([]any, len(spec.eligibleStatuses))
 		for index, status := range spec.eligibleStatuses {
-			placeholders[index] = s.Renderer.Placeholder(position)
-			args = append(args, status)
-			position++
+			values[index] = status
 		}
-		parts = append(parts, s.Renderer.Identifier(spec.statusColumn)+" IN ("+strings.Join(placeholders, ", ")+")")
+		predicates = append(predicates, builder.In(spec.statusColumn, values...))
 	}
-	if spec.additionalWhere != "" {
-		parts = append(parts, spec.additionalWhere)
+	if spec.additionalPredicate != nil {
+		predicates = append(predicates, spec.additionalPredicate)
 	}
-	return strings.Join(parts, " AND "), args
+	return builder.And(predicates...)
 }
 
-func (s *Store) excludeArchived(where string, args []any, spec retentionSpec, workspaceID, policyKey string) (string, []any) {
-	args = append(args, workspaceID, spec.table, policyKey)
-	start := len(args) - 2
-	where += " AND NOT EXISTS (SELECT 1 FROM " + s.Renderer.Table("notification_retention_archive") + " a WHERE a." + s.Renderer.Identifier("workspace_id") + " = " + s.Renderer.Placeholder(start) + " AND a." + s.Renderer.Identifier("source_table") + " = " + s.Renderer.Placeholder(start+1) + " AND a." + s.Renderer.Identifier("policy_key") + " = " + s.Renderer.Placeholder(start+2) + " AND a." + s.Renderer.Identifier("resource_id") + " = " + s.Renderer.Table(spec.table) + "." + s.Renderer.Identifier(spec.idColumn) + ")"
-	return where, args
+func (s *Store) excludeArchived(predicate builder.Predicate, spec retentionSpec, workspaceID, policyKey string) builder.Predicate {
+	archive := builder.And(builder.Equal("workspace_id", workspaceID), builder.Equal("source_table", spec.table), builder.Equal("policy_key", policyKey), builder.EqualExpressions(builder.TableColumn("notification_retention_archive", "resource_id"), builder.TableColumn(spec.table, spec.idColumn)))
+	return builder.And(predicate, builder.NotExists("notification_retention_archive", archive))
 }
 
 func retentionHeld(holds []contract.NotificationRetentionHold, table, resourceID string, now time.Time) bool {
@@ -226,16 +222,22 @@ func retentionHeld(holds []contract.NotificationRetentionHold, table, resourceID
 
 func (s *Store) archiveRetentionCandidate(ctx context.Context, request contract.NotificationRetentionBatchRequest, spec retentionSpec, resourceID string) (bool, error) {
 	var exists int
-	check := "SELECT COUNT(*) FROM " + s.Renderer.Table("notification_retention_archive") + " WHERE " + s.Renderer.Identifier("workspace_id") + " = " + s.Renderer.Placeholder(1) + " AND " + s.Renderer.Identifier("policy_key") + " = " + s.Renderer.Placeholder(2) + " AND " + s.Renderer.Identifier("source_table") + " = " + s.Renderer.Placeholder(3) + " AND " + s.Renderer.Identifier("resource_id") + " = " + s.Renderer.Placeholder(4)
-	if err := s.Database.QueryRowContext(ctx, check, request.WorkspaceID, request.Policy.Key, spec.table, resourceID).Scan(&exists); err != nil || exists > 0 {
+	check, checkArgs, err := builder.NewSelectBuilder(s.Renderer, "notification_retention_archive").Projections(builder.Project(builder.CountAll())).Where(builder.And(builder.Equal("workspace_id", request.WorkspaceID), builder.Equal("policy_key", request.Policy.Key), builder.Equal("source_table", spec.table), builder.Equal("resource_id", resourceID))).Build()
+	if err != nil {
 		return false, err
 	}
-	where, args := s.Renderer.Identifier(spec.idColumn)+" = "+s.Renderer.Placeholder(1), []any{resourceID}
-	if spec.workspaceColumn != "" {
-		where = s.Renderer.Identifier(spec.workspaceColumn) + " = " + s.Renderer.Placeholder(1) + " AND " + s.Renderer.Identifier(spec.idColumn) + " = " + s.Renderer.Placeholder(2)
-		args = []any{request.WorkspaceID, resourceID}
+	if err := s.Database.QueryRowContext(ctx, check, checkArgs...).Scan(&exists); err != nil || exists > 0 {
+		return false, err
 	}
-	rows, err := s.Database.QueryContext(ctx, "SELECT * FROM "+s.Renderer.Table(spec.table)+" WHERE "+where, args...)
+	predicate := builder.Predicate(builder.Equal(spec.idColumn, resourceID))
+	if spec.workspaceColumn != "" {
+		predicate = builder.And(builder.Equal(spec.workspaceColumn, request.WorkspaceID), predicate)
+	}
+	statement, args, err := builder.NewSelectBuilder(s.Renderer, spec.table).Projections(builder.Project(builder.AllColumns())).Where(predicate).Build()
+	if err != nil {
+		return false, err
+	}
+	rows, err := s.Database.QueryContext(ctx, statement, args...)
 	if err != nil {
 		return false, err
 	}
@@ -276,12 +278,15 @@ func (s *Store) archiveRetentionCandidate(ctx context.Context, request contract.
 }
 
 func (s *Store) deleteRetentionCandidate(ctx context.Context, workspaceID string, spec retentionSpec, resourceID string) (int64, error) {
-	where, args := s.Renderer.Identifier(spec.idColumn)+" = "+s.Renderer.Placeholder(1), []any{resourceID}
+	predicate := builder.Predicate(builder.Equal(spec.idColumn, resourceID))
 	if spec.workspaceColumn != "" {
-		where = s.Renderer.Identifier(spec.workspaceColumn) + " = " + s.Renderer.Placeholder(1) + " AND " + s.Renderer.Identifier(spec.idColumn) + " = " + s.Renderer.Placeholder(2)
-		args = []any{workspaceID, resourceID}
+		predicate = builder.And(builder.Equal(spec.workspaceColumn, workspaceID), predicate)
 	}
-	result, err := s.Database.ExecContext(ctx, "DELETE FROM "+s.Renderer.Table(spec.table)+" WHERE "+where, args...)
+	statement, args, err := builder.NewDeleteBuilder(s.Renderer, spec.table).Where(predicate).Build()
+	if err != nil {
+		return 0, err
+	}
+	result, err := s.Database.ExecContext(ctx, statement, args...)
 	if err != nil {
 		return 0, err
 	}

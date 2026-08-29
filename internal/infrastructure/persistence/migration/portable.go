@@ -13,6 +13,7 @@ import (
 
 	"github.com/domainry/domainry-notification-sdk/modulehost"
 	storeschema "github.com/domainry/domainry-notification/internal/infrastructure/persistence/schema"
+	"github.com/domainry/domainry-orm/builder"
 	"github.com/domainry/domainry-orm/sqlhost"
 )
 
@@ -90,15 +91,16 @@ func ExportPortable(ctx context.Context, database sqlhost.Queryer, dialect modul
 	inventory := PortableInventory{Tables: map[string]int{}}
 	for _, definition := range definitions {
 		columns := make([]string, len(definition.Columns))
-		quoted := make([]string, len(definition.Columns))
 		for index, column := range definition.Columns {
-			columns[index], quoted[index] = column.Name, dialect.Identifier(column.Name)
+			columns[index] = column.Name
 		}
-		statement := "SELECT " + strings.Join(quoted, ", ") + " FROM " + dialect.Table(definition.Name)
-		args := []any{}
+		selectBuilder := builder.NewSelectBuilder(dialect, definition.Name).Columns(columns...)
 		if ownership[definition.Name] == storeschema.WorkspaceData {
-			statement += " WHERE " + dialect.Identifier("workspace_id") + " = " + dialect.Placeholder(1)
-			args = append(args, scope.WorkspaceID)
+			selectBuilder.Where(builder.Equal("workspace_id", scope.WorkspaceID))
+		}
+		statement, args, err := selectBuilder.Build()
+		if err != nil {
+			return PortableBundle{}, PortableInventory{}, err
 		}
 		rows, err := database.QueryContext(ctx, statement, args...)
 		if err != nil {
@@ -177,7 +179,6 @@ func ImportPortable(ctx context.Context, database sqlhost.Database, dialect modu
 	defer tx.Rollback()
 	rowCount := 0
 	for _, table := range bundle.Tables {
-		statement := dialect.Insert(table.Name, table.Columns)
 		definition, found := tableDefinition(table.Name)
 		if !found {
 			return PortableImportReceipt{}, fmt.Errorf("notification portable table %s is not owned by this module", table.Name)
@@ -191,7 +192,11 @@ func ImportPortable(ctx context.Context, database sqlhost.Database, dialect modu
 				}
 				values[index] = value
 			}
-			if _, err := tx.ExecContext(ctx, statement, values...); err != nil {
+			statement, args, buildErr := builder.NewInsertBuilder(dialect, table.Name).Columns(table.Columns...).Values(values...).Build()
+			if buildErr != nil {
+				return PortableImportReceipt{}, buildErr
+			}
+			if _, err := tx.ExecContext(ctx, statement, args...); err != nil {
 				return PortableImportReceipt{}, fmt.Errorf("import notification table %s: %w", table.Name, err)
 			}
 			rowCount++
