@@ -8,23 +8,27 @@ import (
 	postgresstore "github.com/domainry/domainry-notification/internal/infrastructure/persistence/postgres"
 	storeschema "github.com/domainry/domainry-notification/internal/infrastructure/persistence/schema"
 	sqlitestore "github.com/domainry/domainry-notification/internal/infrastructure/persistence/sqlite"
+	ormdialect "github.com/domainry/domainry-orm/dialect"
 )
 
-type databaseEngine interface {
+type DatabaseEngine interface {
 	storeschema.Profile
 	base.MigrationLocker
+	Renderer(string, string) (ormdialect.Renderer, error)
 }
 
-var databaseEngines = map[Driver]databaseEngine{
+var databaseEngines = map[Driver]DatabaseEngine{
 	SQLite:   sqlitestore.NewEngine(),
 	Postgres: postgresstore.NewEngine(),
 	MySQL:    mysqlstore.NewEngine(),
 }
 
-func databaseEngineFor(driver Driver) (databaseEngine, error) {
+func databaseEngineFor(driver Driver) (DatabaseEngine, error) {
 	engine := databaseEngines[driver]
 	if engine == nil {
 		return nil, fmt.Errorf("notification database driver %q is unsupported", driver)
 	}
 	return engine, nil
 }
+
+func NewEngine(driver Driver) (DatabaseEngine, error) { return databaseEngineFor(driver) }

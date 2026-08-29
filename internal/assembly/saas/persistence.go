@@ -14,8 +14,6 @@ import (
 	notificationsdk "github.com/domainry/domainry-notification-sdk"
 	"github.com/domainry/domainry-notification-sdk/modulehost"
 	sqlstore "github.com/domainry/domainry-notification/internal/infrastructure/persistence"
-	"github.com/domainry/domainry-notification/internal/infrastructure/persistence/base"
-	ormdialect "github.com/domainry/domainry-orm/dialect"
 )
 
 const migrationLedgerTable = "_schema_migrations"
@@ -25,7 +23,7 @@ const migrationLedgerTable = "_schema_migrations"
 type SQLPersistence struct {
 	database *sql.DB
 	driver   sqlstore.Driver
-	locker   base.MigrationLocker
+	engine   sqlstore.DatabaseEngine
 	schema   string
 	owns     bool
 	mu       sync.Mutex
@@ -42,14 +40,11 @@ func NewSQLPersistence(options SQLPersistenceOptions) (*SQLPersistence, error) {
 	if options.Database == nil {
 		return nil, fmt.Errorf("Notification SaaS database is required")
 	}
-	if _, err := ormdialect.ParseRenderer(string(options.Driver), options.Schema, ""); err != nil {
-		return nil, err
-	}
-	locker, err := sqlstore.MigrationLocker(options.Driver)
+	engine, err := sqlstore.NewEngine(options.Driver)
 	if err != nil {
 		return nil, err
 	}
-	return &SQLPersistence{database: options.Database, driver: options.Driver, locker: locker, schema: strings.TrimSpace(options.Schema), owns: options.OwnsDatabase}, nil
+	return &SQLPersistence{database: options.Database, driver: options.Driver, engine: engine, schema: strings.TrimSpace(options.Schema), owns: options.OwnsDatabase}, nil
 }
 
 func (p *SQLPersistence) Database() *sql.DB {
@@ -74,7 +69,7 @@ func (p *SQLPersistence) PrepareApplication(ctx context.Context, application not
 		return nil, err
 	}
 	prefix := applicationTablePrefix(application)
-	dialect, err := ormdialect.ParseRenderer(string(p.driver), p.schema, prefix)
+	dialect, err := p.engine.Renderer(p.schema, prefix)
 	if err != nil {
 		return nil, err
 	}
@@ -92,7 +87,7 @@ func (p *SQLPersistence) PrepareApplication(ctx context.Context, application not
 	}
 	defer connection.Close()
 	namespace := applicationKey(application)
-	release, err := p.locker.Acquire(ctx, connection, namespace)
+	release, err := p.engine.Acquire(ctx, connection, namespace)
 	if err != nil {
 		return nil, err
 	}
@@ -124,7 +119,7 @@ type migrationConnection interface {
 }
 
 func (p *SQLPersistence) ensureLedger(ctx context.Context, connection migrationConnection) error {
-	dialect, err := ormdialect.ParseRenderer(string(p.driver), p.schema, "")
+	dialect, err := p.engine.Renderer(p.schema, "")
 	if err != nil {
 		return err
 	}
@@ -172,7 +167,7 @@ func (p *SQLPersistence) applyMigration(ctx context.Context, connection migratio
 			return fmt.Errorf("apply Notification SaaS migration %s/%d (%s): %w", namespace, migration.Version, migration.Name, err)
 		}
 	}
-	dialect, err := ormdialect.ParseRenderer(string(p.driver), p.schema, "")
+	dialect, err := p.engine.Renderer(p.schema, "")
 	if err != nil {
 		return err
 	}
@@ -191,7 +186,7 @@ type migrationQueryer interface {
 }
 
 func (p *SQLPersistence) migrationChecksum(ctx context.Context, queryer migrationQueryer, namespace string, version uint) (string, bool, error) {
-	dialect, err := ormdialect.ParseRenderer(string(p.driver), p.schema, "")
+	dialect, err := p.engine.Renderer(p.schema, "")
 	if err != nil {
 		return "", false, err
 	}

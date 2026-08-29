@@ -20,7 +20,7 @@ type SchemaBaselineTable = storeschema.SchemaBaselineTable
 type SchemaBaselineColumn = storeschema.SchemaBaselineColumn
 type SchemaBaselineIndex = storeschema.SchemaBaselineIndex
 
-func schemaProfile(driver Driver) (storeschema.Profile, error) {
+func schemaProfile(driver Driver) (DatabaseEngine, error) {
 	return databaseEngineFor(driver)
 }
 
@@ -29,7 +29,7 @@ func SchemaMigrations(driver Driver, schemaName, tablePrefix string) ([]SchemaMi
 	if err != nil {
 		return nil, err
 	}
-	renderer, err := ormdialect.ParseRenderer(string(driver), schemaName, tablePrefix)
+	renderer, err := profile.Renderer(schemaName, tablePrefix)
 	if err != nil {
 		return nil, err
 	}
@@ -49,7 +49,7 @@ func ApplicationSchemaMigrations(driver Driver, schemaName, tablePrefix string, 
 	if err != nil {
 		return nil, err
 	}
-	renderer, err := ormdialect.ParseRenderer(string(driver), schemaName, tablePrefix)
+	renderer, err := profile.Renderer(schemaName, tablePrefix)
 	if err != nil {
 		return nil, err
 	}
