@@ -1,4 +1,4 @@
-package sqlstore
+package deliverystore
 
 import (
 	"context"

@@ -5,6 +5,7 @@ import (
 
 	"github.com/domainry/domainry-notification-sdk/modulehost"
 	notification "github.com/domainry/domainry-notification/internal/domain/notification/model"
+	deliverystore "github.com/domainry/domainry-notification/internal/infrastructure/persistence/sqlstore/delivery"
 	inboxstore "github.com/domainry/domainry-notification/internal/infrastructure/persistence/sqlstore/inbox"
 	"github.com/domainry/domainry-orm/sqlhost"
 )
@@ -33,6 +34,7 @@ type Config struct {
 
 type Store struct {
 	*inboxstore.Store
+	*deliveryPersistence
 	database       sqlhost.Database
 	dialect        modulehost.Dialect
 	workspaceScope WorkspaceScope
@@ -48,6 +50,13 @@ func New(config Config) (*Store, error) {
 		Store: inboxstore.New(inboxstore.Config{
 			Database: config.Database, Dialect: config.Dialect, WorkspaceScope: config.WorkspaceScope, Clock: config.Clock,
 		}),
+		deliveryPersistence: &deliveryPersistence{deliverystore.New(deliverystore.Config{
+			Database: config.Database, Dialect: config.Dialect, WorkspaceScope: config.WorkspaceScope, QueueScopes: config.QueueScopes,
+		})},
 		database: config.Database, dialect: config.Dialect, workspaceScope: config.WorkspaceScope, queueScopes: config.QueueScopes, clock: config.Clock,
 	}, nil
 }
+
+// deliveryPersistence gives the composed delivery store a distinct embedding
+// name while still promoting its persistence methods through Store.
+type deliveryPersistence struct{ *deliverystore.Store }

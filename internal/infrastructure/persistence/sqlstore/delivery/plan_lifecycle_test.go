@@ -1,4 +1,4 @@
-package sqlstore_test
+package deliverystore_test
 
 import (
 	"database/sql"
