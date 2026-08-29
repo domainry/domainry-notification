@@ -1,4 +1,4 @@
-package postgres
+package schema
 
 import (
 	"fmt"
@@ -7,9 +7,9 @@ import (
 	ormbuilder "github.com/domainry/domainry-orm/builder"
 )
 
-type SchemaProfile struct{}
+type Profile struct{}
 
-func (SchemaProfile) ColumnType(kind storeschema.ColumnKind) (string, error) {
+func (Profile) ColumnType(kind storeschema.ColumnKind) (string, error) {
 	switch kind {
 	case storeschema.IdentifierColumn, storeschema.IndexedTextColumn, storeschema.DocumentColumn, storeschema.PlainTextColumn:
 		return "TEXT", nil
@@ -20,11 +20,11 @@ func (SchemaProfile) ColumnType(kind storeschema.ColumnKind) (string, error) {
 	case storeschema.BooleanColumn:
 		return "BOOLEAN", nil
 	default:
-		return "", fmt.Errorf("notification PostgreSQL column kind %d is unsupported", kind)
+		return "", fmt.Errorf("notification SQLite column kind %d is unsupported", kind)
 	}
 }
 
-func (SchemaProfile) SchemaColumn(name string, kind storeschema.ColumnKind) (ormbuilder.SchemaColumn, error) {
+func (Profile) SchemaColumn(name string, kind storeschema.ColumnKind) (ormbuilder.SchemaColumn, error) {
 	var columnType ormbuilder.ColumnType
 	switch kind {
 	case storeschema.IdentifierColumn, storeschema.IndexedTextColumn:
@@ -40,7 +40,7 @@ func (SchemaProfile) SchemaColumn(name string, kind storeschema.ColumnKind) (orm
 	case storeschema.BooleanColumn:
 		columnType = ormbuilder.BooleanType()
 	default:
-		return ormbuilder.SchemaColumn{}, fmt.Errorf("notification PostgreSQL column kind %d is unsupported", kind)
+		return ormbuilder.SchemaColumn{}, fmt.Errorf("notification SQLite column kind %d is unsupported", kind)
 	}
 	return ormbuilder.DefineColumn(name, columnType), nil
 }

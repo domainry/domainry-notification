@@ -1,4 +1,4 @@
-package sqlite
+package migration
 
 import (
 	"context"
@@ -6,8 +6,8 @@ import (
 	"github.com/domainry/domainry-notification/internal/infrastructure/persistence/base"
 )
 
-type MigrationLocker struct{}
+type Profile struct{}
 
-func (MigrationLocker) Acquire(context.Context, base.MigrationConnection, string) (base.MigrationLockRelease, error) {
+func (Profile) Acquire(context.Context, base.MigrationConnection, string) (base.MigrationLockRelease, error) {
 	return func(context.Context) error { return nil }, nil
 }

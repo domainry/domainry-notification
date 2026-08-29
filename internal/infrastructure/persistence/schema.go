@@ -1,12 +1,7 @@
 package persistence
 
 import (
-	"fmt"
-
-	mysqlstore "github.com/domainry/domainry-notification/internal/infrastructure/persistence/mysql"
-	postgresstore "github.com/domainry/domainry-notification/internal/infrastructure/persistence/postgres"
 	storeschema "github.com/domainry/domainry-notification/internal/infrastructure/persistence/schema"
-	sqlitestore "github.com/domainry/domainry-notification/internal/infrastructure/persistence/sqlite"
 	ormdialect "github.com/domainry/domainry-orm/dialect"
 )
 
@@ -25,16 +20,8 @@ type SchemaBaselineTable = storeschema.SchemaBaselineTable
 type SchemaBaselineColumn = storeschema.SchemaBaselineColumn
 type SchemaBaselineIndex = storeschema.SchemaBaselineIndex
 
-var schemaProfiles = map[Driver]storeschema.Profile{
-	SQLite: sqlitestore.SchemaProfile{}, Postgres: postgresstore.SchemaProfile{}, MySQL: mysqlstore.SchemaProfile{},
-}
-
 func schemaProfile(driver Driver) (storeschema.Profile, error) {
-	profile := schemaProfiles[driver]
-	if profile == nil {
-		return nil, fmt.Errorf("notification database driver %q is unsupported", driver)
-	}
-	return profile, nil
+	return databaseEngineFor(driver)
 }
 
 func SchemaMigrations(driver Driver, schemaName, tablePrefix string) ([]SchemaMigration, error) {

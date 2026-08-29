@@ -1,4 +1,4 @@
-package mysql
+package migration
 
 import (
 	"context"
@@ -8,16 +8,16 @@ import (
 	"github.com/domainry/domainry-notification/internal/infrastructure/persistence/base"
 )
 
-type MigrationLocker struct{}
+type Profile struct{}
 
-func (MigrationLocker) Acquire(ctx context.Context, connection base.MigrationConnection, namespace string) (base.MigrationLockRelease, error) {
+func (Profile) Acquire(ctx context.Context, connection base.MigrationConnection, namespace string) (base.MigrationLockRelease, error) {
 	key := base.MigrationLockKey(namespace)
 	var acquired sql.NullInt64
 	if err := connection.QueryRowContext(ctx, "SELECT GET_LOCK(?, ?)", key, 30).Scan(&acquired); err != nil {
-		return nil, fmt.Errorf("acquire Notification SaaS MySQL migration lock: %w", err)
+		return nil, fmt.Errorf("acquire notification MySQL migration lock: %w", err)
 	}
 	if !acquired.Valid || acquired.Int64 != 1 {
-		return nil, fmt.Errorf("acquire Notification SaaS MySQL migration lock timed out")
+		return nil, fmt.Errorf("acquire notification MySQL migration lock timed out")
 	}
 	return func(releaseContext context.Context) error {
 		var released sql.NullInt64
@@ -25,7 +25,7 @@ func (MigrationLocker) Acquire(ctx context.Context, connection base.MigrationCon
 			return err
 		}
 		if !released.Valid || released.Int64 != 1 {
-			return fmt.Errorf("Notification SaaS MySQL migration lock was not held")
+			return fmt.Errorf("notification MySQL migration lock was not held")
 		}
 		return nil
 	}, nil

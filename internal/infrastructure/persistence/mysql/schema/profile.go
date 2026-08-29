@@ -1,4 +1,4 @@
-package mysql
+package schema
 
 import (
 	"fmt"
@@ -7,9 +7,9 @@ import (
 	ormbuilder "github.com/domainry/domainry-orm/builder"
 )
 
-type SchemaProfile struct{}
+type Profile struct{}
 
-func (SchemaProfile) ColumnType(kind storeschema.ColumnKind) (string, error) {
+func (Profile) ColumnType(kind storeschema.ColumnKind) (string, error) {
 	switch kind {
 	case storeschema.IdentifierColumn:
 		return "VARCHAR(191)", nil
@@ -30,7 +30,7 @@ func (SchemaProfile) ColumnType(kind storeschema.ColumnKind) (string, error) {
 	}
 }
 
-func (SchemaProfile) SchemaColumn(name string, kind storeschema.ColumnKind) (ormbuilder.SchemaColumn, error) {
+func (Profile) SchemaColumn(name string, kind storeschema.ColumnKind) (ormbuilder.SchemaColumn, error) {
 	var columnType ormbuilder.ColumnType
 	switch kind {
 	case storeschema.IdentifierColumn:

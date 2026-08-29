@@ -1,4 +1,4 @@
-package postgres
+package migration
 
 import (
 	"context"
@@ -7,13 +7,13 @@ import (
 	"github.com/domainry/domainry-notification/internal/infrastructure/persistence/base"
 )
 
-type MigrationLocker struct{}
+type Profile struct{}
 
-func (MigrationLocker) Acquire(ctx context.Context, connection base.MigrationConnection, namespace string) (base.MigrationLockRelease, error) {
+func (Profile) Acquire(ctx context.Context, connection base.MigrationConnection, namespace string) (base.MigrationLockRelease, error) {
 	key := base.MigrationLockKey(namespace)
 	var ignored any
 	if err := connection.QueryRowContext(ctx, "SELECT pg_advisory_lock(hashtextextended($1, 0))", key).Scan(&ignored); err != nil {
-		return nil, fmt.Errorf("acquire Notification SaaS PostgreSQL migration lock: %w", err)
+		return nil, fmt.Errorf("acquire notification PostgreSQL migration lock: %w", err)
 	}
 	return func(releaseContext context.Context) error {
 		var released bool
@@ -21,7 +21,7 @@ func (MigrationLocker) Acquire(ctx context.Context, connection base.MigrationCon
 			return err
 		}
 		if !released {
-			return fmt.Errorf("Notification SaaS PostgreSQL migration lock was not held")
+			return fmt.Errorf("notification PostgreSQL migration lock was not held")
 		}
 		return nil
 	}, nil
