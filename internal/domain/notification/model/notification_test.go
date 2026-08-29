@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/domainry/domainry-notification/internal/infrastructure/persistence/sqlstore"
+	sqlstore "github.com/domainry/domainry-notification/internal/infrastructure/persistence"
 )
 
 func TestOwnedTablesAreCanonicalAndSorted(t *testing.T) {

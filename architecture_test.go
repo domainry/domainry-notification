@@ -50,7 +50,7 @@ func TestDDDPackageBoundaries(t *testing.T) {
 		"internal/domain/notification/model", "internal/domain/template/model", "internal/domain/template/repository", "internal/domain/template/service",
 		"internal/domain/template/validation", "internal/domain/inbox/model", "internal/domain/inbox/repository", "internal/domain/inbox/service",
 		"internal/domain/inbox/validation", "internal/domain/delivery/model", "internal/domain/delivery/policy", "internal/domain/delivery/repository", "internal/domain/delivery/service",
-		"internal/infrastructure/identity", "internal/infrastructure/persistence/sqlstore", "internal/transport/http",
+		"internal/infrastructure/identity", "internal/infrastructure/persistence", "internal/transport/http",
 	} {
 		if info, err := os.Stat(filepath.FromSlash(required)); err != nil || !info.IsDir() {
 			t.Errorf("required DDD package directory %q is missing", required)

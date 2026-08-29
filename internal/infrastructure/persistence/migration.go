@@ -1,6 +1,6 @@
-package sqlstore
+package persistence
 
-import migrationstore "github.com/domainry/domainry-notification/internal/infrastructure/persistence/sqlstore/migration"
+import migrationstore "github.com/domainry/domainry-notification/internal/infrastructure/persistence/migration"
 
 const (
 	PortableFormatV1       = migrationstore.PortableFormatV1

@@ -6,7 +6,7 @@ import (
 
 	"github.com/domainry/domainry-notification-sdk/modulehost"
 	notification "github.com/domainry/domainry-notification/internal/domain/notification/model"
-	"github.com/domainry/domainry-notification/internal/infrastructure/persistence/sqlstore/shared"
+	"github.com/domainry/domainry-notification/internal/infrastructure/persistence/shared"
 	"github.com/domainry/domainry-orm/sqlhost"
 )
 

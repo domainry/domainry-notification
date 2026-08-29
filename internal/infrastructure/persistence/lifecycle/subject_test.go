@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	lifecyclestore "github.com/domainry/domainry-notification/internal/infrastructure/persistence/sqlstore/lifecycle"
+	lifecyclestore "github.com/domainry/domainry-notification/internal/infrastructure/persistence/lifecycle"
 	ormdialect "github.com/domainry/domainry-orm/dialect"
 )
 

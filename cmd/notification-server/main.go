@@ -22,7 +22,7 @@ import (
 	"github.com/domainry/domainry-notification-sdk/deliverygateway"
 	"github.com/domainry/domainry-notification-sdk/modulehost"
 	server "github.com/domainry/domainry-notification/internal/assembly/saas"
-	"github.com/domainry/domainry-notification/internal/infrastructure/persistence/sqlstore"
+	sqlstore "github.com/domainry/domainry-notification/internal/infrastructure/persistence"
 	notificationhttp "github.com/domainry/domainry-notification/internal/transport/http"
 )
 

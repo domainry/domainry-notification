@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	"github.com/domainry/domainry-notification/internal/domain/delivery/service"
-	"github.com/domainry/domainry-notification/internal/infrastructure/persistence/sqlstore"
+	sqlstore "github.com/domainry/domainry-notification/internal/infrastructure/persistence"
 )
 
 func TestChannelPlanClaimAndRetryAreFenced(t *testing.T) {

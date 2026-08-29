@@ -1,16 +1,16 @@
-package sqlstore
+package persistence
 
 import (
 	"context"
 
 	"github.com/domainry/domainry-notification-sdk/modulehost"
 	notification "github.com/domainry/domainry-notification/internal/domain/notification/model"
-	deliverystore "github.com/domainry/domainry-notification/internal/infrastructure/persistence/sqlstore/delivery"
-	eventstore "github.com/domainry/domainry-notification/internal/infrastructure/persistence/sqlstore/event"
-	inboxstore "github.com/domainry/domainry-notification/internal/infrastructure/persistence/sqlstore/inbox"
-	lifecyclestore "github.com/domainry/domainry-notification/internal/infrastructure/persistence/sqlstore/lifecycle"
-	migrationstore "github.com/domainry/domainry-notification/internal/infrastructure/persistence/sqlstore/migration"
-	templatestore "github.com/domainry/domainry-notification/internal/infrastructure/persistence/sqlstore/template"
+	deliverystore "github.com/domainry/domainry-notification/internal/infrastructure/persistence/delivery"
+	eventstore "github.com/domainry/domainry-notification/internal/infrastructure/persistence/event"
+	inboxstore "github.com/domainry/domainry-notification/internal/infrastructure/persistence/inbox"
+	lifecyclestore "github.com/domainry/domainry-notification/internal/infrastructure/persistence/lifecycle"
+	migrationstore "github.com/domainry/domainry-notification/internal/infrastructure/persistence/migration"
+	templatestore "github.com/domainry/domainry-notification/internal/infrastructure/persistence/template"
 	"github.com/domainry/domainry-orm/sqlhost"
 )
 

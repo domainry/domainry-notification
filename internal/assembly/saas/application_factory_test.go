@@ -15,7 +15,7 @@ import (
 	"github.com/domainry/domainry-notification-sdk/deliverygateway"
 	"github.com/domainry/domainry-notification-sdk/modulehost"
 	notificationremote "github.com/domainry/domainry-notification-sdk/remote"
-	"github.com/domainry/domainry-notification/internal/infrastructure/persistence/sqlstore"
+	sqlstore "github.com/domainry/domainry-notification/internal/infrastructure/persistence"
 
 	_ "modernc.org/sqlite"
 )

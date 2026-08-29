@@ -1,6 +1,6 @@
 package migrationstore
 
-import storeschema "github.com/domainry/domainry-notification/internal/infrastructure/persistence/sqlstore/schema"
+import storeschema "github.com/domainry/domainry-notification/internal/infrastructure/persistence/schema"
 
 const SQLite = storeschema.SQLite
 

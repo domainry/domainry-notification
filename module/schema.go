@@ -2,7 +2,7 @@ package module
 
 import (
 	"github.com/domainry/domainry-notification-sdk/modulehost"
-	"github.com/domainry/domainry-notification/internal/infrastructure/persistence/sqlstore"
+	sqlstore "github.com/domainry/domainry-notification/internal/infrastructure/persistence"
 )
 
 type DataScope string

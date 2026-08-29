@@ -4,7 +4,7 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/domainry/domainry-notification/internal/infrastructure/persistence/sqlstore/schema"
+	"github.com/domainry/domainry-notification/internal/infrastructure/persistence/schema"
 )
 
 func TestSchemaOwnershipSeparatesSystemAndWorkspaceState(t *testing.T) {

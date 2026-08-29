@@ -1,9 +1,9 @@
-package sqlstore
+package persistence
 
 import (
 	"errors"
 
-	"github.com/domainry/domainry-notification/internal/infrastructure/persistence/sqlstore/shared"
+	"github.com/domainry/domainry-notification/internal/infrastructure/persistence/shared"
 )
 
 var (

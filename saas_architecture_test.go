@@ -18,7 +18,7 @@ func TestSaaSProductionDependencyClosureCannotAccessRuntimeOrPlane(t *testing.T)
 			t.Fatalf("Notification SaaS production dependency closure contains forbidden host dependency %q", forbidden)
 		}
 	}
-	for _, required := range []string{"github.com/domainry/domainry-notification/internal/assembly/saas", "github.com/domainry/domainry-notification/internal/infrastructure/persistence/sqlstore", "github.com/domainry/domainry-identity-sdk"} {
+	for _, required := range []string{"github.com/domainry/domainry-notification/internal/assembly/saas", "github.com/domainry/domainry-notification/internal/infrastructure/persistence", "github.com/domainry/domainry-identity-sdk"} {
 		if !strings.Contains(dependencies, "\n"+required+"\n") {
 			t.Fatalf("Notification SaaS production dependency closure is missing %q", required)
 		}

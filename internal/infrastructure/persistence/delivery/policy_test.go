@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/domainry/domainry-notification/internal/domain/delivery/service"
-	"github.com/domainry/domainry-notification/internal/infrastructure/persistence/sqlstore"
+	sqlstore "github.com/domainry/domainry-notification/internal/infrastructure/persistence"
 	ormdialect "github.com/domainry/domainry-orm/dialect"
 	_ "modernc.org/sqlite"
 )

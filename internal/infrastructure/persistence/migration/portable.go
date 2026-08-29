@@ -12,7 +12,7 @@ import (
 	"strings"
 
 	"github.com/domainry/domainry-notification-sdk/modulehost"
-	storeschema "github.com/domainry/domainry-notification/internal/infrastructure/persistence/sqlstore/schema"
+	storeschema "github.com/domainry/domainry-notification/internal/infrastructure/persistence/schema"
 	"github.com/domainry/domainry-orm/sqlhost"
 )
 

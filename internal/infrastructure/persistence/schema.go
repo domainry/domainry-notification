@@ -1,7 +1,7 @@
-package sqlstore
+package persistence
 
 import (
-	storeschema "github.com/domainry/domainry-notification/internal/infrastructure/persistence/sqlstore/schema"
+	storeschema "github.com/domainry/domainry-notification/internal/infrastructure/persistence/schema"
 )
 
 type Driver = storeschema.Driver

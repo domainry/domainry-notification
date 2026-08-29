@@ -3,5 +3,5 @@
 //
 // Behavior is grouped by capability in the template, inbox, and delivery
 // packages. Host dependencies are declared by the capability that consumes
-// them, and SQL-backed persistence is implemented by package sqlstore.
+// them, and SQL-backed persistence is implemented by package persistence.
 package model
