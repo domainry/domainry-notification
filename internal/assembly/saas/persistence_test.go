@@ -144,7 +144,7 @@ func TestMigrationLocksUseOneDatabaseSession(t *testing.T) {
 				t.Fatal(err)
 			}
 			defer connection.Close()
-			locker, err := sqlstore.MigrationLocker(test.driver)
+			locker, err := sqlstore.NewEngine(test.driver)
 			if err != nil {
 				t.Fatal(err)
 			}

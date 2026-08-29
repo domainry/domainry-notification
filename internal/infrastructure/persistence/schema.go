@@ -21,7 +21,7 @@ type SchemaBaselineColumn = storeschema.SchemaBaselineColumn
 type SchemaBaselineIndex = storeschema.SchemaBaselineIndex
 
 func schemaProfile(driver Driver) (DatabaseEngine, error) {
-	return databaseEngineFor(driver)
+	return NewEngine(driver)
 }
 
 func SchemaMigrations(driver Driver, schemaName, tablePrefix string) ([]SchemaMigration, error) {

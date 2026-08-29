@@ -23,12 +23,10 @@ var databaseEngines = map[Driver]DatabaseEngine{
 	MySQL:    mysqlstore.NewEngine(),
 }
 
-func databaseEngineFor(driver Driver) (DatabaseEngine, error) {
+func NewEngine(driver Driver) (DatabaseEngine, error) {
 	engine := databaseEngines[driver]
 	if engine == nil {
 		return nil, fmt.Errorf("notification database driver %q is unsupported", driver)
 	}
 	return engine, nil
 }
-
-func NewEngine(driver Driver) (DatabaseEngine, error) { return databaseEngineFor(driver) }
