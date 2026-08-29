@@ -5,17 +5,12 @@ import (
 	"strings"
 
 	"github.com/domainry/domainry-notification-sdk/modulehost"
-	ormdialect "github.com/domainry/domainry-orm/dialect"
 	ormmigration "github.com/domainry/domainry-orm/migration"
 )
 
-type Driver = ormdialect.Name
-
-const (
-	SQLite   = ormdialect.SQLite
-	Postgres = ormdialect.Postgres
-	MySQL    = ormdialect.MySQL
-)
+type Profile interface {
+	ColumnType(ColumnKind) (string, error)
+}
 
 type ApplicationScope struct {
 	TenantID, WorkspaceID, ApplicationKey string
@@ -37,20 +32,16 @@ type SchemaBaselineIndex = ormmigration.Index
 // SchemaMigrations renders the complete migration history for one physical
 // naming configuration. Existing installations must verify and baseline
 // version 1 instead of re-running it over Plane-owned legacy tables.
-func SchemaMigrations(driver Driver, schema, tablePrefix string) ([]SchemaMigration, error) {
-	dialect, err := ormdialect.ParseRenderer(string(driver), schema, tablePrefix)
+func SchemaMigrations(profile Profile, dialect modulehost.Dialect, tablePrefix string) ([]SchemaMigration, error) {
+	statements, err := renderBaseSchema(profile, tablePrefix, dialect, nil)
 	if err != nil {
 		return nil, err
 	}
-	statements, err := renderBaseSchema(driver, tablePrefix, dialect, nil)
+	retentionStatements, err := renderSchema(profile, tablePrefix, dialect, nil, retentionArchiveTables, retentionArchiveIndexes)
 	if err != nil {
 		return nil, err
 	}
-	retentionStatements, err := renderSchema(driver, tablePrefix, dialect, nil, retentionArchiveTables, retentionArchiveIndexes)
-	if err != nil {
-		return nil, err
-	}
-	migrationControlStatements, err := renderSchema(driver, tablePrefix, dialect, nil, migrationControlTables, migrationControlIndexes)
+	migrationControlStatements, err := renderSchema(profile, tablePrefix, dialect, nil, migrationControlTables, migrationControlIndexes)
 	if err != nil {
 		return nil, err
 	}
@@ -64,13 +55,13 @@ func SchemaMigrations(driver Driver, schema, tablePrefix string) ([]SchemaMigrat
 // ModuleSchemaBaseline renders the exact legacy physical shape for one
 // dialect. A host must match this contract before recording migration 1 as an
 // adopted baseline.
-func ModuleSchemaBaseline(driver Driver, tablePrefix string) (SchemaBaseline, error) {
+func ModuleSchemaBaseline(profile Profile, tablePrefix string) (SchemaBaseline, error) {
 	result := SchemaBaseline{Tables: make([]SchemaBaselineTable, len(baseSchemaTables))}
 	byName := make(map[string]*SchemaBaselineTable, len(baseSchemaTables))
 	for tableIndex, table := range baseSchemaTables {
 		value := SchemaBaselineTable{Name: tablePrefix + table.name, Columns: make([]SchemaBaselineColumn, len(table.columns))}
 		for columnIndex, column := range table.columns {
-			physicalType, err := renderColumnType(driver, column.kind)
+			physicalType, err := profile.ColumnType(column.kind)
 			if err != nil {
 				return SchemaBaseline{}, err
 			}
@@ -97,24 +88,20 @@ func ModuleSchemaBaseline(driver Driver, tablePrefix string) (SchemaBaseline, er
 // application ownership, including system-scoped template/policy rows. The
 // table prefix provides an additional physical isolation boundary while all
 // application namespaces may share one service-owned database pool.
-func ApplicationSchemaMigrations(driver Driver, schema, tablePrefix string, scope ApplicationScope) ([]SchemaMigration, error) {
+func ApplicationSchemaMigrations(profile Profile, dialect modulehost.Dialect, tablePrefix string, scope ApplicationScope) ([]SchemaMigration, error) {
 	scope.TenantID, scope.WorkspaceID, scope.ApplicationKey = strings.TrimSpace(scope.TenantID), strings.TrimSpace(scope.WorkspaceID), strings.TrimSpace(scope.ApplicationKey)
 	if scope.TenantID == "" || scope.WorkspaceID == "" || scope.ApplicationKey == "" {
 		return nil, fmt.Errorf("notification SaaS application scope is incomplete")
 	}
-	dialect, err := ormdialect.ParseRenderer(string(driver), schema, tablePrefix)
+	statements, err := renderBaseSchema(profile, tablePrefix, dialect, &scope)
 	if err != nil {
 		return nil, err
 	}
-	statements, err := renderBaseSchema(driver, tablePrefix, dialect, &scope)
+	retentionStatements, err := renderSchema(profile, tablePrefix, dialect, &scope, retentionArchiveTables, retentionArchiveIndexes)
 	if err != nil {
 		return nil, err
 	}
-	retentionStatements, err := renderSchema(driver, tablePrefix, dialect, &scope, retentionArchiveTables, retentionArchiveIndexes)
-	if err != nil {
-		return nil, err
-	}
-	migrationControlStatements, err := renderSchema(driver, tablePrefix, dialect, &scope, migrationControlTables, migrationControlIndexes)
+	migrationControlStatements, err := renderSchema(profile, tablePrefix, dialect, &scope, migrationControlTables, migrationControlIndexes)
 	if err != nil {
 		return nil, err
 	}
@@ -133,16 +120,27 @@ type schemaColumn struct {
 	primaryKey bool
 }
 
-type schemaColumnKind uint8
+type ColumnKind uint8
+type schemaColumnKind = ColumnKind
 
 const (
-	identifierColumn schemaColumnKind = iota
-	indexedTextColumn
-	documentColumn
-	plainTextColumn
-	integerColumn
-	bigIntegerColumn
-	booleanColumn
+	IdentifierColumn ColumnKind = iota
+	IndexedTextColumn
+	DocumentColumn
+	PlainTextColumn
+	IntegerColumn
+	BigIntegerColumn
+	BooleanColumn
+)
+
+const (
+	identifierColumn  = IdentifierColumn
+	indexedTextColumn = IndexedTextColumn
+	documentColumn    = DocumentColumn
+	plainTextColumn   = PlainTextColumn
+	integerColumn     = IntegerColumn
+	bigIntegerColumn  = BigIntegerColumn
+	booleanColumn     = BooleanColumn
 )
 
 type schemaTable struct {
@@ -157,11 +155,11 @@ type schemaIndex struct {
 	columns []string
 }
 
-func renderBaseSchema(driver Driver, indexPrefix string, dialect modulehost.Dialect, application *ApplicationScope) ([]string, error) {
-	return renderSchema(driver, indexPrefix, dialect, application, baseSchemaTables, baseSchemaIndexes)
+func renderBaseSchema(profile Profile, indexPrefix string, dialect modulehost.Dialect, application *ApplicationScope) ([]string, error) {
+	return renderSchema(profile, indexPrefix, dialect, application, baseSchemaTables, baseSchemaIndexes)
 }
 
-func renderSchema(driver Driver, indexPrefix string, dialect modulehost.Dialect, application *ApplicationScope, tables []schemaTable, indexes []schemaIndex) ([]string, error) {
+func renderSchema(profile Profile, indexPrefix string, dialect modulehost.Dialect, application *ApplicationScope, tables []schemaTable, indexes []schemaIndex) ([]string, error) {
 	statements := make([]string, 0, len(tables)+len(indexes))
 	for _, table := range tables {
 		columns := append([]schemaColumn(nil), table.columns...)
@@ -173,7 +171,7 @@ func renderSchema(driver Driver, indexPrefix string, dialect modulehost.Dialect,
 		}
 		parts := make([]string, len(columns))
 		for index, column := range columns {
-			columnType, err := renderColumnType(driver, column.kind)
+			columnType, err := profile.ColumnType(column.kind)
 			if err != nil {
 				return nil, err
 			}
@@ -206,33 +204,3 @@ func renderSchema(driver Driver, indexPrefix string, dialect modulehost.Dialect,
 }
 
 func sqlStringLiteral(value string) string { return "'" + strings.ReplaceAll(value, "'", "''") + "'" }
-
-func renderColumnType(driver Driver, kind schemaColumnKind) (string, error) {
-	switch kind {
-	case identifierColumn:
-		if driver == MySQL {
-			return "VARCHAR(191)", nil
-		}
-		return "TEXT", nil
-	case indexedTextColumn:
-		if driver == MySQL {
-			return "VARCHAR(191) CHARACTER SET ascii COLLATE ascii_bin", nil
-		}
-		return "TEXT", nil
-	case documentColumn:
-		if driver == MySQL {
-			return "LONGTEXT", nil
-		}
-		return "TEXT", nil
-	case plainTextColumn:
-		return "TEXT", nil
-	case integerColumn:
-		return "INTEGER", nil
-	case bigIntegerColumn:
-		return "BIGINT", nil
-	case booleanColumn:
-		return "BOOLEAN", nil
-	default:
-		return "", fmt.Errorf("notification schema column kind %d is unsupported", kind)
-	}
-}

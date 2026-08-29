@@ -2,11 +2,58 @@ package schema
 
 import (
 	"database/sql"
+	"fmt"
 	"strings"
 	"testing"
 
+	ormdialect "github.com/domainry/domainry-orm/dialect"
 	_ "modernc.org/sqlite"
 )
+
+type testSchemaProfile struct{ driver string }
+
+func (p testSchemaProfile) ColumnType(kind ColumnKind) (string, error) {
+	if p.driver == "mysql" {
+		switch kind {
+		case IdentifierColumn:
+			return "VARCHAR(191)", nil
+		case IndexedTextColumn:
+			return "VARCHAR(191) CHARACTER SET ascii COLLATE ascii_bin", nil
+		case DocumentColumn:
+			return "LONGTEXT", nil
+		}
+	}
+	switch kind {
+	case IdentifierColumn, IndexedTextColumn, DocumentColumn, PlainTextColumn:
+		return "TEXT", nil
+	case IntegerColumn:
+		return "INTEGER", nil
+	case BigIntegerColumn:
+		return "BIGINT", nil
+	case BooleanColumn:
+		return "BOOLEAN", nil
+	default:
+		return "", fmt.Errorf("test column kind %d is unsupported", kind)
+	}
+}
+
+func testSchemaMigrations(driver, schemaName, prefix string) ([]SchemaMigration, error) {
+	renderer, err := ormdialect.ParseRenderer(driver, schemaName, prefix)
+	if err != nil {
+		return nil, err
+	}
+	return SchemaMigrations(testSchemaProfile{driver: driver}, renderer, prefix)
+}
+func testModuleSchemaBaseline(driver, prefix string) (SchemaBaseline, error) {
+	return ModuleSchemaBaseline(testSchemaProfile{driver: driver}, prefix)
+}
+func testApplicationSchemaMigrations(driver, schemaName, prefix string, scope ApplicationScope) ([]SchemaMigration, error) {
+	renderer, err := ormdialect.ParseRenderer(driver, schemaName, prefix)
+	if err != nil {
+		return nil, err
+	}
+	return ApplicationSchemaMigrations(testSchemaProfile{driver: driver}, renderer, prefix, scope)
+}
 
 func TestBaseSchemaMatchesOwnershipAndRunsOnSQLite(t *testing.T) {
 	if len(ownedSchemaTables()) != len(tableOwnership) {
@@ -40,7 +87,7 @@ func TestBaseSchemaMatchesOwnershipAndRunsOnSQLite(t *testing.T) {
 			t.Fatalf("index %q references unowned table %q", index.name, index.table)
 		}
 	}
-	migrations, err := SchemaMigrations(SQLite, "", "")
+	migrations, err := testSchemaMigrations("sqlite", "", "")
 	if err != nil || len(migrations) != 3 || migrations[0].Version != 1 || migrations[0].Name != "create_notification_schema" || migrations[1].Version != 2 || migrations[2].Version != 3 || migrations[2].Name != "create_notification_migration_control" {
 		t.Fatalf("migrations=%+v err=%v", migrations, err)
 	}
@@ -65,7 +112,7 @@ func TestBaseSchemaMatchesOwnershipAndRunsOnSQLite(t *testing.T) {
 }
 
 func TestSchemaMigrationsRenderPhysicalNamesAndMySQLTypes(t *testing.T) {
-	migrations, err := SchemaMigrations(MySQL, "tenant", "domainry_")
+	migrations, err := testSchemaMigrations("mysql", "tenant", "domainry_")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -84,12 +131,12 @@ func TestSchemaMigrationsRenderPhysicalNamesAndMySQLTypes(t *testing.T) {
 }
 
 func TestSchemaMigrationStatementsDoNotLeakMutableState(t *testing.T) {
-	first, err := SchemaMigrations(SQLite, "", "")
+	first, err := testSchemaMigrations("sqlite", "", "")
 	if err != nil {
 		t.Fatal(err)
 	}
 	first[0].Statements[0] = "mutated"
-	second, err := SchemaMigrations(SQLite, "", "")
+	second, err := testSchemaMigrations("sqlite", "", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -99,7 +146,7 @@ func TestSchemaMigrationStatementsDoNotLeakMutableState(t *testing.T) {
 }
 
 func TestModuleSchemaBaselineCoversEveryColumnAndDeclaredIndex(t *testing.T) {
-	baseline, err := ModuleSchemaBaseline(MySQL, "")
+	baseline, err := testModuleSchemaBaseline("mysql", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -128,7 +175,7 @@ func TestModuleSchemaBaselineCoversEveryColumnAndDeclaredIndex(t *testing.T) {
 
 func TestApplicationSchemaMigrationsPersistExactOwnership(t *testing.T) {
 	scope := ApplicationScope{TenantID: "tenant-'one", WorkspaceID: "workspace-one", ApplicationKey: "application-one"}
-	migrations, err := ApplicationSchemaMigrations(SQLite, "", "app_one_", scope)
+	migrations, err := testApplicationSchemaMigrations("sqlite", "", "app_one_", scope)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -160,11 +207,11 @@ func TestApplicationSchemaMigrationsPersistExactOwnership(t *testing.T) {
 }
 
 func TestApplicationSchemaMigrationsUseDistinctPhysicalNamespaces(t *testing.T) {
-	left, err := ApplicationSchemaMigrations(SQLite, "", "left_", ApplicationScope{TenantID: "tenant", WorkspaceID: "workspace", ApplicationKey: "left"})
+	left, err := testApplicationSchemaMigrations("sqlite", "", "left_", ApplicationScope{TenantID: "tenant", WorkspaceID: "workspace", ApplicationKey: "left"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	right, err := ApplicationSchemaMigrations(SQLite, "", "right_", ApplicationScope{TenantID: "tenant", WorkspaceID: "workspace", ApplicationKey: "right"})
+	right, err := testApplicationSchemaMigrations("sqlite", "", "right_", ApplicationScope{TenantID: "tenant", WorkspaceID: "workspace", ApplicationKey: "right"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -183,7 +230,7 @@ func TestApplicationSchemaMigrationsRequireExactScope(t *testing.T) {
 		{TenantID: "tenant", ApplicationKey: "application"},
 		{TenantID: "tenant", WorkspaceID: "workspace"},
 	} {
-		if _, err := ApplicationSchemaMigrations(SQLite, "", "app_", scope); err == nil {
+		if _, err := testApplicationSchemaMigrations("sqlite", "", "app_", scope); err == nil {
 			t.Fatalf("expected incomplete scope error for %+v", scope)
 		}
 	}
