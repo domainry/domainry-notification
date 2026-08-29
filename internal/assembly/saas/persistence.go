@@ -68,12 +68,12 @@ func (p *SQLPersistence) PrepareApplication(ctx context.Context, application not
 	if err := application.Validate(); err != nil {
 		return nil, err
 	}
-	prefix := applicationTablePrefix(application)
-	dialect, err := p.engine.Renderer(p.schema, prefix)
+	const tablePrefix = ""
+	dialect, err := p.engine.Renderer(p.schema, tablePrefix)
 	if err != nil {
 		return nil, err
 	}
-	migrations, err := sqlstore.ApplicationSchemaMigrations(p.driver, p.schema, prefix, sqlstore.ApplicationScope{
+	migrations, err := sqlstore.ApplicationSchemaMigrations(p.driver, p.schema, tablePrefix, sqlstore.ApplicationScope{
 		TenantID: application.TenantID, WorkspaceID: application.WorkspaceID, ApplicationKey: application.ApplicationKey,
 	})
 	if err != nil {
@@ -87,12 +87,18 @@ func (p *SQLPersistence) PrepareApplication(ctx context.Context, application not
 	}
 	defer connection.Close()
 	namespace := applicationKey(application)
-	release, err := p.engine.Acquire(ctx, connection, namespace)
+	// One standalone deployment owns one physical database. Use a database-wide
+	// migration lock: application-specific locks would allow two applications to
+	// race while both target the same unprefixed tables.
+	release, err := p.engine.Acquire(ctx, connection, "notification-saas-schema")
 	if err != nil {
 		return nil, err
 	}
 	defer func() { _ = release(context.Background()) }()
 	if err := p.ensureLedger(ctx, connection); err != nil {
+		return nil, err
+	}
+	if err := p.ensureApplicationBinding(ctx, connection, namespace); err != nil {
 		return nil, err
 	}
 	for _, migration := range migrations {
@@ -101,6 +107,25 @@ func (p *SQLPersistence) PrepareApplication(ctx context.Context, application not
 		}
 	}
 	return dialect, nil
+}
+
+func (p *SQLPersistence) ensureApplicationBinding(ctx context.Context, connection migrationQueryer, namespace string) error {
+	dialect, err := p.engine.Renderer(p.schema, "")
+	if err != nil {
+		return err
+	}
+	query := "SELECT " + dialect.Identifier("namespace") + " FROM " + dialect.Table(migrationLedgerTable) + " ORDER BY " + dialect.Identifier("namespace") + " LIMIT 1"
+	var existing string
+	if err := connection.QueryRowContext(ctx, query).Scan(&existing); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil
+		}
+		return fmt.Errorf("read Notification SaaS application binding: %w", err)
+	}
+	if existing != namespace {
+		return fmt.Errorf("Notification SaaS database is already bound to application %s", existing)
+	}
+	return nil
 }
 
 func (p *SQLPersistence) Close() error {
@@ -199,11 +224,6 @@ func (p *SQLPersistence) migrationChecksum(ctx context.Context, queryer migratio
 		return "", false, fmt.Errorf("read Notification SaaS migration ledger: %w", err)
 	}
 	return checksum, true, nil
-}
-
-func applicationTablePrefix(application notificationsdk.ApplicationRef) string {
-	sum := sha256.Sum256([]byte(applicationKey(application)))
-	return "notification_" + hex.EncodeToString(sum[:8]) + "_"
 }
 
 func migrationChecksum(migration sqlstore.SchemaMigration) string {

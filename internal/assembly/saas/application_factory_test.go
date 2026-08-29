@@ -183,9 +183,8 @@ func TestRemotePublicationReconcilesResponseLossWithoutDuplicateIngest(t *testin
 	if err != nil || created || event.ID == "" || !transport.lost {
 		t.Fatalf("event=%+v created=%v response_lost=%v err=%v", event, created, transport.lost, err)
 	}
-	prefix := applicationTablePrefix(application)
 	var rows int
-	if err := db.QueryRow(`SELECT COUNT(*) FROM `+prefix+`notification_events WHERE workspace_id = ? AND source_event_id = ?`, application.WorkspaceID, intent.SourceEventID).Scan(&rows); err != nil {
+	if err := db.QueryRow(`SELECT COUNT(*) FROM notification_events WHERE workspace_id = ? AND source_event_id = ?`, application.WorkspaceID, intent.SourceEventID).Scan(&rows); err != nil {
 		t.Fatal(err)
 	}
 	if rows != 1 {

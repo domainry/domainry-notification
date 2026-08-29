@@ -47,7 +47,7 @@ func TestSQLPersistencePreparesAndReopensExactApplication(t *testing.T) {
 	}
 }
 
-func TestSQLPersistenceSeparatesApplicationsWithSameWorkspace(t *testing.T) {
+func TestSQLPersistenceRejectsASecondApplicationInStandaloneDatabase(t *testing.T) {
 	db, err := sql.Open("sqlite", "file:"+t.Name()+"?mode=memory&cache=shared")
 	if err != nil {
 		t.Fatal(err)
@@ -63,15 +63,14 @@ func TestSQLPersistenceSeparatesApplicationsWithSameWorkspace(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	rightDialect, err := persistence.PrepareApplication(t.Context(), right)
-	if err != nil {
-		t.Fatal(err)
+	if leftDialect.Table("notification_events") != `"notification_events"` {
+		t.Fatalf("standalone table=%s", leftDialect.Table("notification_events"))
 	}
-	if leftDialect.Table("notification_events") == rightDialect.Table("notification_events") {
-		t.Fatal("two applications share one physical Notification table")
+	if _, err := persistence.PrepareApplication(t.Context(), right); err == nil || !strings.Contains(err.Error(), "already bound") {
+		t.Fatalf("second application error=%v", err)
 	}
 	var migrations int
-	if err := db.QueryRow(`SELECT COUNT(*) FROM _schema_migrations`).Scan(&migrations); err != nil || migrations != 6 {
+	if err := db.QueryRow(`SELECT COUNT(*) FROM _schema_migrations`).Scan(&migrations); err != nil || migrations != 3 {
 		t.Fatalf("migration count=%d err=%v", migrations, err)
 	}
 }
@@ -95,14 +94,6 @@ func TestSQLPersistenceRejectsMigrationChecksumDrift(t *testing.T) {
 	}
 	if _, err := persistence.PrepareApplication(t.Context(), application); err == nil || !strings.Contains(err.Error(), "checksum mismatch") {
 		t.Fatalf("error=%v", err)
-	}
-}
-
-func TestApplicationTablePrefixDoesNotExposeScopeValues(t *testing.T) {
-	application := notificationsdk.ApplicationRef{TenantID: "tenant-secret", WorkspaceID: "workspace-secret", ApplicationKey: "application-secret"}
-	prefix := applicationTablePrefix(application)
-	if !strings.HasPrefix(prefix, "notification_") || !strings.HasSuffix(prefix, "_") || strings.Contains(prefix, "secret") {
-		t.Fatalf("unsafe prefix %q", prefix)
 	}
 }
 

@@ -84,7 +84,7 @@ func (f *SQLApplicationFactory) OpenSaaS(ctx context.Context, application notifi
 		identity:    identity,
 		catalog:     f.options.Catalog,
 		clock:       f.options.Clock,
-		workerID:    f.options.WorkerID + ":" + applicationTablePrefix(application),
+		workerID:    f.options.WorkerID + ":" + applicationKey(application),
 		notifier:    f.options.WorkNotifier,
 		directory:   identityRecipientDirectory{application: application, directory: identity.Directory()},
 		audiences:   f.options.AudienceResolver,
