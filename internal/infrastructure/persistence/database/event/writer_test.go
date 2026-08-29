@@ -82,7 +82,7 @@ func TestInsertEventUsesCallerExecutorAndHostScopeAdapters(t *testing.T) {
 	if database.scope != "workspace-1" || !strings.HasPrefix(database.query, `INSERT INTO "notification_events"`) {
 		t.Fatalf("scope=%q query=%q", database.scope, database.query)
 	}
-	if len(database.args) != 15 || database.args[0] != "event-1" || database.args[1] != "workspace-1" {
+	if len(database.args) != 15 || database.args[0] != "workspace-1" || database.args[1] != "event-1" {
 		t.Fatalf("args=%v", database.args)
 	}
 }
