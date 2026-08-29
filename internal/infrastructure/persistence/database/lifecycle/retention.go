@@ -50,8 +50,12 @@ func (s *Store) PreviewRetention(ctx context.Context, request contract.Notificat
 	}
 	result := contract.NotificationRetentionPreview{}
 	for _, spec := range specs {
-		predicate := s.excludeArchived(s.retentionPredicate(spec, request.WorkspaceID, request.Now.Add(-time.Duration(request.Policy.DefaultRetentionSeconds)*time.Second)), spec, request.WorkspaceID, request.Policy.Key)
-		query, args, err := builder.NewSelectBuilder(s.Renderer, spec.table).Projections(builder.Project(builder.CountAll()), builder.Project(builder.Min(builder.Column(spec.timeColumn)))).Where(predicate).Build()
+		predicate := s.excludeArchived(s.retentionPredicate(spec, request.Now.Add(-time.Duration(request.Policy.DefaultRetentionSeconds)*time.Second)), spec, request.WorkspaceID, request.Policy.Key)
+		queryBuilder := builder.NewSelectBuilder(s.Renderer, spec.table)
+		if spec.workspaceColumn != "" {
+			queryBuilder = builder.NewWorkspaceSelectBuilder(s.Renderer, spec.table, request.WorkspaceID)
+		}
+		query, args, err := queryBuilder.Projections(builder.Project(builder.CountAll()), builder.Project(builder.Min(builder.Column(spec.timeColumn)))).Where(predicate).Build()
 		if err != nil {
 			return contract.NotificationRetentionPreview{}, err
 		}
@@ -107,11 +111,15 @@ func (s *Store) ProcessRetentionBatch(ctx context.Context, request contract.Noti
 }
 
 func (s *Store) processRetentionSpec(ctx context.Context, request contract.NotificationRetentionBatchRequest, spec retentionSpec, limit int) (contract.NotificationRetentionBatchResult, error) {
-	predicate := s.retentionPredicate(spec, request.WorkspaceID, request.Now.Add(-time.Duration(request.Policy.DefaultRetentionSeconds)*time.Second))
+	predicate := s.retentionPredicate(spec, request.Now.Add(-time.Duration(request.Policy.DefaultRetentionSeconds)*time.Second))
 	if request.Operation == "archive" {
 		predicate = s.excludeArchived(predicate, spec, request.WorkspaceID, request.Policy.Key)
 	}
-	query, args, err := builder.NewSelectBuilder(s.Renderer, spec.table).Columns(spec.idColumn, spec.timeColumn).Where(predicate).OrderBy(builder.Ascending(spec.timeColumn), builder.Ascending(spec.idColumn)).Limit(limit).Build()
+	queryBuilder := builder.NewSelectBuilder(s.Renderer, spec.table)
+	if spec.workspaceColumn != "" {
+		queryBuilder = builder.NewWorkspaceSelectBuilder(s.Renderer, spec.table, request.WorkspaceID)
+	}
+	query, args, err := queryBuilder.Columns(spec.idColumn, spec.timeColumn).Where(predicate).OrderBy(builder.Ascending(spec.timeColumn), builder.Ascending(spec.idColumn)).Limit(limit).Build()
 	if err != nil {
 		return contract.NotificationRetentionBatchResult{}, err
 	}
@@ -184,11 +192,8 @@ func (s *Store) processRetentionSpec(ctx context.Context, request contract.Notif
 	return result, nil
 }
 
-func (s *Store) retentionPredicate(spec retentionSpec, workspaceID string, cutoff time.Time) builder.Predicate {
+func (s *Store) retentionPredicate(spec retentionSpec, cutoff time.Time) builder.Predicate {
 	predicates := []builder.Predicate{}
-	if spec.workspaceColumn != "" {
-		predicates = append(predicates, builder.Equal(spec.workspaceColumn, workspaceID))
-	}
 	predicates = append(predicates, builder.NotEqual(spec.timeColumn, ""), builder.LessThanOrEqual(spec.timeColumn, cutoff.UTC().Format(time.RFC3339Nano)))
 	if len(spec.eligibleStatuses) > 0 {
 		values := make([]any, len(spec.eligibleStatuses))
@@ -222,7 +227,7 @@ func retentionHeld(holds []contract.NotificationRetentionHold, table, resourceID
 
 func (s *Store) archiveRetentionCandidate(ctx context.Context, request contract.NotificationRetentionBatchRequest, spec retentionSpec, resourceID string) (bool, error) {
 	var exists int
-	check, checkArgs, err := builder.NewSelectBuilder(s.Renderer, "notification_retention_archive").Projections(builder.Project(builder.CountAll())).Where(builder.And(builder.Equal("workspace_id", request.WorkspaceID), builder.Equal("policy_key", request.Policy.Key), builder.Equal("source_table", spec.table), builder.Equal("resource_id", resourceID))).Build()
+	check, checkArgs, err := builder.NewWorkspaceSelectBuilder(s.Renderer, "notification_retention_archive", request.WorkspaceID).Projections(builder.Project(builder.CountAll())).Where(builder.And(builder.Equal("policy_key", request.Policy.Key), builder.Equal("source_table", spec.table), builder.Equal("resource_id", resourceID))).Build()
 	if err != nil {
 		return false, err
 	}
@@ -230,10 +235,11 @@ func (s *Store) archiveRetentionCandidate(ctx context.Context, request contract.
 		return false, err
 	}
 	predicate := builder.Predicate(builder.Equal(spec.idColumn, resourceID))
+	queryBuilder := builder.NewSelectBuilder(s.Renderer, spec.table)
 	if spec.workspaceColumn != "" {
-		predicate = builder.And(builder.Equal(spec.workspaceColumn, request.WorkspaceID), predicate)
+		queryBuilder = builder.NewWorkspaceSelectBuilder(s.Renderer, spec.table, request.WorkspaceID)
 	}
-	statement, args, err := builder.NewSelectBuilder(s.Renderer, spec.table).Projections(builder.Project(builder.AllColumns())).Where(predicate).Build()
+	statement, args, err := queryBuilder.Projections(builder.Project(builder.AllColumns())).Where(predicate).Build()
 	if err != nil {
 		return false, err
 	}
@@ -270,7 +276,7 @@ func (s *Store) archiveRetentionCandidate(ctx context.Context, request contract.
 	digest := sha256.Sum256(raw)
 	identity := sha256.Sum256([]byte(request.WorkspaceID + "\x00" + request.Policy.Key + "\x00" + spec.table + "\x00" + resourceID))
 	columnsToInsert := []string{"id", "workspace_id", "policy_key", "policy_version", "job_id", "source_table", "resource_id", "payload_hash", "payload_json", "archived_at"}
-	_, err = s.Insert(ctx, s.Database, "notification_retention_archive", columnsToInsert, hex.EncodeToString(identity[:]), request.WorkspaceID, request.Policy.Key, request.Policy.Version, request.JobID, spec.table, resourceID, hex.EncodeToString(digest[:]), string(raw), request.Now.UTC().Format(time.RFC3339Nano))
+	_, err = s.WorkspaceInsert(ctx, s.Database, request.WorkspaceID, "notification_retention_archive", columnsToInsert, hex.EncodeToString(identity[:]), request.WorkspaceID, request.Policy.Key, request.Policy.Version, request.JobID, spec.table, resourceID, hex.EncodeToString(digest[:]), string(raw), request.Now.UTC().Format(time.RFC3339Nano))
 	if err != nil {
 		return false, fmt.Errorf("archive notification retention candidate %s/%s: %w", spec.table, resourceID, err)
 	}
@@ -279,10 +285,11 @@ func (s *Store) archiveRetentionCandidate(ctx context.Context, request contract.
 
 func (s *Store) deleteRetentionCandidate(ctx context.Context, workspaceID string, spec retentionSpec, resourceID string) (int64, error) {
 	predicate := builder.Predicate(builder.Equal(spec.idColumn, resourceID))
+	deleteBuilder := builder.NewDeleteBuilder(s.Renderer, spec.table)
 	if spec.workspaceColumn != "" {
-		predicate = builder.And(builder.Equal(spec.workspaceColumn, workspaceID), predicate)
+		deleteBuilder = builder.NewWorkspaceDeleteBuilder(s.Renderer, spec.table, workspaceID)
 	}
-	statement, args, err := builder.NewDeleteBuilder(s.Renderer, spec.table).Where(predicate).Build()
+	statement, args, err := deleteBuilder.Where(predicate).Build()
 	if err != nil {
 		return 0, err
 	}
