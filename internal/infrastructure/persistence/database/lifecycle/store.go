@@ -1,7 +1,7 @@
 package lifecyclestore
 
 import (
-	"github.com/domainry/domainry-notification/internal/infrastructure/persistence/database/base"
+	"github.com/domainry/domainry-notification/internal/infrastructure/persistence/base"
 )
 
 type Config struct {

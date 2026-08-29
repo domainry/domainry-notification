@@ -1,10 +1,10 @@
 package mysql
 
 import (
-	"github.com/domainry/domainry-notification/internal/infrastructure/persistence/database/base"
-	mysqlmigration "github.com/domainry/domainry-notification/internal/infrastructure/persistence/database/driver/mysql/migration"
-	mysqlschema "github.com/domainry/domainry-notification/internal/infrastructure/persistence/database/driver/mysql/schema"
+	"github.com/domainry/domainry-notification/internal/infrastructure/persistence/base"
 	storeschema "github.com/domainry/domainry-notification/internal/infrastructure/persistence/database/schema"
+	mysqlmigration "github.com/domainry/domainry-notification/internal/infrastructure/persistence/mysql/migration"
+	mysqlschema "github.com/domainry/domainry-notification/internal/infrastructure/persistence/mysql/schema"
 	ormdialect "github.com/domainry/domainry-orm/dialect"
 )
 

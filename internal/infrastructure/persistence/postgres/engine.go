@@ -1,10 +1,10 @@
 package postgres
 
 import (
-	"github.com/domainry/domainry-notification/internal/infrastructure/persistence/database/base"
-	postgresmigration "github.com/domainry/domainry-notification/internal/infrastructure/persistence/database/driver/postgres/migration"
-	postgresschema "github.com/domainry/domainry-notification/internal/infrastructure/persistence/database/driver/postgres/schema"
+	"github.com/domainry/domainry-notification/internal/infrastructure/persistence/base"
 	storeschema "github.com/domainry/domainry-notification/internal/infrastructure/persistence/database/schema"
+	postgresmigration "github.com/domainry/domainry-notification/internal/infrastructure/persistence/postgres/migration"
+	postgresschema "github.com/domainry/domainry-notification/internal/infrastructure/persistence/postgres/schema"
 	ormdialect "github.com/domainry/domainry-orm/dialect"
 )
 

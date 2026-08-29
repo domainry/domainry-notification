@@ -1,10 +1,10 @@
 package sqlite
 
 import (
-	"github.com/domainry/domainry-notification/internal/infrastructure/persistence/database/base"
-	sqlitemigration "github.com/domainry/domainry-notification/internal/infrastructure/persistence/database/driver/sqlite/migration"
-	sqliteschema "github.com/domainry/domainry-notification/internal/infrastructure/persistence/database/driver/sqlite/schema"
+	"github.com/domainry/domainry-notification/internal/infrastructure/persistence/base"
 	storeschema "github.com/domainry/domainry-notification/internal/infrastructure/persistence/database/schema"
+	sqlitemigration "github.com/domainry/domainry-notification/internal/infrastructure/persistence/sqlite/migration"
+	sqliteschema "github.com/domainry/domainry-notification/internal/infrastructure/persistence/sqlite/schema"
 	ormdialect "github.com/domainry/domainry-orm/dialect"
 )
 

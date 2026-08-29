@@ -1,6 +1,6 @@
 package persistence
 
-import portabilitystore "github.com/domainry/domainry-notification/internal/infrastructure/persistence/repository/portability"
+import portabilitystore "github.com/domainry/domainry-notification/internal/infrastructure/persistence/database/portability"
 
 const (
 	PortableFormatV1       = portabilitystore.PortableFormatV1

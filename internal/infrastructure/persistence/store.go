@@ -5,13 +5,13 @@ import (
 
 	"github.com/domainry/domainry-notification-sdk/modulehost"
 	notification "github.com/domainry/domainry-notification/internal/domain/notification/model"
-	"github.com/domainry/domainry-notification/internal/infrastructure/persistence/database/base"
-	deliverystore "github.com/domainry/domainry-notification/internal/infrastructure/persistence/repository/delivery"
-	eventstore "github.com/domainry/domainry-notification/internal/infrastructure/persistence/repository/event"
-	inboxstore "github.com/domainry/domainry-notification/internal/infrastructure/persistence/repository/inbox"
-	lifecyclestore "github.com/domainry/domainry-notification/internal/infrastructure/persistence/repository/lifecycle"
-	portabilitystore "github.com/domainry/domainry-notification/internal/infrastructure/persistence/repository/portability"
-	templatestore "github.com/domainry/domainry-notification/internal/infrastructure/persistence/repository/template"
+	"github.com/domainry/domainry-notification/internal/infrastructure/persistence/base"
+	deliverystore "github.com/domainry/domainry-notification/internal/infrastructure/persistence/database/delivery"
+	eventstore "github.com/domainry/domainry-notification/internal/infrastructure/persistence/database/event"
+	inboxstore "github.com/domainry/domainry-notification/internal/infrastructure/persistence/database/inbox"
+	lifecyclestore "github.com/domainry/domainry-notification/internal/infrastructure/persistence/database/lifecycle"
+	portabilitystore "github.com/domainry/domainry-notification/internal/infrastructure/persistence/database/portability"
+	templatestore "github.com/domainry/domainry-notification/internal/infrastructure/persistence/database/template"
 	"github.com/domainry/domainry-orm/sqlhost"
 )
 

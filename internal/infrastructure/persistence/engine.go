@@ -3,11 +3,11 @@ package persistence
 import (
 	"fmt"
 
-	"github.com/domainry/domainry-notification/internal/infrastructure/persistence/database/base"
-	mysqlstore "github.com/domainry/domainry-notification/internal/infrastructure/persistence/database/driver/mysql"
-	postgresstore "github.com/domainry/domainry-notification/internal/infrastructure/persistence/database/driver/postgres"
-	sqlitestore "github.com/domainry/domainry-notification/internal/infrastructure/persistence/database/driver/sqlite"
+	"github.com/domainry/domainry-notification/internal/infrastructure/persistence/base"
 	storeschema "github.com/domainry/domainry-notification/internal/infrastructure/persistence/database/schema"
+	mysqlstore "github.com/domainry/domainry-notification/internal/infrastructure/persistence/mysql"
+	postgresstore "github.com/domainry/domainry-notification/internal/infrastructure/persistence/postgres"
+	sqlitestore "github.com/domainry/domainry-notification/internal/infrastructure/persistence/sqlite"
 	ormdialect "github.com/domainry/domainry-orm/dialect"
 )
 
@@ -17,16 +17,16 @@ type DatabaseEngine interface {
 	Renderer(string, string) (ormdialect.Renderer, error)
 }
 
-var databaseEngines = map[Driver]DatabaseEngine{
-	SQLite:   sqlitestore.NewEngine(),
-	Postgres: postgresstore.NewEngine(),
-	MySQL:    mysqlstore.NewEngine(),
+var databaseEngineFactories = map[Driver]func() DatabaseEngine{
+	SQLite:   func() DatabaseEngine { return sqlitestore.NewEngine() },
+	Postgres: func() DatabaseEngine { return postgresstore.NewEngine() },
+	MySQL:    func() DatabaseEngine { return mysqlstore.NewEngine() },
 }
 
 func NewEngine(driver Driver) (DatabaseEngine, error) {
-	engine := databaseEngines[driver]
-	if engine == nil {
+	factory := databaseEngineFactories[driver]
+	if factory == nil {
 		return nil, fmt.Errorf("notification database driver %q is unsupported", driver)
 	}
-	return engine, nil
+	return factory(), nil
 }

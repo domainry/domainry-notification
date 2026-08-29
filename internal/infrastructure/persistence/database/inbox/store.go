@@ -3,7 +3,7 @@ package inboxstore
 import (
 	"context"
 	notification "github.com/domainry/domainry-notification/internal/domain/notification/model"
-	"github.com/domainry/domainry-notification/internal/infrastructure/persistence/database/base"
+	"github.com/domainry/domainry-notification/internal/infrastructure/persistence/base"
 )
 
 // WorkspaceScope attaches the tenant boundary required by the host database.

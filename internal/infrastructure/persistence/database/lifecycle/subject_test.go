@@ -4,8 +4,8 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/domainry/domainry-notification/internal/infrastructure/persistence/database/base"
-	lifecyclestore "github.com/domainry/domainry-notification/internal/infrastructure/persistence/repository/lifecycle"
+	"github.com/domainry/domainry-notification/internal/infrastructure/persistence/base"
+	lifecyclestore "github.com/domainry/domainry-notification/internal/infrastructure/persistence/database/lifecycle"
 	ormdialect "github.com/domainry/domainry-orm/dialect"
 )
 
