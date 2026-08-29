@@ -4,7 +4,17 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/domainry/domainry-notification-sdk/modulehost"
+	ormdialect "github.com/domainry/domainry-orm/dialect"
 	ormmigration "github.com/domainry/domainry-orm/migration"
+)
+
+type Driver = ormdialect.Name
+
+const (
+	SQLite   = ormdialect.SQLite
+	Postgres = ormdialect.Postgres
+	MySQL    = ormdialect.MySQL
 )
 
 type ApplicationScope struct {
@@ -28,7 +38,7 @@ type SchemaBaselineIndex = ormmigration.Index
 // naming configuration. Existing installations must verify and baseline
 // version 1 instead of re-running it over Plane-owned legacy tables.
 func SchemaMigrations(driver Driver, schema, tablePrefix string) ([]SchemaMigration, error) {
-	dialect, err := NewDialect(driver, schema, tablePrefix)
+	dialect, err := ormdialect.ParseRenderer(string(driver), schema, tablePrefix)
 	if err != nil {
 		return nil, err
 	}
@@ -92,7 +102,7 @@ func ApplicationSchemaMigrations(driver Driver, schema, tablePrefix string, scop
 	if scope.TenantID == "" || scope.WorkspaceID == "" || scope.ApplicationKey == "" {
 		return nil, fmt.Errorf("notification SaaS application scope is incomplete")
 	}
-	dialect, err := NewDialect(driver, schema, tablePrefix)
+	dialect, err := ormdialect.ParseRenderer(string(driver), schema, tablePrefix)
 	if err != nil {
 		return nil, err
 	}
@@ -147,11 +157,11 @@ type schemaIndex struct {
 	columns []string
 }
 
-func renderBaseSchema(driver Driver, indexPrefix string, dialect Dialect, application *ApplicationScope) ([]string, error) {
+func renderBaseSchema(driver Driver, indexPrefix string, dialect modulehost.Dialect, application *ApplicationScope) ([]string, error) {
 	return renderSchema(driver, indexPrefix, dialect, application, baseSchemaTables, baseSchemaIndexes)
 }
 
-func renderSchema(driver Driver, indexPrefix string, dialect Dialect, application *ApplicationScope, tables []schemaTable, indexes []schemaIndex) ([]string, error) {
+func renderSchema(driver Driver, indexPrefix string, dialect modulehost.Dialect, application *ApplicationScope, tables []schemaTable, indexes []schemaIndex) ([]string, error) {
 	statements := make([]string, 0, len(tables)+len(indexes))
 	for _, table := range tables {
 		columns := append([]schemaColumn(nil), table.columns...)

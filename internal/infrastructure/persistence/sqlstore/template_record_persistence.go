@@ -10,6 +10,7 @@ import (
 
 	notification "github.com/domainry/domainry-notification/internal/domain/notification/model"
 	"github.com/domainry/domainry-notification/internal/domain/template/service"
+	"github.com/domainry/domainry-orm/sqlhost"
 )
 
 var templateRecordColumns = []string{"template_key", "draft_json", "published_json", "published_version", "status", "updated_by", "created_at", "updated_at"}
@@ -264,7 +265,7 @@ func (s *Store) Disable(ctx context.Context, key, expectedUpdatedAt, actor strin
 	return stored, err
 }
 
-func (s *Store) insertTemplateVersion(ctx context.Context, executor Executor, value template.Template, actor, publishedAt string) error {
+func (s *Store) insertTemplateVersion(ctx context.Context, executor sqlhost.Executor, value template.Template, actor, publishedAt string) error {
 	raw, err := json.Marshal(value)
 	if err != nil {
 		return fmt.Errorf("encode notification template version: %w", err)

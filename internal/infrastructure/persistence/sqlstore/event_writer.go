@@ -7,6 +7,7 @@ import (
 
 	"github.com/domainry/domainry-notification/internal/domain/inbox/service"
 	notification "github.com/domainry/domainry-notification/internal/domain/notification/model"
+	"github.com/domainry/domainry-orm/sqlhost"
 )
 
 var eventColumns = []string{
@@ -19,7 +20,7 @@ var eventColumns = []string{
 // transaction preserves atomicity with Workflow, Record, Report, Automation,
 // or Integration state. Commit, rollback, and after-commit wakeup remain owned
 // by that caller.
-func (s *Store) InsertEvent(ctx context.Context, executor Executor, event inbox.Event) error {
+func (s *Store) InsertEvent(ctx context.Context, executor sqlhost.Executor, event inbox.Event) error {
 	if executor == nil {
 		return fmt.Errorf("notification event executor is required")
 	}

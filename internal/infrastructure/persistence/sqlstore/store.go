@@ -3,22 +3,10 @@ package sqlstore
 import (
 	"context"
 
+	"github.com/domainry/domainry-notification-sdk/modulehost"
 	notification "github.com/domainry/domainry-notification/internal/domain/notification/model"
 	"github.com/domainry/domainry-orm/sqlhost"
 )
-
-type Executor = sqlhost.Executor
-type Queryer = sqlhost.Queryer
-type Database = sqlhost.Database
-
-// Dialect supplies only SQL construction that differs between the host's
-// supported databases. Implementations must quote identifiers defensively.
-type Dialect interface {
-	Identifier(string) string
-	Table(string) string
-	Placeholder(int) string
-	Insert(string, []string) string
-}
 
 // WorkspaceScope attaches the tenant scope required by a host database layer
 // such as PostgreSQL RLS. A host without context-based scoping returns ctx.
@@ -30,21 +18,21 @@ type WorkspaceScope interface {
 // worker, not notification state. Register must use the supplied executor so it
 // can participate in the same transaction as the durable task.
 type QueueScopeIndex interface {
-	Register(context.Context, Executor, notification.WorkKind, notification.WorkspaceID, string) error
-	Workspaces(context.Context, Queryer, notification.WorkKind, int) ([]notification.WorkspaceID, error)
+	Register(context.Context, sqlhost.Executor, notification.WorkKind, notification.WorkspaceID, string) error
+	Workspaces(context.Context, sqlhost.Queryer, notification.WorkKind, int) ([]notification.WorkspaceID, error)
 }
 
 type Config struct {
-	Database       Database
-	Dialect        Dialect
+	Database       sqlhost.Database
+	Dialect        modulehost.Dialect
 	WorkspaceScope WorkspaceScope
 	QueueScopes    QueueScopeIndex
 	Clock          notification.Clock
 }
 
 type Store struct {
-	database       Database
-	dialect        Dialect
+	database       sqlhost.Database
+	dialect        modulehost.Dialect
 	workspaceScope WorkspaceScope
 	queueScopes    QueueScopeIndex
 	clock          notification.Clock

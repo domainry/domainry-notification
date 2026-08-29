@@ -11,6 +11,8 @@ import (
 	"github.com/domainry/domainry-notification/internal/domain/inbox/service"
 	notification "github.com/domainry/domainry-notification/internal/domain/notification/model"
 	"github.com/domainry/domainry-notification/internal/infrastructure/persistence/sqlstore"
+	ormdialect "github.com/domainry/domainry-orm/dialect"
+	"github.com/domainry/domainry-orm/sqlhost"
 	_ "modernc.org/sqlite"
 )
 
@@ -26,11 +28,11 @@ func (c storeClock) Now() time.Time { return c.value }
 
 type queueScopes struct{ registrations []notification.Work }
 
-func (q *queueScopes) Register(_ context.Context, _ sqlstore.Executor, kind notification.WorkKind, workspace notification.WorkspaceID, _ string) error {
+func (q *queueScopes) Register(_ context.Context, _ sqlhost.Executor, kind notification.WorkKind, workspace notification.WorkspaceID, _ string) error {
 	q.registrations = append(q.registrations, notification.Work{Kind: kind, WorkspaceID: workspace})
 	return nil
 }
-func (*queueScopes) Workspaces(context.Context, sqlstore.Queryer, notification.WorkKind, int) ([]notification.WorkspaceID, error) {
+func (*queueScopes) Workspaces(context.Context, sqlhost.Queryer, notification.WorkKind, int) ([]notification.WorkspaceID, error) {
 	return nil, nil
 }
 
@@ -97,7 +99,7 @@ func materializationStore(t *testing.T) (*sql.DB, *sqlstore.Store, *queueScopes)
 			t.Fatal(err)
 		}
 	}
-	dialect, _ := sqlstore.NewDialect(sqlstore.SQLite, "", "")
+	dialect, _ := ormdialect.ParseRenderer("sqlite", "", "")
 	scopes := &queueScopes{}
 	store, err := sqlstore.New(sqlstore.Config{Database: db, Dialect: dialect, WorkspaceScope: passthroughScope{}, QueueScopes: scopes, Clock: storeClock{value: time.Date(2026, 8, 24, 1, 0, 0, 0, time.UTC)}})
 	if err != nil {

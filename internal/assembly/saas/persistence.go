@@ -12,7 +12,9 @@ import (
 	"time"
 
 	notificationsdk "github.com/domainry/domainry-notification-sdk"
+	"github.com/domainry/domainry-notification-sdk/modulehost"
 	"github.com/domainry/domainry-notification/internal/infrastructure/persistence/sqlstore"
+	ormdialect "github.com/domainry/domainry-orm/dialect"
 )
 
 const migrationLedgerTable = "notification_saas_schema_migrations"
@@ -38,7 +40,7 @@ func NewSQLPersistence(options SQLPersistenceOptions) (*SQLPersistence, error) {
 	if options.Database == nil {
 		return nil, fmt.Errorf("Notification SaaS database is required")
 	}
-	if _, err := sqlstore.NewDialect(options.Driver, options.Schema, ""); err != nil {
+	if _, err := ormdialect.ParseRenderer(string(options.Driver), options.Schema, ""); err != nil {
 		return nil, err
 	}
 	return &SQLPersistence{database: options.Database, driver: options.Driver, schema: strings.TrimSpace(options.Schema), owns: options.OwnsDatabase}, nil
@@ -55,7 +57,7 @@ func (p *SQLPersistence) Database() *sql.DB {
 // one exact physical application namespace. A process mutex plus a
 // database-session advisory lock serialize both same-process and multi-instance
 // migration attempts.
-func (p *SQLPersistence) PrepareApplication(ctx context.Context, application notificationsdk.ApplicationRef) (sqlstore.Dialect, error) {
+func (p *SQLPersistence) PrepareApplication(ctx context.Context, application notificationsdk.ApplicationRef) (modulehost.Dialect, error) {
 	if p == nil || p.database == nil {
 		return nil, fmt.Errorf("Notification SaaS persistence is unavailable")
 	}
@@ -66,7 +68,7 @@ func (p *SQLPersistence) PrepareApplication(ctx context.Context, application not
 		return nil, err
 	}
 	prefix := applicationTablePrefix(application)
-	dialect, err := sqlstore.NewDialect(p.driver, p.schema, prefix)
+	dialect, err := ormdialect.ParseRenderer(string(p.driver), p.schema, prefix)
 	if err != nil {
 		return nil, err
 	}
@@ -116,7 +118,7 @@ type migrationConnection interface {
 }
 
 func (p *SQLPersistence) ensureLedger(ctx context.Context, connection migrationConnection) error {
-	dialect, err := sqlstore.NewDialect(p.driver, p.schema, "")
+	dialect, err := ormdialect.ParseRenderer(string(p.driver), p.schema, "")
 	if err != nil {
 		return err
 	}
@@ -164,7 +166,7 @@ func (p *SQLPersistence) applyMigration(ctx context.Context, connection migratio
 			return fmt.Errorf("apply Notification SaaS migration %s/%d (%s): %w", namespace, migration.Version, migration.Name, err)
 		}
 	}
-	dialect, err := sqlstore.NewDialect(p.driver, p.schema, "")
+	dialect, err := ormdialect.ParseRenderer(string(p.driver), p.schema, "")
 	if err != nil {
 		return err
 	}
@@ -231,7 +233,7 @@ type migrationQueryer interface {
 }
 
 func (p *SQLPersistence) migrationChecksum(ctx context.Context, queryer migrationQueryer, namespace string, version uint) (string, bool, error) {
-	dialect, err := sqlstore.NewDialect(p.driver, p.schema, "")
+	dialect, err := ormdialect.ParseRenderer(string(p.driver), p.schema, "")
 	if err != nil {
 		return "", false, err
 	}

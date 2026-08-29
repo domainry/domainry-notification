@@ -10,6 +10,7 @@ import (
 	"github.com/domainry/domainry-notification/internal/domain/inbox/service"
 	notification "github.com/domainry/domainry-notification/internal/domain/notification/model"
 	"github.com/domainry/domainry-notification/internal/infrastructure/persistence/sqlstore"
+	"github.com/domainry/domainry-orm/sqlhost"
 )
 
 type fakeResult struct{}
@@ -54,14 +55,14 @@ func (fakeWorkspaceScope) Context(ctx context.Context, workspace notification.Wo
 
 type fakeQueueScopes struct {
 	registered bool
-	executor   sqlstore.Executor
+	executor   sqlhost.Executor
 }
 
-func (s *fakeQueueScopes) Register(_ context.Context, executor sqlstore.Executor, kind notification.WorkKind, workspace notification.WorkspaceID, _ string) error {
+func (s *fakeQueueScopes) Register(_ context.Context, executor sqlhost.Executor, kind notification.WorkKind, workspace notification.WorkspaceID, _ string) error {
 	s.registered, s.executor = kind == notification.WorkInboxEvent && workspace == "workspace-1", executor
 	return nil
 }
-func (*fakeQueueScopes) Workspaces(context.Context, sqlstore.Queryer, notification.WorkKind, int) ([]notification.WorkspaceID, error) {
+func (*fakeQueueScopes) Workspaces(context.Context, sqlhost.Queryer, notification.WorkKind, int) ([]notification.WorkspaceID, error) {
 	return nil, nil
 }
 

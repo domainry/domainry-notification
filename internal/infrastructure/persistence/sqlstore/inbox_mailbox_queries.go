@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/domainry/domainry-notification/internal/domain/inbox/service"
+	"github.com/domainry/domainry-orm/sqlhost"
 )
 
 var inboxItemReadColumns = []string{"payload_json", "event_id", "occurrence_count", "first_occurred_at", "last_occurred_at", "read_at", "archived_at", "alert_state", "updated_at"}
@@ -103,7 +104,7 @@ func (s *Store) mailboxFacetRows(ctx context.Context, where string, args []any, 
 	return values, rows.Err()
 }
 
-func (s *Store) getInboxItem(ctx context.Context, queryer Queryer, query inbox.Query, itemID string) (inbox.Item, bool, error) {
+func (s *Store) getInboxItem(ctx context.Context, queryer sqlhost.Queryer, query inbox.Query, itemID string) (inbox.Item, bool, error) {
 	clauses, args, position := s.mailboxAccessWhere(query, 1)
 	clauses = append(clauses, s.dialect.Identifier("id")+" = "+s.dialect.Placeholder(position))
 	args = append(args, itemID)

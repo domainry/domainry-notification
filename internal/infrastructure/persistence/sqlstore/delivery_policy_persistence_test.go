@@ -8,6 +8,7 @@ import (
 
 	"github.com/domainry/domainry-notification/internal/domain/delivery/service"
 	"github.com/domainry/domainry-notification/internal/infrastructure/persistence/sqlstore"
+	ormdialect "github.com/domainry/domainry-orm/dialect"
 	_ "modernc.org/sqlite"
 )
 
@@ -95,7 +96,7 @@ func migratedStore(t *testing.T) (*sql.DB, *sqlstore.Store) {
 			}
 		}
 	}
-	dialect, _ := sqlstore.NewDialect(sqlstore.SQLite, "", "")
+	dialect, _ := ormdialect.ParseRenderer("sqlite", "", "")
 	store, err := sqlstore.New(sqlstore.Config{Database: db, Dialect: dialect, WorkspaceScope: passthroughScope{}, QueueScopes: &queueScopes{}, Clock: storeClock{value: time.Date(2026, 8, 24, 2, 0, 0, 0, time.UTC)}})
 	if err != nil {
 		t.Fatal(err)

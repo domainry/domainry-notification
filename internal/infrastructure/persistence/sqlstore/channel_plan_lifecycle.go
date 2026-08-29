@@ -11,6 +11,7 @@ import (
 
 	"github.com/domainry/domainry-notification/internal/domain/delivery/service"
 	notification "github.com/domainry/domainry-notification/internal/domain/notification/model"
+	"github.com/domainry/domainry-orm/sqlhost"
 )
 
 var _ delivery.PlanStore = (*Store)(nil)
@@ -151,7 +152,7 @@ func (s *Store) transitionPlan(ctx context.Context, plan delivery.Plan, status s
 	return s.transitionPlanWith(s.workspaceScope.Context(ctx, plan.WorkspaceID), s.database, plan, status, attemptIncrement, errorCode, outboxMessageID, nextAttemptAt, updatedAt)
 }
 
-func (s *Store) transitionPlanWith(ctx context.Context, executor Executor, plan delivery.Plan, status string, attemptIncrement int, errorCode, outboxMessageID, nextAttemptAt, updatedAt string) error {
+func (s *Store) transitionPlanWith(ctx context.Context, executor sqlhost.Executor, plan delivery.Plan, status string, attemptIncrement int, errorCode, outboxMessageID, nextAttemptAt, updatedAt string) error {
 	errorCode, outboxMessageID, nextAttemptAt, updatedAt = strings.TrimSpace(errorCode), strings.TrimSpace(outboxMessageID), strings.TrimSpace(nextAttemptAt), strings.TrimSpace(updatedAt)
 	if errorCode != "" && !failureCodePattern.MatchString(errorCode) {
 		return fmt.Errorf("notification channel plan error code is invalid")

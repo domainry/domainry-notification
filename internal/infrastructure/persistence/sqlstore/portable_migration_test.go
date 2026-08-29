@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"testing"
 
+	ormdialect "github.com/domainry/domainry-orm/dialect"
 	_ "modernc.org/sqlite"
 )
 
@@ -18,7 +19,7 @@ func TestPortableMigrationFiltersWorkspaceImportsOwnershipAndReconciles(t *testi
 	insertPortableEvent(t, source, "other-workspace", "event-other", "source-other", "")
 	insertPortableArchive(t, source, "workspace", "archive-one")
 	insertPortableArchive(t, source, "other-workspace", "archive-other")
-	sourceDialect, _ := NewDialect(SQLite, "", "")
+	sourceDialect, _ := ormdialect.ParseRenderer("sqlite", "", "")
 	scope := PortableScope{TenantID: "tenant", WorkspaceID: "workspace", ApplicationKey: "application"}
 	bundle, inventory, err := ExportPortable(t.Context(), source, sourceDialect, scope)
 	if err != nil {
@@ -35,7 +36,7 @@ func TestPortableMigrationFiltersWorkspaceImportsOwnershipAndReconciles(t *testi
 		t.Fatal(err)
 	}
 	applyPortableMigrations(t, target, migrations)
-	targetDialect, _ := NewDialect(SQLite, "", prefix)
+	targetDialect, _ := ormdialect.ParseRenderer("sqlite", "", prefix)
 	receipt, err := ImportPortable(t.Context(), target, targetDialect, scope, bundle)
 	if err != nil {
 		t.Fatal(err)
@@ -67,7 +68,7 @@ func TestPortableMigrationRejectsTamperingAndNonEmptyTarget(t *testing.T) {
 	database := openPortableDatabase(t, "tamper")
 	applyPortableMigrations(t, database, mustSchemaMigrations(t, ""))
 	scope := PortableScope{TenantID: "tenant", WorkspaceID: "workspace", ApplicationKey: "application"}
-	dialect, _ := NewDialect(SQLite, "", "")
+	dialect, _ := ormdialect.ParseRenderer("sqlite", "", "")
 	bundle, _, err := ExportPortable(t.Context(), database, dialect, scope)
 	if err != nil {
 		t.Fatal(err)
@@ -85,7 +86,7 @@ func TestPortableMigrationReconcilesEachWorkspaceWithoutCrossContamination(t *te
 	insertPortableEvent(t, source, "workspace-b", "event-b", "source-b", "")
 	insertPortableArchive(t, source, "workspace-a", "archive-a")
 	insertPortableArchive(t, source, "workspace-b", "archive-b")
-	sourceDialect, _ := NewDialect(SQLite, "", "")
+	sourceDialect, _ := ormdialect.ParseRenderer("sqlite", "", "")
 
 	for _, workspaceID := range []string{"workspace-a", "workspace-b"} {
 		t.Run(workspaceID, func(t *testing.T) {
@@ -104,7 +105,7 @@ func TestPortableMigrationReconcilesEachWorkspaceWithoutCrossContamination(t *te
 				t.Fatal(err)
 			}
 			applyPortableMigrations(t, target, migrations)
-			targetDialect, _ := NewDialect(SQLite, "", prefix)
+			targetDialect, _ := ormdialect.ParseRenderer("sqlite", "", prefix)
 			receipt, err := ImportPortable(t.Context(), target, targetDialect, scope, bundle)
 			if err != nil {
 				t.Fatal(err)

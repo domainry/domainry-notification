@@ -10,6 +10,9 @@ import (
 	"slices"
 	"sort"
 	"strings"
+
+	"github.com/domainry/domainry-notification-sdk/modulehost"
+	"github.com/domainry/domainry-orm/sqlhost"
 )
 
 const PortableFormatV1 = "domainry-notification-portable-v1"
@@ -76,7 +79,7 @@ func (s *Store) ImportPortable(ctx context.Context, scope PortableScope, bundle 
 	return ImportPortable(ctx, s.database, s.dialect, scope, bundle)
 }
 
-func ExportPortable(ctx context.Context, database Queryer, dialect Dialect, scope PortableScope) (PortableBundle, PortableInventory, error) {
+func ExportPortable(ctx context.Context, database sqlhost.Queryer, dialect modulehost.Dialect, scope PortableScope) (PortableBundle, PortableInventory, error) {
 	if database == nil || dialect == nil || strings.TrimSpace(scope.TenantID) == "" || strings.TrimSpace(scope.WorkspaceID) == "" || strings.TrimSpace(scope.ApplicationKey) == "" {
 		return PortableBundle{}, PortableInventory{}, fmt.Errorf("notification portable export dependencies and scope are required")
 	}
@@ -144,7 +147,7 @@ func ExportPortable(ctx context.Context, database Queryer, dialect Dialect, scop
 	return bundle, inventory, nil
 }
 
-func ImportPortable(ctx context.Context, database Database, dialect Dialect, target PortableScope, bundle PortableBundle) (PortableImportReceipt, error) {
+func ImportPortable(ctx context.Context, database sqlhost.Database, dialect modulehost.Dialect, target PortableScope, bundle PortableBundle) (PortableImportReceipt, error) {
 	if database == nil || dialect == nil {
 		return PortableImportReceipt{}, fmt.Errorf("notification portable import dependencies are required")
 	}

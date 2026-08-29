@@ -3,6 +3,8 @@ package sqlstore
 import (
 	"encoding/json"
 	"testing"
+
+	ormdialect "github.com/domainry/domainry-orm/dialect"
 )
 
 func TestSubjectLifecyclePreviewExportAndEraseOwnedRows(t *testing.T) {
@@ -14,7 +16,7 @@ func TestSubjectLifecyclePreviewExportAndEraseOwnedRows(t *testing.T) {
 	if _, err := database.Exec(`INSERT INTO notification_inbox_delegations (id, workspace_id, owner_user_id, delegate_user_id, surface, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)`, "delegation", "workspace", "user", "delegate", "business_workspace", "now", "now"); err != nil {
 		t.Fatal(err)
 	}
-	dialect, _ := NewDialect(SQLite, "", "")
+	dialect, _ := ormdialect.ParseRenderer("sqlite", "", "")
 	store := &Store{database: database, dialect: dialect}
 	preview, err := store.PreviewSubject(t.Context(), "workspace", "user")
 	if err != nil {

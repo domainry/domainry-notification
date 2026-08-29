@@ -13,6 +13,7 @@ import (
 	"github.com/domainry/domainry-notification-sdk/contracttest"
 	"github.com/domainry/domainry-notification-sdk/modulehost"
 	"github.com/domainry/domainry-notification/internal/infrastructure/persistence/sqlstore"
+	ormdialect "github.com/domainry/domainry-orm/dialect"
 	_ "modernc.org/sqlite"
 )
 
@@ -133,7 +134,7 @@ func newTestHost(t *testing.T) testHost {
 		t.Fatal(err)
 	}
 	database.SetMaxOpenConns(1)
-	dialect, err := sqlstore.NewDialect(sqlstore.SQLite, "", "")
+	dialect, err := ormdialect.ParseRenderer("sqlite", "", "")
 	if err != nil {
 		t.Fatal(err)
 	}

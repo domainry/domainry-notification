@@ -13,6 +13,7 @@ import (
 	notification "github.com/domainry/domainry-notification/internal/domain/notification/model"
 	"github.com/domainry/domainry-notification/internal/domain/template/service"
 	"github.com/domainry/domainry-notification/internal/infrastructure/persistence/sqlstore"
+	"github.com/domainry/domainry-orm/sqlhost"
 )
 
 func convert[To any, From any](value From) (To, error) {
@@ -47,10 +48,10 @@ func (a workspaceScopeAdapter) Context(ctx context.Context, workspaceID notifica
 
 type queueScopeAdapter struct{ delegate modulehost.QueueScopeIndex }
 
-func (a queueScopeAdapter) Register(ctx context.Context, executor sqlstore.Executor, kind notification.WorkKind, workspaceID notification.WorkspaceID, updatedAt string) error {
+func (a queueScopeAdapter) Register(ctx context.Context, executor sqlhost.Executor, kind notification.WorkKind, workspaceID notification.WorkspaceID, updatedAt string) error {
 	return a.delegate.Register(ctx, executor, string(kind), workspaceID.String(), updatedAt)
 }
-func (a queueScopeAdapter) Workspaces(ctx context.Context, queryer sqlstore.Queryer, kind notification.WorkKind, limit int) ([]notification.WorkspaceID, error) {
+func (a queueScopeAdapter) Workspaces(ctx context.Context, queryer sqlhost.Queryer, kind notification.WorkKind, limit int) ([]notification.WorkspaceID, error) {
 	values, err := a.delegate.Workspaces(ctx, queryer, string(kind), limit)
 	if err != nil {
 		return nil, err

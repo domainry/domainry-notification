@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/domainry/domainry-notification/internal/domain/template/service"
+	"github.com/domainry/domainry-orm/sqlhost"
 )
 
 var _ template.Store = (*Store)(nil)
@@ -193,7 +194,7 @@ func (s *Store) HasOpenPublicationRequest(ctx context.Context, templateKey strin
 	return count > 0, err
 }
 
-func (s *Store) publicationRequestByID(ctx context.Context, queryer Queryer, requestID string) (template.PublicationRequest, bool, error) {
+func (s *Store) publicationRequestByID(ctx context.Context, queryer sqlhost.Queryer, requestID string) (template.PublicationRequest, bool, error) {
 	query := "SELECT " + s.columns(publicationRequestColumns) + " FROM " + s.dialect.Table("notification_template_publication_requests") +
 		" WHERE " + s.dialect.Identifier("id") + " = " + s.dialect.Placeholder(1)
 	value, err := scanPublicationRequest(queryer.QueryRowContext(ctx, query, requestID))

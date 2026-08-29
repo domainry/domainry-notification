@@ -12,6 +12,7 @@ import (
 	"github.com/domainry/domainry-notification-sdk/modulehost"
 	"github.com/domainry/domainry-notification/internal/assembly/module"
 	"github.com/domainry/domainry-notification/internal/infrastructure/persistence/sqlstore"
+	ormdialect "github.com/domainry/domainry-orm/dialect"
 )
 
 type cutoverMigrationRegistrar struct {
@@ -55,7 +56,7 @@ func TestModuleToSaaSCutoverPreservesStateAndMovesTheOnlyWriter(t *testing.T) {
 	}
 	sourceDB.SetMaxOpenConns(1)
 	t.Cleanup(func() { _ = sourceDB.Close() })
-	sourceDialect, _ := sqlstore.NewDialect(sqlstore.SQLite, "", "")
+	sourceDialect, _ := ormdialect.ParseRenderer("sqlite", "", "")
 	sourceHost := &cutoverModuleHost{
 		saasApplicationHost: &saasApplicationHost{application: application, database: sourceDB, dialect: sourceDialect, identity: applicationIdentityStub{}, catalog: catalog, clock: wallClock{}, workerID: "module-worker", notifier: discardWorkNotifier{}, directory: identityRecipientDirectory{application: application, directory: directoryStub{}}, audiences: snapshotOnlyAudienceResolver{}, gateway: applicationGatewayStub{}},
 		migrations:          &cutoverMigrationRegistrar{database: sourceDB},
