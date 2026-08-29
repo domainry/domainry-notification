@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/domainry/domainry-notification/internal/domain/inbox/service"
+	"github.com/domainry/domainry-orm/builder"
 	"github.com/domainry/domainry-orm/sqlhost"
 )
 
@@ -20,9 +21,10 @@ func (s *Store) ListItems(ctx context.Context, query inbox.Query) ([]inbox.Item,
 		return nil, false, err
 	}
 	ctx = s.workspaceScope.Context(ctx, query.WorkspaceID)
-	where, args := s.mailboxWhere(query, true, 1)
-	statement := "SELECT " + s.columns(inboxItemReadColumns) + " FROM " + s.Renderer.Table("notification_inbox_items") + " WHERE " + where +
-		" ORDER BY " + s.Renderer.Identifier("updated_at") + " DESC, " + s.Renderer.Identifier("id") + " DESC LIMIT " + fmt.Sprint(query.Limit+1)
+	statement, args, err := builder.NewSelectBuilder(s.Renderer, "notification_inbox_items").Columns(inboxItemReadColumns...).Where(mailboxPredicate(query, true)).OrderBy(builder.Descending("updated_at"), builder.Descending("id")).Limit(query.Limit + 1).Build()
+	if err != nil {
+		return nil, false, err
+	}
 	rows, err := s.Database.QueryContext(ctx, statement, args...)
 	if err != nil {
 		return nil, false, fmt.Errorf("list notification inbox items: %w", err)
@@ -65,29 +67,39 @@ func (s *Store) CountFacets(ctx context.Context, query inbox.Query) (inbox.Facet
 		return inbox.Facets{}, err
 	}
 	ctx = s.workspaceScope.Context(ctx, query.WorkspaceID)
-	where, args := s.mailboxWhere(query, false, 1)
+	predicate := mailboxPredicate(query, false)
 	result := inbox.Facets{}
-	if err := s.Database.QueryRowContext(ctx, "SELECT COUNT(*) FROM "+s.Renderer.Table("notification_inbox_items")+" WHERE "+where+" AND "+s.Renderer.Identifier("read_at")+" = ''", args...).Scan(&result.Unread); err != nil {
+	unreadSQL, unreadArgs, buildErr := builder.NewSelectBuilder(s.Renderer, "notification_inbox_items").Projections(builder.Project(builder.CountAll())).Where(builder.And(predicate, builder.Equal("read_at", ""))).Build()
+	if buildErr != nil {
+		return result, buildErr
+	}
+	if err := s.Database.QueryRowContext(ctx, unreadSQL, unreadArgs...).Scan(&result.Unread); err != nil {
 		return result, fmt.Errorf("count notification inbox unread: %w", err)
 	}
-	if err := s.Database.QueryRowContext(ctx, "SELECT COUNT(*) FROM "+s.Renderer.Table("notification_inbox_items")+" WHERE "+where+" AND "+s.Renderer.Identifier("action_state")+" = 'open'", args...).Scan(&result.ActionRequired); err != nil {
+	actionSQL, actionArgs, buildErr := builder.NewSelectBuilder(s.Renderer, "notification_inbox_items").Projections(builder.Project(builder.CountAll())).Where(builder.And(predicate, builder.Equal("action_state", "open"))).Build()
+	if buildErr != nil {
+		return result, buildErr
+	}
+	if err := s.Database.QueryRowContext(ctx, actionSQL, actionArgs...).Scan(&result.ActionRequired); err != nil {
 		return result, fmt.Errorf("count notification inbox actions: %w", err)
 	}
-	if result.Categories, err = s.mailboxFacetRows(ctx, where, args, "category"); err != nil {
+	if result.Categories, err = s.mailboxFacetRows(ctx, predicate, "category"); err != nil {
 		return result, err
 	}
-	if result.Sources, err = s.mailboxFacetRows(ctx, where, args, "source"); err != nil {
+	if result.Sources, err = s.mailboxFacetRows(ctx, predicate, "source"); err != nil {
 		return result, err
 	}
-	if result.Severities, err = s.mailboxFacetRows(ctx, where, args, "severity"); err != nil {
+	if result.Severities, err = s.mailboxFacetRows(ctx, predicate, "severity"); err != nil {
 		return result, err
 	}
 	return result, nil
 }
 
-func (s *Store) mailboxFacetRows(ctx context.Context, where string, args []any, column string) ([]inbox.Facet, error) {
-	statement := "SELECT " + s.Renderer.Identifier(column) + ", COUNT(*) FROM " + s.Renderer.Table("notification_inbox_items") + " WHERE " + where +
-		" GROUP BY " + s.Renderer.Identifier(column) + " ORDER BY COUNT(*) DESC, " + s.Renderer.Identifier(column) + " ASC"
+func (s *Store) mailboxFacetRows(ctx context.Context, predicate builder.Predicate, column string) ([]inbox.Facet, error) {
+	statement, args, err := builder.NewSelectBuilder(s.Renderer, "notification_inbox_items").Projections(builder.Project(builder.Column(column)), builder.Project(builder.CountAll())).Where(predicate).GroupBy(builder.Column(column)).OrderBy(builder.DescendingExpression(builder.CountAll()), builder.Ascending(column)).Build()
+	if err != nil {
+		return nil, err
+	}
 	rows, err := s.Database.QueryContext(ctx, statement, args...)
 	if err != nil {
 		return nil, fmt.Errorf("count notification inbox %s facets: %w", column, err)
@@ -105,10 +117,10 @@ func (s *Store) mailboxFacetRows(ctx context.Context, where string, args []any, 
 }
 
 func (s *Store) getInboxItem(ctx context.Context, queryer sqlhost.Queryer, query inbox.Query, itemID string) (inbox.Item, bool, error) {
-	clauses, args, position := s.mailboxAccessWhere(query, 1)
-	clauses = append(clauses, s.Renderer.Identifier("id")+" = "+s.Renderer.Placeholder(position))
-	args = append(args, itemID)
-	statement := "SELECT " + s.columns(inboxItemReadColumns) + " FROM " + s.Renderer.Table("notification_inbox_items") + " WHERE " + strings.Join(clauses, " AND ")
+	statement, args, err := builder.NewSelectBuilder(s.Renderer, "notification_inbox_items").Columns(inboxItemReadColumns...).Where(builder.And(mailboxAccessPredicate(query), builder.Equal("id", itemID))).Build()
+	if err != nil {
+		return inbox.Item{}, false, err
+	}
 	value, err := scanInboxItem(queryer.QueryRowContext(ctx, statement, args...))
 	if errors.Is(err, sql.ErrNoRows) {
 		return inbox.Item{}, false, nil
@@ -116,62 +128,51 @@ func (s *Store) getInboxItem(ctx context.Context, queryer sqlhost.Queryer, query
 	return value, err == nil, err
 }
 
-func (s *Store) mailboxWhere(query inbox.Query, includeCursor bool, placeholderStart int) (string, []any) {
-	clauses, args, position := s.mailboxAccessWhere(query, placeholderStart)
+func mailboxPredicate(query inbox.Query, includeCursor bool) builder.Predicate {
+	predicates := []builder.Predicate{mailboxAccessPredicate(query)}
 	switch query.Mailbox {
 	case inbox.MailboxUnread:
-		clauses = append(clauses, s.Renderer.Identifier("archived_at")+" = ''", s.Renderer.Identifier("read_at")+" = ''")
+		predicates = append(predicates, builder.Equal("archived_at", ""), builder.Equal("read_at", ""))
 	case inbox.MailboxActionRequired:
-		clauses = append(clauses, s.Renderer.Identifier("archived_at")+" = ''", s.Renderer.Identifier("action_state")+" = 'open'")
+		predicates = append(predicates, builder.Equal("archived_at", ""), builder.Equal("action_state", "open"))
 	case inbox.MailboxArchived:
-		clauses = append(clauses, s.Renderer.Identifier("archived_at")+" <> ''")
+		predicates = append(predicates, builder.NotEqual("archived_at", ""))
 	default:
-		clauses = append(clauses, s.Renderer.Identifier("archived_at")+" = ''")
+		predicates = append(predicates, builder.Equal("archived_at", ""))
 	}
 	if query.Query != "" {
-		clauses = append(clauses, "LOWER("+s.Renderer.Identifier("search_text")+") LIKE "+s.Renderer.Placeholder(position))
-		args, position = append(args, "%"+strings.ToLower(query.Query)+"%"), position+1
+		predicates = append(predicates, builder.LikeValue(builder.Lower(builder.Column("search_text")), "%"+strings.ToLower(query.Query)+"%"))
 	}
-	clauses, args, position = appendStringFilter(s, clauses, args, position, "category", query.Categories)
-	clauses, args, position = appendStringFilter(s, clauses, args, position, "source", query.Sources)
-	clauses, args, position = appendStringFilter(s, clauses, args, position, "severity", query.Severities)
+	predicates = appendStringPredicate(predicates, "category", query.Categories)
+	predicates = appendStringPredicate(predicates, "source", query.Sources)
+	predicates = appendStringPredicate(predicates, "severity", query.Severities)
 	actions := make([]string, len(query.ActionStates))
 	for index, value := range query.ActionStates {
 		actions[index] = string(value)
 	}
-	clauses, args, position = appendStringFilter(s, clauses, args, position, "action_state", actions)
+	predicates = appendStringPredicate(predicates, "action_state", actions)
 	if query.From != "" {
-		clauses = append(clauses, s.Renderer.Identifier("last_occurred_at")+" >= "+s.Renderer.Placeholder(position))
-		args, position = append(args, query.From), position+1
+		predicates = append(predicates, builder.GreaterThanOrEqual("last_occurred_at", query.From))
 	}
 	if query.To != "" {
-		clauses = append(clauses, s.Renderer.Identifier("last_occurred_at")+" <= "+s.Renderer.Placeholder(position))
-		args, position = append(args, query.To), position+1
+		predicates = append(predicates, builder.LessThanOrEqual("last_occurred_at", query.To))
 	}
 	if includeCursor && query.BeforeUpdatedAt != "" && query.BeforeID != "" {
-		clauses = append(clauses, "("+s.Renderer.Identifier("updated_at")+" < "+s.Renderer.Placeholder(position)+" OR ("+
-			s.Renderer.Identifier("updated_at")+" = "+s.Renderer.Placeholder(position+1)+" AND "+s.Renderer.Identifier("id")+" < "+s.Renderer.Placeholder(position+2)+"))")
-		args = append(args, query.BeforeUpdatedAt, query.BeforeUpdatedAt, query.BeforeID)
+		predicates = append(predicates, builder.Or(builder.LessThan("updated_at", query.BeforeUpdatedAt), builder.And(builder.Equal("updated_at", query.BeforeUpdatedAt), builder.LessThan("id", query.BeforeID))))
 	}
-	return strings.Join(clauses, " AND "), args
+	return builder.And(predicates...)
 }
 
-func (s *Store) mailboxAccessWhere(query inbox.Query, placeholderStart int) ([]string, []any, int) {
-	position := placeholderStart
-	clauses := []string{
-		s.Renderer.Identifier("workspace_id") + " = " + s.Renderer.Placeholder(position),
-		s.Renderer.Identifier("surface") + " = " + s.Renderer.Placeholder(position+1),
-	}
-	args := []any{query.WorkspaceID.String(), string(query.Surface)}
-	position += 2
+func mailboxAccessPredicate(query inbox.Query) builder.Predicate {
+	predicates := []builder.Predicate{builder.Equal("workspace_id", query.WorkspaceID.String()), builder.Equal("surface", string(query.Surface))}
 	recipients := make([]string, len(query.RecipientUserIDs))
 	for index, recipient := range query.RecipientUserIDs {
 		recipients[index] = recipient.String()
 	}
-	return appendStringFilter(s, clauses, args, position, "recipient_user_id", recipients)
+	return builder.And(appendStringPredicate(predicates, "recipient_user_id", recipients)...)
 }
 
-func appendStringFilter(s *Store, clauses []string, args []any, position int, column string, values []string) ([]string, []any, int) {
+func appendStringPredicate(predicates []builder.Predicate, column string, values []string) []builder.Predicate {
 	clean := make([]string, 0, len(values))
 	seen := map[string]bool{}
 	for _, value := range values {
@@ -182,15 +183,13 @@ func appendStringFilter(s *Store, clauses []string, args []any, position int, co
 		}
 	}
 	if len(clean) == 0 {
-		return clauses, args, position
+		return predicates
 	}
-	placeholders := make([]string, len(clean))
+	items := make([]any, len(clean))
 	for index, value := range clean {
-		placeholders[index] = s.Renderer.Placeholder(position)
-		args, position = append(args, value), position+1
+		items[index] = value
 	}
-	clauses = append(clauses, s.Renderer.Identifier(column)+" IN ("+strings.Join(placeholders, ", ")+")")
-	return clauses, args, position
+	return append(predicates, builder.In(column, items...))
 }
 
 func normalizeMailboxStoreQuery(query inbox.Query) (inbox.Query, error) {

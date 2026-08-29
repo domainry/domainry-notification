@@ -8,6 +8,7 @@ import (
 
 	"github.com/domainry/domainry-notification/internal/domain/inbox/service"
 	notification "github.com/domainry/domainry-notification/internal/domain/notification/model"
+	"github.com/domainry/domainry-orm/builder"
 )
 
 var _ inbox.MailboxStore = (*Store)(nil)
@@ -30,11 +31,10 @@ func (s *Store) updateInboxPersonalState(ctx context.Context, query inbox.Query,
 		return inbox.Item{}, false, fmt.Errorf("notification inbox mutation identity and timestamp are required")
 	}
 	ctx = s.workspaceScope.Context(ctx, query.WorkspaceID)
-	clauses, args, position := s.mailboxAccessWhere(query, 3)
-	clauses = append(clauses, s.Renderer.Identifier("id")+" = "+s.Renderer.Placeholder(position))
-	args = append([]any{strings.TrimSpace(value), strings.TrimSpace(updatedAt)}, append(args, itemID)...)
-	statement := "UPDATE " + s.Renderer.Table("notification_inbox_items") + " SET " + s.Renderer.Identifier(column) + " = " + s.Renderer.Placeholder(1) +
-		", " + s.Renderer.Identifier("updated_at") + " = " + s.Renderer.Placeholder(2) + " WHERE " + strings.Join(clauses, " AND ")
+	statement, args, err := builder.NewUpdateBuilder(s.Renderer, "notification_inbox_items").Set(column, strings.TrimSpace(value)).Set("updated_at", strings.TrimSpace(updatedAt)).Where(builder.And(mailboxAccessPredicate(query), builder.Equal("id", itemID))).Build()
+	if err != nil {
+		return inbox.Item{}, false, err
+	}
 	result, err := s.Database.ExecContext(ctx, statement, args...)
 	if err != nil {
 		return inbox.Item{}, false, fmt.Errorf("update notification inbox personal state: %w", err)
@@ -56,13 +56,10 @@ func (s *Store) MarkAllRead(ctx context.Context, query inbox.Query, readAt strin
 		return 0, fmt.Errorf("notification inbox read timestamp is required")
 	}
 	ctx = s.workspaceScope.Context(ctx, query.WorkspaceID)
-	where, args := s.mailboxWhere(query, false, 3)
-	args = append([]any{readAt, readAt}, args...)
-	boundaryPosition := len(args) + 1
-	args = append(args, readAt)
-	statement := "UPDATE " + s.Renderer.Table("notification_inbox_items") + " SET " + s.Renderer.Identifier("read_at") + " = " + s.Renderer.Placeholder(1) +
-		", " + s.Renderer.Identifier("updated_at") + " = " + s.Renderer.Placeholder(2) + " WHERE " + where + " AND " + s.Renderer.Identifier("read_at") + " = '' AND " +
-		s.Renderer.Identifier("updated_at") + " <= " + s.Renderer.Placeholder(boundaryPosition)
+	statement, args, err := builder.NewUpdateBuilder(s.Renderer, "notification_inbox_items").Set("read_at", readAt).Set("updated_at", readAt).Where(builder.And(mailboxPredicate(query, false), builder.Equal("read_at", ""), builder.LessThanOrEqual("updated_at", readAt))).Build()
+	if err != nil {
+		return 0, err
+	}
 	result, err := s.Database.ExecContext(ctx, statement, args...)
 	if err != nil {
 		return 0, fmt.Errorf("mark notification inbox items read: %w", err)
@@ -94,13 +91,11 @@ func (s *Store) AcknowledgeAlert(ctx context.Context, query inbox.Query, itemID 
 		return inbox.Item{}, false, fmt.Errorf("notification alert is not firing")
 	}
 	if item.AlertState != inbox.AlertAcknowledged {
-		groupUpdate := "UPDATE " + s.Renderer.Table("notification_alert_groups") + " SET " + s.Renderer.Identifier("state") + " = " + s.Renderer.Placeholder(1) +
-			", " + s.Renderer.Identifier("acknowledged_at") + " = " + s.Renderer.Placeholder(2) + ", " + s.Renderer.Identifier("acknowledged_by") + " = " + s.Renderer.Placeholder(3) +
-			", " + s.Renderer.Identifier("updated_at") + " = " + s.Renderer.Placeholder(4) + " WHERE " + s.Renderer.Identifier("workspace_id") + " = " + s.Renderer.Placeholder(5) +
-			" AND " + s.Renderer.Identifier("recipient_user_id") + " = " + s.Renderer.Placeholder(6) + " AND " + s.Renderer.Identifier("surface") + " = " + s.Renderer.Placeholder(7) +
-			" AND " + s.Renderer.Identifier("group_key") + " = " + s.Renderer.Placeholder(8) + " AND " + s.Renderer.Identifier("state") + " = 'firing'"
-		result, updateErr := tx.ExecContext(ctx, groupUpdate, string(inbox.AlertAcknowledged), acknowledgedAt, actor.String(), acknowledgedAt,
-			item.WorkspaceID.String(), item.RecipientUserID.String(), string(item.Surface), item.GroupKey)
+		groupUpdate, groupArgs, buildErr := builder.NewUpdateBuilder(s.Renderer, "notification_alert_groups").Set("state", string(inbox.AlertAcknowledged)).Set("acknowledged_at", acknowledgedAt).Set("acknowledged_by", actor.String()).Set("updated_at", acknowledgedAt).Where(builder.And(builder.Equal("workspace_id", item.WorkspaceID.String()), builder.Equal("recipient_user_id", item.RecipientUserID.String()), builder.Equal("surface", string(item.Surface)), builder.Equal("group_key", item.GroupKey), builder.Equal("state", "firing"))).Build()
+		if buildErr != nil {
+			return inbox.Item{}, false, buildErr
+		}
+		result, updateErr := tx.ExecContext(ctx, groupUpdate, groupArgs...)
 		if updateErr != nil {
 			return inbox.Item{}, false, fmt.Errorf("acknowledge notification alert group: %w", updateErr)
 		}
@@ -111,11 +106,11 @@ func (s *Store) AcknowledgeAlert(ctx context.Context, query inbox.Query, itemID 
 		if count != 1 {
 			return inbox.Item{}, false, ErrMutationConflict
 		}
-		itemUpdate := "UPDATE " + s.Renderer.Table("notification_inbox_items") + " SET " + s.Renderer.Identifier("alert_state") + " = " + s.Renderer.Placeholder(1) +
-			", " + s.Renderer.Identifier("updated_at") + " = " + s.Renderer.Placeholder(2) + " WHERE " + s.Renderer.Identifier("workspace_id") + " = " + s.Renderer.Placeholder(3) +
-			" AND " + s.Renderer.Identifier("recipient_user_id") + " = " + s.Renderer.Placeholder(4) + " AND " + s.Renderer.Identifier("surface") + " = " + s.Renderer.Placeholder(5) +
-			" AND " + s.Renderer.Identifier("id") + " = " + s.Renderer.Placeholder(6)
-		if _, updateErr = tx.ExecContext(ctx, itemUpdate, string(inbox.AlertAcknowledged), acknowledgedAt, item.WorkspaceID.String(), item.RecipientUserID.String(), string(item.Surface), item.ID); updateErr != nil {
+		itemUpdate, itemArgs, buildErr := builder.NewUpdateBuilder(s.Renderer, "notification_inbox_items").Set("alert_state", string(inbox.AlertAcknowledged)).Set("updated_at", acknowledgedAt).Where(builder.And(builder.Equal("workspace_id", item.WorkspaceID.String()), builder.Equal("recipient_user_id", item.RecipientUserID.String()), builder.Equal("surface", string(item.Surface)), builder.Equal("id", item.ID))).Build()
+		if buildErr != nil {
+			return inbox.Item{}, false, buildErr
+		}
+		if _, updateErr = tx.ExecContext(ctx, itemUpdate, itemArgs...); updateErr != nil {
 			return inbox.Item{}, false, fmt.Errorf("acknowledge notification inbox item: %w", updateErr)
 		}
 	}

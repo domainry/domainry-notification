@@ -7,6 +7,7 @@ import (
 
 	"github.com/domainry/domainry-notification/internal/domain/inbox/service"
 	notification "github.com/domainry/domainry-notification/internal/domain/notification/model"
+	"github.com/domainry/domainry-orm/builder"
 )
 
 var _ inbox.MetricsStore = (*Store)(nil)
@@ -18,10 +19,9 @@ func (s *Store) GovernanceMetrics(ctx context.Context, workspaceID notification.
 	}
 	ctx = s.workspaceScope.Context(ctx, workspaceID)
 	result := inbox.GovernanceMetrics{Since: since, GeneratedAt: notification.Timestamp(s.clock.Now())}
-	where := s.Renderer.Identifier("workspace_id") + " = " + s.Renderer.Placeholder(1) + " AND " + s.Renderer.Identifier("last_occurred_at") + " >= " + s.Renderer.Placeholder(2)
-	args := []any{workspaceID.String(), since}
+	predicate := builder.And(builder.Equal("workspace_id", workspaceID.String()), builder.GreaterThanOrEqual("last_occurred_at", since))
 	var err error
-	if result.Summary, err = s.inboxAggregateSummary(ctx, where, args); err != nil {
+	if result.Summary, err = s.inboxAggregateSummary(ctx, predicate); err != nil {
 		return result, err
 	}
 	result.Summary.Key = "all"
@@ -30,7 +30,7 @@ func (s *Store) GovernanceMetrics(ctx context.Context, workspaceID notification.
 		value  *[]inbox.Aggregate
 	}{{"event_type", &result.ByEventType}, {"category", &result.ByCategory}, {"severity", &result.BySeverity}, {"source", &result.BySource}, {"surface", &result.BySurface}}
 	for _, dimension := range dimensions {
-		*dimension.value, err = s.inboxAggregateRows(ctx, where, args, dimension.column)
+		*dimension.value, err = s.inboxAggregateRows(ctx, predicate, dimension.column)
 		if err != nil {
 			return result, err
 		}
@@ -43,11 +43,17 @@ func (s *Store) GovernanceMetrics(ctx context.Context, workspaceID notification.
 
 func (s *Store) eventFailureMetrics(ctx context.Context, workspaceID notification.WorkspaceID, since string) (inbox.FailureMetrics, error) {
 	result := inbox.FailureMetrics{}
-	table := s.Renderer.Table("notification_event_failures")
-	where := s.Renderer.Identifier("workspace_id") + " = " + s.Renderer.Placeholder(1) + " AND " + s.Renderer.Identifier("occurred_at") + " >= " + s.Renderer.Placeholder(2)
-	projection := "COUNT(*), COALESCE(SUM(CASE WHEN " + s.Renderer.Identifier("disposition") + " = 'retry_scheduled' THEN 1 ELSE 0 END), 0), " +
-		"COALESCE(SUM(CASE WHEN " + s.Renderer.Identifier("disposition") + " = 'dead_letter' THEN 1 ELSE 0 END), 0)"
-	if err := s.Database.QueryRowContext(ctx, "SELECT "+projection+" FROM "+table+" WHERE "+where, workspaceID.String(), since).Scan(&result.Total, &result.RetryScheduled, &result.DeadLetter); err != nil {
+	predicate := builder.And(builder.Equal("workspace_id", workspaceID.String()), builder.GreaterThanOrEqual("occurred_at", since))
+	projections := []builder.Projection{
+		builder.Project(builder.CountAll()),
+		builder.Project(builder.Coalesce(builder.Sum(builder.CaseWhen(builder.Equal("disposition", "retry_scheduled"), 1).Else(0)), builder.Value(0))),
+		builder.Project(builder.Coalesce(builder.Sum(builder.CaseWhen(builder.Equal("disposition", "dead_letter"), 1).Else(0)), builder.Value(0))),
+	}
+	statement, args, err := builder.NewSelectBuilder(s.Renderer, "notification_event_failures").Projections(projections...).Where(predicate).Build()
+	if err != nil {
+		return result, err
+	}
+	if err := s.Database.QueryRowContext(ctx, statement, args...).Scan(&result.Total, &result.RetryScheduled, &result.DeadLetter); err != nil {
 		return result, fmt.Errorf("aggregate notification event failures: %w", err)
 	}
 	dimensions := []struct {
@@ -55,8 +61,11 @@ func (s *Store) eventFailureMetrics(ctx context.Context, workspaceID notificatio
 		value  *[]inbox.FailureAggregate
 	}{{"stage", &result.ByStage}, {"error_code", &result.ByErrorCode}}
 	for _, dimension := range dimensions {
-		identifier := s.Renderer.Identifier(dimension.column)
-		rows, err := s.Database.QueryContext(ctx, "SELECT "+identifier+", COUNT(*) FROM "+table+" WHERE "+where+" GROUP BY "+identifier+" ORDER BY COUNT(*) DESC, "+identifier+" ASC", workspaceID.String(), since)
+		statement, args, err := builder.NewSelectBuilder(s.Renderer, "notification_event_failures").Projections(builder.Project(builder.Column(dimension.column)), builder.Project(builder.CountAll())).Where(predicate).GroupBy(builder.Column(dimension.column)).OrderBy(builder.DescendingExpression(builder.CountAll()), builder.Ascending(dimension.column)).Build()
+		if err != nil {
+			return result, err
+		}
+		rows, err := s.Database.QueryContext(ctx, statement, args...)
 		if err != nil {
 			return result, fmt.Errorf("aggregate notification event failures by %s: %w", dimension.column, err)
 		}
@@ -79,16 +88,23 @@ func (s *Store) eventFailureMetrics(ctx context.Context, workspaceID notificatio
 	return result, nil
 }
 
-func (s *Store) inboxAggregateProjection() string {
-	return "COUNT(*), COALESCE(SUM(" + s.Renderer.Identifier("occurrence_count") + "), 0), " +
-		"COALESCE(SUM(CASE WHEN " + s.Renderer.Identifier("read_at") + " = '' THEN 1 ELSE 0 END), 0), " +
-		"COALESCE(SUM(CASE WHEN " + s.Renderer.Identifier("action_state") + " = 'open' THEN 1 ELSE 0 END), 0), " +
-		"COALESCE(SUM(CASE WHEN " + s.Renderer.Identifier("alert_state") + " = 'firing' THEN 1 ELSE 0 END), 0)"
+func inboxAggregateProjections() []builder.Projection {
+	return []builder.Projection{
+		builder.Project(builder.CountAll()),
+		builder.Project(builder.Coalesce(builder.Sum(builder.Column("occurrence_count")), builder.Value(0))),
+		builder.Project(builder.Coalesce(builder.Sum(builder.CaseWhen(builder.Equal("read_at", ""), 1).Else(0)), builder.Value(0))),
+		builder.Project(builder.Coalesce(builder.Sum(builder.CaseWhen(builder.Equal("action_state", "open"), 1).Else(0)), builder.Value(0))),
+		builder.Project(builder.Coalesce(builder.Sum(builder.CaseWhen(builder.Equal("alert_state", "firing"), 1).Else(0)), builder.Value(0))),
+	}
 }
 
-func (s *Store) inboxAggregateSummary(ctx context.Context, where string, args []any) (inbox.Aggregate, error) {
+func (s *Store) inboxAggregateSummary(ctx context.Context, predicate builder.Predicate) (inbox.Aggregate, error) {
 	value := inbox.Aggregate{}
-	err := s.Database.QueryRowContext(ctx, "SELECT "+s.inboxAggregateProjection()+" FROM "+s.Renderer.Table("notification_inbox_items")+" WHERE "+where, args...).
+	statement, args, err := builder.NewSelectBuilder(s.Renderer, "notification_inbox_items").Projections(inboxAggregateProjections()...).Where(predicate).Build()
+	if err != nil {
+		return value, err
+	}
+	err = s.Database.QueryRowContext(ctx, statement, args...).
 		Scan(&value.Items, &value.Occurrences, &value.Unread, &value.ActionRequired, &value.ActiveAlerts)
 	if err != nil {
 		return value, fmt.Errorf("aggregate notification inbox metrics: %w", err)
@@ -96,10 +112,12 @@ func (s *Store) inboxAggregateSummary(ctx context.Context, where string, args []
 	return value, nil
 }
 
-func (s *Store) inboxAggregateRows(ctx context.Context, where string, args []any, column string) ([]inbox.Aggregate, error) {
-	identifier := s.Renderer.Identifier(column)
-	statement := "SELECT " + identifier + ", " + s.inboxAggregateProjection() + " FROM " + s.Renderer.Table("notification_inbox_items") + " WHERE " + where +
-		" GROUP BY " + identifier + " ORDER BY COUNT(*) DESC, " + identifier + " ASC"
+func (s *Store) inboxAggregateRows(ctx context.Context, predicate builder.Predicate, column string) ([]inbox.Aggregate, error) {
+	projections := append([]builder.Projection{builder.Project(builder.Column(column))}, inboxAggregateProjections()...)
+	statement, args, err := builder.NewSelectBuilder(s.Renderer, "notification_inbox_items").Projections(projections...).Where(predicate).GroupBy(builder.Column(column)).OrderBy(builder.DescendingExpression(builder.CountAll()), builder.Ascending(column)).Build()
+	if err != nil {
+		return nil, err
+	}
 	rows, err := s.Database.QueryContext(ctx, statement, args...)
 	if err != nil {
 		return nil, fmt.Errorf("aggregate notification inbox metrics by %s: %w", column, err)
