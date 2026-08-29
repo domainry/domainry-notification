@@ -4,6 +4,8 @@ go 1.26.0
 
 toolchain go1.26.6
 
+replace github.com/domainry/domainry-orm => ../domainry-orm
+
 require (
 	github.com/DATA-DOG/go-sqlmock v1.5.2
 	github.com/domainry/domainry-foundation v0.1.0-dev.3

@@ -14,6 +14,7 @@ import (
 	"github.com/domainry/domainry-notification-sdk/modulehost"
 	sqlstore "github.com/domainry/domainry-notification/internal/infrastructure/persistence"
 	storemigration "github.com/domainry/domainry-notification/internal/infrastructure/persistence/database/migration"
+	"github.com/domainry/domainry-orm/sqlhost"
 )
 
 // SQLPersistence owns the standalone Notification SaaS database lifecycle and
@@ -124,13 +125,7 @@ func (p *SQLPersistence) Close() error {
 	return err
 }
 
-type migrationConnection interface {
-	ExecContext(context.Context, string, ...any) (sql.Result, error)
-	QueryRowContext(context.Context, string, ...any) *sql.Row
-	BeginTx(context.Context, *sql.TxOptions) (*sql.Tx, error)
-}
-
-func (p *SQLPersistence) ensureLedger(ctx context.Context, connection migrationConnection) error {
+func (p *SQLPersistence) ensureLedger(ctx context.Context, connection sqlhost.Database) error {
 	renderer, err := p.engine.Renderer(p.schema, "")
 	if err != nil {
 		return err
@@ -138,7 +133,7 @@ func (p *SQLPersistence) ensureLedger(ctx context.Context, connection migrationC
 	return storemigration.NewLedger(renderer).Ensure(ctx, connection)
 }
 
-func (p *SQLPersistence) applyMigration(ctx context.Context, connection migrationConnection, namespace string, migration sqlstore.SchemaMigration) error {
+func (p *SQLPersistence) applyMigration(ctx context.Context, connection sqlhost.Database, namespace string, migration sqlstore.SchemaMigration) error {
 	checksum := migrationChecksum(migration)
 	existing, found, err := p.migrationChecksum(ctx, connection, namespace, migration.Version)
 	if err != nil {
