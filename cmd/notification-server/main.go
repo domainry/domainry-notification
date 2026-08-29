@@ -131,9 +131,12 @@ func configurationFromEnvironment() (configuration, error) {
 		}
 		value.telemetry.SampleRatio = ratio
 	}
-	switch strings.ToLower(strings.TrimSpace(os.Getenv("NOTIFICATION_DATABASE_DRIVER"))) {
+	switch strings.ToLower(env("NOTIFICATION_DATABASE_DRIVER", "sqlite")) {
 	case "sqlite":
 		value.storeDriver, value.sqlDriver = sqlstore.SQLite, "sqlite"
+		if value.databaseDSN == "" {
+			value.databaseDSN = "runtime.db"
+		}
 	case "postgres", "postgresql", "pgx":
 		value.storeDriver, value.sqlDriver = sqlstore.Postgres, "pgx"
 	case "mysql":

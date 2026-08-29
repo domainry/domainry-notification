@@ -40,3 +40,25 @@ func TestConfigurationSelectsPostgresAndLoadsCatalog(t *testing.T) {
 		t.Fatalf("config=%+v", config)
 	}
 }
+
+func TestConfigurationDefaultsStandaloneSQLiteToRuntimeDatabase(t *testing.T) {
+	catalogFile := filepath.Join(t.TempDir(), "catalog.json")
+	if err := os.WriteFile(catalogFile, []byte(`{"DefaultLocale":"en","Surfaces":["business_workspace"],"TemplateCapabilities":[{"channel":"in_app"}]}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, key := range []string{"NOTIFICATION_DATABASE_DRIVER", "NOTIFICATION_DATABASE_DSN"} {
+		t.Setenv(key, "")
+	}
+	t.Setenv("NOTIFICATION_DELIVERY_GATEWAY_URL", "https://runtime.example")
+	t.Setenv("NOTIFICATION_DELIVERY_GATEWAY_SERVICE_CREDENTIAL", "credential")
+	t.Setenv("NOTIFICATION_WORKER_ID", "worker")
+	t.Setenv("NOTIFICATION_CATALOG_FILE", catalogFile)
+
+	config, err := configurationFromEnvironment()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if config.storeDriver != sqlstore.SQLite || config.sqlDriver != "sqlite" || config.databaseDSN != "runtime.db" {
+		t.Fatalf("config=%+v", config)
+	}
+}
