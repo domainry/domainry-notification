@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/domainry/domainry-foundation/mutation"
 	"github.com/domainry/domainry-notification/internal/domain/inbox/service"
 	notification "github.com/domainry/domainry-notification/internal/domain/notification/model"
 	"github.com/domainry/domainry-orm/builder"
@@ -104,7 +105,7 @@ func (s *Store) AcknowledgeAlert(ctx context.Context, query inbox.Query, itemID 
 			return inbox.Item{}, false, countErr
 		}
 		if count != 1 {
-			return inbox.Item{}, false, ErrMutationConflict
+			return inbox.Item{}, false, mutation.MutationConflict("notification_alert_group", item.GroupKey, mutation.MutationConflictOptimistic, nil)
 		}
 		itemUpdate, itemArgs, buildErr := builder.NewUpdateBuilder(s.Renderer, "notification_inbox_items").Set("alert_state", string(inbox.AlertAcknowledged)).Set("updated_at", acknowledgedAt).Where(builder.And(builder.Equal("workspace_id", item.WorkspaceID.String()), builder.Equal("recipient_user_id", item.RecipientUserID.String()), builder.Equal("surface", string(item.Surface)), builder.Equal("id", item.ID))).Build()
 		if buildErr != nil {

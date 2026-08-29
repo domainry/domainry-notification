@@ -3,10 +3,10 @@ package eventstore_test
 import (
 	"context"
 	"database/sql"
-	"errors"
 	"testing"
 	"time"
 
+	"github.com/domainry/domainry-foundation/mutation"
 	"github.com/domainry/domainry-notification/internal/domain/delivery/service"
 	"github.com/domainry/domainry-notification/internal/domain/inbox/service"
 	notification "github.com/domainry/domainry-notification/internal/domain/notification/model"
@@ -71,7 +71,7 @@ func TestMaterializeRollsBackWhenLeaseWasLost(t *testing.T) {
 	event.FencingToken++
 	item := inbox.Item{ID: "item-1", WorkspaceID: event.WorkspaceID, RecipientUserID: "user-1", Surface: event.Surface, EventID: event.ID,
 		LastOccurredAt: event.OccurredAt, FirstOccurredAt: event.OccurredAt, CreatedAt: event.CreatedAt, UpdatedAt: event.UpdatedAt}
-	if err := store.Materialize(t.Context(), event, []inbox.Item{item}); !errors.Is(err, sqlstore.ErrLeaseLost) {
+	if err := store.Materialize(t.Context(), event, []inbox.Item{item}); !mutation.IsMutationConflict(err, mutation.MutationConflictLeaseLost) {
 		t.Fatalf("err=%v", err)
 	}
 	var count int

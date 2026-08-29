@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/domainry/domainry-foundation/mutation"
 	"github.com/domainry/domainry-notification/internal/domain/delivery/service"
 	notification "github.com/domainry/domainry-notification/internal/domain/notification/model"
 	"github.com/domainry/domainry-orm/builder"
@@ -174,7 +175,7 @@ func (s *Store) transitionPlanWith(ctx context.Context, executor sqlhost.Executo
 		return err
 	}
 	if count != 1 {
-		return ErrLeaseLost
+		return mutation.MutationConflict("notification_channel_plan", plan.ID, mutation.MutationConflictLeaseLost, nil)
 	}
 	return nil
 }

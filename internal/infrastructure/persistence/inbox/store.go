@@ -4,7 +4,6 @@ import (
 	"context"
 	notification "github.com/domainry/domainry-notification/internal/domain/notification/model"
 	"github.com/domainry/domainry-notification/internal/infrastructure/persistence/base"
-	"github.com/domainry/domainry-notification/internal/infrastructure/persistence/shared"
 )
 
 // WorkspaceScope attaches the tenant boundary required by the host database.
@@ -23,8 +22,6 @@ type Store struct {
 	workspaceScope WorkspaceScope
 	clock          notification.Clock
 }
-
-var ErrMutationConflict = shared.ErrMutationConflict
 
 func New(config Config) *Store {
 	return &Store{

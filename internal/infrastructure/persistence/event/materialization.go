@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/domainry/domainry-foundation/mutation"
 	"github.com/domainry/domainry-notification/internal/domain/delivery/service"
 	"github.com/domainry/domainry-notification/internal/domain/inbox/service"
 	notification "github.com/domainry/domainry-notification/internal/domain/notification/model"
@@ -75,7 +76,7 @@ func (s *Store) Materialize(ctx context.Context, event inbox.Event, items []inbo
 		return err
 	}
 	if count != 1 {
-		return ErrLeaseLost
+		return mutation.MutationConflict("notification_event", event.ID, mutation.MutationConflictLeaseLost, nil)
 	}
 	return tx.Commit()
 }

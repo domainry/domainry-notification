@@ -3,11 +3,10 @@ package deliverystore_test
 import (
 	"database/sql"
 	"encoding/json"
-	"errors"
 	"testing"
 
+	"github.com/domainry/domainry-foundation/mutation"
 	"github.com/domainry/domainry-notification/internal/domain/delivery/service"
-	sqlstore "github.com/domainry/domainry-notification/internal/infrastructure/persistence"
 )
 
 func TestChannelPlanClaimAndRetryAreFenced(t *testing.T) {
@@ -26,7 +25,7 @@ func TestChannelPlanClaimAndRetryAreFenced(t *testing.T) {
 	if err != nil || !found || stored.Status != "queued" || stored.AttemptCount != 1 || stored.LeaseOwner != "" {
 		t.Fatalf("stored=%+v found=%v err=%v", stored, found, err)
 	}
-	if err := store.FailPlan(t.Context(), claimed, "connector.failed", "2026-08-24T01:01:02.000000000Z"); !errors.Is(err, sqlstore.ErrLeaseLost) {
+	if err := store.FailPlan(t.Context(), claimed, "connector.failed", "2026-08-24T01:01:02.000000000Z"); !mutation.IsMutationConflict(err, mutation.MutationConflictLeaseLost) {
 		t.Fatalf("stale transition err=%v", err)
 	}
 }

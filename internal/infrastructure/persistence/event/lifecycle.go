@@ -12,6 +12,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/domainry/domainry-foundation/mutation"
 	"github.com/domainry/domainry-notification/internal/domain/delivery/service"
 	"github.com/domainry/domainry-notification/internal/domain/inbox/service"
 	notification "github.com/domainry/domainry-notification/internal/domain/notification/model"
@@ -44,7 +45,7 @@ func (s *Store) Enqueue(ctx context.Context, event inbox.Event) (inbox.Event, bo
 	}
 	if found {
 		if !sameIngest(existing, event) {
-			return inbox.Event{}, false, ErrIdempotencyConflict
+			return inbox.Event{}, false, mutation.MutationConflict("notification_event", event.ID, mutation.MutationConflictIdempotency, nil)
 		}
 		return existing, false, nil
 	}
@@ -189,7 +190,7 @@ func (s *Store) transitionFailure(ctx context.Context, event inbox.Event, status
 		return err
 	}
 	if count != 1 {
-		return ErrLeaseLost
+		return mutation.MutationConflict("notification_event", event.ID, mutation.MutationConflictLeaseLost, nil)
 	}
 	disposition, retryable := "retry_scheduled", 1
 	if status == inbox.EventFailed {

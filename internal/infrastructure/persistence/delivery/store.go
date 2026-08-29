@@ -4,7 +4,6 @@ import (
 	"context"
 	notification "github.com/domainry/domainry-notification/internal/domain/notification/model"
 	"github.com/domainry/domainry-notification/internal/infrastructure/persistence/base"
-	"github.com/domainry/domainry-notification/internal/infrastructure/persistence/shared"
 	"github.com/domainry/domainry-orm/sqlhost"
 	"regexp"
 )
@@ -30,7 +29,6 @@ type Store struct {
 }
 
 var (
-	ErrLeaseLost       = shared.ErrLeaseLost
 	failureCodePattern = regexp.MustCompile(`^[a-z][a-z0-9_.-]{0,159}$`)
 )
 

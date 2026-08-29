@@ -5,7 +5,6 @@ import (
 
 	notification "github.com/domainry/domainry-notification/internal/domain/notification/model"
 	"github.com/domainry/domainry-notification/internal/infrastructure/persistence/base"
-	"github.com/domainry/domainry-notification/internal/infrastructure/persistence/shared"
 	"github.com/domainry/domainry-orm/sqlhost"
 )
 
@@ -26,11 +25,6 @@ type Store struct {
 	workspaceScope WorkspaceScope
 	queueScopes    QueueScopeIndex
 }
-
-var (
-	ErrLeaseLost           = shared.ErrLeaseLost
-	ErrIdempotencyConflict = shared.ErrIdempotencyConflict
-)
 
 func New(config Config) *Store {
 	return &Store{SQLStore: config.SQLStore, workspaceScope: config.WorkspaceScope, queueScopes: config.QueueScopes}

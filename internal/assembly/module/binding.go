@@ -2,11 +2,11 @@ package module
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"strings"
 	"sync"
 
+	"github.com/domainry/domainry-foundation/mutation"
 	identitysdk "github.com/domainry/domainry-identity-sdk"
 	identityprincipal "github.com/domainry/domainry-identity-sdk/authorization/principal"
 	notificationsdk "github.com/domainry/domainry-notification-sdk"
@@ -178,7 +178,7 @@ func (s modulePublisher) PublishIntent(ctx context.Context, value contract.Notif
 	}
 	stored, created, err := s.b.publisher.PublishIntent(ctx, source)
 	if err != nil {
-		if errors.Is(err, sqlstore.ErrIdempotencyConflict) {
+		if mutation.IsMutationConflict(err, mutation.MutationConflictIdempotency) {
 			return contract.NotificationEvent{}, false, &notificationsdk.Error{StatusCode: 409, Code: "notification.request_identity_conflict"}
 		}
 		return contract.NotificationEvent{}, false, err
