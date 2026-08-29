@@ -36,7 +36,7 @@ func TestSQLPersistencePreparesAndReopensExactApplication(t *testing.T) {
 		t.Fatalf("application namespace changed: %s != %s", first.Table("notification_events"), second.Table("notification_events"))
 	}
 	var migrations int
-	if err := db.QueryRow(`SELECT COUNT(*) FROM notification_saas_schema_migrations WHERE namespace = ?`, applicationKey(application)).Scan(&migrations); err != nil || migrations != 3 {
+	if err := db.QueryRow(`SELECT COUNT(*) FROM _schema_migrations WHERE namespace = ?`, applicationKey(application)).Scan(&migrations); err != nil || migrations != 3 {
 		t.Fatalf("migration count=%d err=%v", migrations, err)
 	}
 	var columns int
@@ -70,7 +70,7 @@ func TestSQLPersistenceSeparatesApplicationsWithSameWorkspace(t *testing.T) {
 		t.Fatal("two applications share one physical Notification table")
 	}
 	var migrations int
-	if err := db.QueryRow(`SELECT COUNT(*) FROM notification_saas_schema_migrations`).Scan(&migrations); err != nil || migrations != 6 {
+	if err := db.QueryRow(`SELECT COUNT(*) FROM _schema_migrations`).Scan(&migrations); err != nil || migrations != 6 {
 		t.Fatalf("migration count=%d err=%v", migrations, err)
 	}
 }
@@ -89,7 +89,7 @@ func TestSQLPersistenceRejectsMigrationChecksumDrift(t *testing.T) {
 	if _, err := persistence.PrepareApplication(t.Context(), application); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := db.Exec(`UPDATE notification_saas_schema_migrations SET checksum = 'different' WHERE namespace = ?`, applicationKey(application)); err != nil {
+	if _, err := db.Exec(`UPDATE _schema_migrations SET checksum = 'different' WHERE namespace = ?`, applicationKey(application)); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := persistence.PrepareApplication(t.Context(), application); err == nil || !strings.Contains(err.Error(), "checksum mismatch") {

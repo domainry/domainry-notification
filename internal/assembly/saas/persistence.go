@@ -17,7 +17,7 @@ import (
 	ormdialect "github.com/domainry/domainry-orm/dialect"
 )
 
-const migrationLedgerTable = "notification_saas_schema_migrations"
+const migrationLedgerTable = "_schema_migrations"
 
 // SQLPersistence owns the standalone Notification SaaS database lifecycle and
 // its migration history. Runtime databases must never be passed here.

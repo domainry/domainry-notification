@@ -119,7 +119,7 @@ func ApplicationSchemaMigrations(driver Driver, schema, tablePrefix string, scop
 		return nil, err
 	}
 	return []SchemaMigration{
-		{Version: 1, Name: "create_notification_saas_application_schema", Statements: statements},
+		{Version: 1, Name: "create_application_schema", Statements: statements},
 		{Version: 2, Name: "create_notification_retention_archive", Statements: retentionStatements},
 		{Version: 3, Name: "create_notification_migration_control", Statements: migrationControlStatements},
 	}, nil
