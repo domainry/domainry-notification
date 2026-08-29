@@ -24,6 +24,7 @@ import (
 	server "github.com/domainry/domainry-notification/internal/assembly/saas"
 	sqlstore "github.com/domainry/domainry-notification/internal/infrastructure/persistence"
 	notificationhttp "github.com/domainry/domainry-notification/internal/transport/http"
+	ormsqlite "github.com/domainry/domainry-orm/sqlite"
 )
 
 func main() {
@@ -45,13 +46,10 @@ func run() error {
 		return err
 	}
 	defer shutdownTelemetry(context.Background())
-	database, err := sql.Open(config.sqlDriver, config.databaseDSN)
+	database, err := openOwnedDatabase(ctx, config)
 	if err != nil {
-		return fmt.Errorf("open Notification SaaS database: %w", err)
+		return err
 	}
-	database.SetMaxOpenConns(config.databaseMaxOpen)
-	database.SetMaxIdleConns(config.databaseMaxIdle)
-	database.SetConnMaxLifetime(config.databaseConnLifetime)
 	persistence, err := server.NewSQLPersistence(server.SQLPersistenceOptions{Database: database, Driver: config.storeDriver, Schema: config.databaseSchema, OwnsDatabase: true})
 	if err != nil {
 		_ = database.Close()
@@ -106,6 +104,7 @@ type configuration struct {
 	storeDriver                                         sqlstore.Driver
 	databaseMaxOpen, databaseMaxIdle                    int
 	databaseConnLifetime                                time.Duration
+	databaseLockTimeout                                 time.Duration
 	deliveryGatewayURL, deliveryGatewayCredential       string
 	deliveryGatewayTimeout                              time.Duration
 	deliveryGatewayAttempts                             int
@@ -119,7 +118,7 @@ type configuration struct {
 func configurationFromEnvironment() (configuration, error) {
 	value := configuration{
 		httpAddress: env("NOTIFICATION_HTTP_ADDRESS", ":8080"), databaseDSN: strings.TrimSpace(os.Getenv("NOTIFICATION_DATABASE_DSN")), databaseSchema: strings.TrimSpace(os.Getenv("NOTIFICATION_DATABASE_SCHEMA")),
-		databaseMaxOpen: 20, databaseMaxIdle: 10, databaseConnLifetime: 30 * time.Minute,
+		databaseMaxOpen: 20, databaseMaxIdle: 10, databaseConnLifetime: 30 * time.Minute, databaseLockTimeout: 5 * time.Second,
 		deliveryGatewayURL: strings.TrimSpace(os.Getenv("NOTIFICATION_DELIVERY_GATEWAY_URL")), deliveryGatewayCredential: strings.TrimSpace(os.Getenv("NOTIFICATION_DELIVERY_GATEWAY_SERVICE_CREDENTIAL")), deliveryGatewayTimeout: 10 * time.Second, deliveryGatewayAttempts: 3,
 		workerID: strings.TrimSpace(os.Getenv("NOTIFICATION_WORKER_ID")), workerPollInterval: time.Second, workerBatchSize: 100,
 		telemetry: telemetry.Config{ServiceName: "domainry-notification", ServiceVersion: strings.TrimSpace(os.Getenv("NOTIFICATION_SERVICE_VERSION")), Exporter: env("NOTIFICATION_TELEMETRY_EXPORTER", "none"), Endpoint: strings.TrimSpace(os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT")), Headers: telemetryHeaders(os.Getenv("OTEL_EXPORTER_OTLP_HEADERS")), Insecure: strings.EqualFold(strings.TrimSpace(os.Getenv("OTEL_EXPORTER_OTLP_INSECURE")), "true"), SampleRatio: 1, ExportTimeout: 10 * time.Second},
@@ -162,6 +161,44 @@ func configurationFromEnvironment() (configuration, error) {
 		return configuration{}, fmt.Errorf("Notification catalog default locale is required")
 	}
 	return value, nil
+}
+
+func openOwnedDatabase(ctx context.Context, config configuration) (*sql.DB, error) {
+	dsn := config.databaseDSN
+	var sqliteConfig ormsqlite.OwnedConnectionConfig
+	if config.storeDriver == sqlstore.SQLite {
+		normalized := strings.ToLower(strings.TrimSpace(dsn))
+		if normalized == ":memory:" || strings.Contains(normalized, "mode=memory") {
+			return nil, fmt.Errorf("Notification SQLite requires a file database")
+		}
+		sqliteConfig = ormsqlite.DefaultOwnedConnectionConfig(dsn)
+		sqliteConfig.BusyTimeout = config.databaseLockTimeout
+		sqliteConfig.MaxOpenConnections = config.databaseMaxOpen
+		sqliteConfig.MaxIdleConnections = config.databaseMaxIdle
+		resolved, err := sqliteConfig.DSN()
+		if err != nil {
+			return nil, fmt.Errorf("configure Notification SQLite database: %w", err)
+		}
+		dsn = resolved
+	}
+	database, err := sql.Open(config.sqlDriver, dsn)
+	if err != nil {
+		return nil, fmt.Errorf("open Notification SaaS database: %w", err)
+	}
+	fail := func(err error) (*sql.DB, error) {
+		_ = database.Close()
+		return nil, err
+	}
+	if config.storeDriver == sqlstore.SQLite {
+		if err := ormsqlite.InitializeOwned(ctx, database, sqliteConfig); err != nil {
+			return fail(fmt.Errorf("initialize Notification SQLite database: %w", err))
+		}
+	} else {
+		database.SetMaxOpenConns(config.databaseMaxOpen)
+		database.SetMaxIdleConns(config.databaseMaxIdle)
+	}
+	database.SetConnMaxLifetime(config.databaseConnLifetime)
+	return database, nil
 }
 
 func telemetryHeaders(raw string) map[string]string {

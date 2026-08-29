@@ -3,7 +3,9 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 
 	sqlstore "github.com/domainry/domainry-notification/internal/infrastructure/persistence"
 )
@@ -14,6 +16,50 @@ func TestConfigurationRequiresStandaloneSaaSDependencies(t *testing.T) {
 	}
 	if _, err := configurationFromEnvironment(); err == nil {
 		t.Fatal("incomplete standalone Notification configuration was accepted")
+	}
+}
+
+func TestOwnedSQLiteDatabaseUsesORMConnectionPolicy(t *testing.T) {
+	config := configuration{
+		storeDriver: sqlstore.SQLite, sqlDriver: "sqlite", databaseDSN: filepath.Join(t.TempDir(), "notification.db"),
+		databaseMaxOpen: 6, databaseMaxIdle: 2, databaseConnLifetime: time.Minute, databaseLockTimeout: 100 * time.Millisecond,
+	}
+	database, err := openOwnedDatabase(t.Context(), config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer database.Close()
+	if stats := database.Stats(); stats.MaxOpenConnections != 6 {
+		t.Fatalf("max open connections=%d", stats.MaxOpenConnections)
+	}
+	var journalMode string
+	if err := database.QueryRowContext(t.Context(), "PRAGMA journal_mode").Scan(&journalMode); err != nil || !strings.EqualFold(journalMode, "wal") {
+		t.Fatalf("journal mode=%q err=%v", journalMode, err)
+	}
+	connections := make([]interface{ Close() error }, 0, 2)
+	for index := 0; index < 2; index++ {
+		connection, err := database.Conn(t.Context())
+		if err != nil {
+			t.Fatal(err)
+		}
+		connections = append(connections, connection)
+		var busyTimeout, foreignKeys int
+		if err := connection.QueryRowContext(t.Context(), "PRAGMA busy_timeout").Scan(&busyTimeout); err != nil || busyTimeout != 100 {
+			t.Fatalf("connection %d busy timeout=%d err=%v", index, busyTimeout, err)
+		}
+		if err := connection.QueryRowContext(t.Context(), "PRAGMA foreign_keys").Scan(&foreignKeys); err != nil || foreignKeys != 1 {
+			t.Fatalf("connection %d foreign keys=%d err=%v", index, foreignKeys, err)
+		}
+	}
+	for _, connection := range connections {
+		_ = connection.Close()
+	}
+}
+
+func TestOwnedSQLiteDatabaseRejectsMemoryMode(t *testing.T) {
+	_, err := openOwnedDatabase(t.Context(), configuration{storeDriver: sqlstore.SQLite, sqlDriver: "sqlite", databaseDSN: ":memory:", databaseMaxOpen: 1, databaseLockTimeout: time.Second})
+	if err == nil || !strings.Contains(err.Error(), "requires a file database") {
+		t.Fatalf("memory SQLite error=%v", err)
 	}
 }
 

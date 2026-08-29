@@ -144,6 +144,8 @@ func newTestHost(t *testing.T) testHost {
 
 func TestModuleFactoryContractAndBorrowedDatabaseLifecycle(t *testing.T) {
 	host := newTestHost(t)
+	host.database.SetMaxOpenConns(3)
+	host.database.SetMaxIdleConns(1)
 	factory := NewFactory(Options{})
 	contracttest.Run(t, func(testing.TB) (notificationsdk.Factory, notificationsdk.ApplicationRef) {
 		return moduleFactoryContractAdapter{factory: factory, host: host}, notificationsdk.ApplicationRef{TenantID: "tenant", WorkspaceID: "workspace", ApplicationKey: "runtime"}
@@ -157,6 +159,9 @@ func TestModuleFactoryContractAndBorrowedDatabaseLifecycle(t *testing.T) {
 	}
 	if err := host.database.PingContext(t.Context()); err != nil {
 		t.Fatalf("Module closed borrowed database: %v", err)
+	}
+	if stats := host.database.Stats(); stats.MaxOpenConnections != 3 {
+		t.Fatalf("Notification Module reinitialized host pool: max open=%d", stats.MaxOpenConnections)
 	}
 }
 
