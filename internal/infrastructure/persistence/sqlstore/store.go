@@ -5,6 +5,7 @@ import (
 
 	"github.com/domainry/domainry-notification-sdk/modulehost"
 	notification "github.com/domainry/domainry-notification/internal/domain/notification/model"
+	inboxstore "github.com/domainry/domainry-notification/internal/infrastructure/persistence/sqlstore/inbox"
 	"github.com/domainry/domainry-orm/sqlhost"
 )
 
@@ -31,6 +32,7 @@ type Config struct {
 }
 
 type Store struct {
+	*inboxstore.Store
 	database       sqlhost.Database
 	dialect        modulehost.Dialect
 	workspaceScope WorkspaceScope
@@ -42,5 +44,10 @@ func New(config Config) (*Store, error) {
 	if config.Database == nil || config.Dialect == nil || config.WorkspaceScope == nil || config.QueueScopes == nil || config.Clock == nil {
 		return nil, ErrIncompleteConfig
 	}
-	return &Store{database: config.Database, dialect: config.Dialect, workspaceScope: config.WorkspaceScope, queueScopes: config.QueueScopes, clock: config.Clock}, nil
+	return &Store{
+		Store: inboxstore.New(inboxstore.Config{
+			Database: config.Database, Dialect: config.Dialect, WorkspaceScope: config.WorkspaceScope, Clock: config.Clock,
+		}),
+		database: config.Database, dialect: config.Dialect, workspaceScope: config.WorkspaceScope, queueScopes: config.QueueScopes, clock: config.Clock,
+	}, nil
 }

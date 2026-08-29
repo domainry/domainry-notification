@@ -1,4 +1,4 @@
-package sqlstore_test
+package inboxstore_test
 
 import (
 	"testing"
