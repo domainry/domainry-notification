@@ -21,7 +21,7 @@ func (s *Store) GovernanceMetrics(ctx context.Context, workspaceID notification.
 	result := inbox.GovernanceMetrics{Since: since, GeneratedAt: notification.Timestamp(s.clock.Now())}
 	predicate := builder.And(builder.Equal("workspace_id", workspaceID.String()), builder.GreaterThanOrEqual("last_occurred_at", since))
 	var err error
-	if result.Summary, err = s.inboxAggregateSummary(ctx, predicate); err != nil {
+	if result.Summary, err = s.inboxAggregateSummary(ctx, workspaceID.String(), predicate); err != nil {
 		return result, err
 	}
 	result.Summary.Key = "all"
@@ -30,7 +30,7 @@ func (s *Store) GovernanceMetrics(ctx context.Context, workspaceID notification.
 		value  *[]inbox.Aggregate
 	}{{"event_type", &result.ByEventType}, {"category", &result.ByCategory}, {"severity", &result.BySeverity}, {"source", &result.BySource}, {"surface", &result.BySurface}}
 	for _, dimension := range dimensions {
-		*dimension.value, err = s.inboxAggregateRows(ctx, predicate, dimension.column)
+		*dimension.value, err = s.inboxAggregateRows(ctx, workspaceID.String(), predicate, dimension.column)
 		if err != nil {
 			return result, err
 		}
@@ -49,7 +49,7 @@ func (s *Store) eventFailureMetrics(ctx context.Context, workspaceID notificatio
 		builder.Project(builder.Coalesce(builder.Sum(builder.CaseWhen(builder.Equal("disposition", "retry_scheduled"), 1).Else(0)), builder.Value(0))),
 		builder.Project(builder.Coalesce(builder.Sum(builder.CaseWhen(builder.Equal("disposition", "dead_letter"), 1).Else(0)), builder.Value(0))),
 	}
-	statement, args, err := builder.NewSelectBuilder(s.Renderer, "notification_event_failures").Projections(projections...).Where(predicate).Build()
+	statement, args, err := builder.NewWorkspaceSelectBuilder(s.Renderer, "notification_event_failures", workspaceID.String()).Projections(projections...).Where(predicate).Build()
 	if err != nil {
 		return result, err
 	}
@@ -61,7 +61,7 @@ func (s *Store) eventFailureMetrics(ctx context.Context, workspaceID notificatio
 		value  *[]inbox.FailureAggregate
 	}{{"stage", &result.ByStage}, {"error_code", &result.ByErrorCode}}
 	for _, dimension := range dimensions {
-		statement, args, err := builder.NewSelectBuilder(s.Renderer, "notification_event_failures").Projections(builder.Project(builder.Column(dimension.column)), builder.Project(builder.CountAll())).Where(predicate).GroupBy(builder.Column(dimension.column)).OrderBy(builder.DescendingExpression(builder.CountAll()), builder.Ascending(dimension.column)).Build()
+		statement, args, err := builder.NewWorkspaceSelectBuilder(s.Renderer, "notification_event_failures", workspaceID.String()).Projections(builder.Project(builder.Column(dimension.column)), builder.Project(builder.CountAll())).Where(predicate).GroupBy(builder.Column(dimension.column)).OrderBy(builder.DescendingExpression(builder.CountAll()), builder.Ascending(dimension.column)).Build()
 		if err != nil {
 			return result, err
 		}
@@ -98,9 +98,9 @@ func inboxAggregateProjections() []builder.Projection {
 	}
 }
 
-func (s *Store) inboxAggregateSummary(ctx context.Context, predicate builder.Predicate) (inbox.Aggregate, error) {
+func (s *Store) inboxAggregateSummary(ctx context.Context, workspaceID string, predicate builder.Predicate) (inbox.Aggregate, error) {
 	value := inbox.Aggregate{}
-	statement, args, err := builder.NewSelectBuilder(s.Renderer, "notification_inbox_items").Projections(inboxAggregateProjections()...).Where(predicate).Build()
+	statement, args, err := builder.NewWorkspaceSelectBuilder(s.Renderer, "notification_inbox_items", workspaceID).Projections(inboxAggregateProjections()...).Where(predicate).Build()
 	if err != nil {
 		return value, err
 	}
@@ -112,9 +112,9 @@ func (s *Store) inboxAggregateSummary(ctx context.Context, predicate builder.Pre
 	return value, nil
 }
 
-func (s *Store) inboxAggregateRows(ctx context.Context, predicate builder.Predicate, column string) ([]inbox.Aggregate, error) {
+func (s *Store) inboxAggregateRows(ctx context.Context, workspaceID string, predicate builder.Predicate, column string) ([]inbox.Aggregate, error) {
 	projections := append([]builder.Projection{builder.Project(builder.Column(column))}, inboxAggregateProjections()...)
-	statement, args, err := builder.NewSelectBuilder(s.Renderer, "notification_inbox_items").Projections(projections...).Where(predicate).GroupBy(builder.Column(column)).OrderBy(builder.DescendingExpression(builder.CountAll()), builder.Ascending(column)).Build()
+	statement, args, err := builder.NewWorkspaceSelectBuilder(s.Renderer, "notification_inbox_items", workspaceID).Projections(projections...).Where(predicate).GroupBy(builder.Column(column)).OrderBy(builder.DescendingExpression(builder.CountAll()), builder.Ascending(column)).Build()
 	if err != nil {
 		return nil, err
 	}
