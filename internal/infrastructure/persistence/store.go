@@ -5,13 +5,13 @@ import (
 
 	"github.com/domainry/domainry-notification-sdk/modulehost"
 	notification "github.com/domainry/domainry-notification/internal/domain/notification/model"
-	"github.com/domainry/domainry-notification/internal/infrastructure/persistence/base"
-	deliverystore "github.com/domainry/domainry-notification/internal/infrastructure/persistence/delivery"
-	eventstore "github.com/domainry/domainry-notification/internal/infrastructure/persistence/event"
-	inboxstore "github.com/domainry/domainry-notification/internal/infrastructure/persistence/inbox"
-	lifecyclestore "github.com/domainry/domainry-notification/internal/infrastructure/persistence/lifecycle"
-	migrationstore "github.com/domainry/domainry-notification/internal/infrastructure/persistence/migration"
-	templatestore "github.com/domainry/domainry-notification/internal/infrastructure/persistence/template"
+	"github.com/domainry/domainry-notification/internal/infrastructure/persistence/database/base"
+	deliverystore "github.com/domainry/domainry-notification/internal/infrastructure/persistence/repository/delivery"
+	eventstore "github.com/domainry/domainry-notification/internal/infrastructure/persistence/repository/event"
+	inboxstore "github.com/domainry/domainry-notification/internal/infrastructure/persistence/repository/inbox"
+	lifecyclestore "github.com/domainry/domainry-notification/internal/infrastructure/persistence/repository/lifecycle"
+	portabilitystore "github.com/domainry/domainry-notification/internal/infrastructure/persistence/repository/portability"
+	templatestore "github.com/domainry/domainry-notification/internal/infrastructure/persistence/repository/template"
 	"github.com/domainry/domainry-orm/sqlhost"
 )
 
@@ -43,7 +43,7 @@ type Store struct {
 	*eventPersistence
 	*templatePersistence
 	*lifecyclePersistence
-	*migrationPersistence
+	*portabilityPersistence
 }
 
 func New(config Config) (*Store, error) {
@@ -61,9 +61,9 @@ func New(config Config) (*Store, error) {
 		eventPersistence: &eventPersistence{eventstore.New(eventstore.Config{
 			SQLStore: sqlStore, WorkspaceScope: config.WorkspaceScope, QueueScopes: config.QueueScopes,
 		})},
-		templatePersistence:  &templatePersistence{templatestore.New(templatestore.Config{SQLStore: sqlStore, Clock: config.Clock})},
-		lifecyclePersistence: &lifecyclePersistence{lifecyclestore.New(lifecyclestore.Config{SQLStore: sqlStore})},
-		migrationPersistence: &migrationPersistence{migrationstore.New(migrationstore.Config{SQLStore: sqlStore, WorkspaceScope: config.WorkspaceScope})},
+		templatePersistence:    &templatePersistence{templatestore.New(templatestore.Config{SQLStore: sqlStore, Clock: config.Clock})},
+		lifecyclePersistence:   &lifecyclePersistence{lifecyclestore.New(lifecyclestore.Config{SQLStore: sqlStore})},
+		portabilityPersistence: &portabilityPersistence{portabilitystore.New(portabilitystore.Config{SQLStore: sqlStore, WorkspaceScope: config.WorkspaceScope})},
 	}, nil
 }
 
@@ -74,4 +74,4 @@ type inboxPersistence struct{ *inboxstore.Store }
 type eventPersistence struct{ *eventstore.Store }
 type templatePersistence struct{ *templatestore.Store }
 type lifecyclePersistence struct{ *lifecyclestore.Store }
-type migrationPersistence struct{ *migrationstore.Store }
+type portabilityPersistence struct{ *portabilitystore.Store }

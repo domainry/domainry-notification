@@ -9,7 +9,7 @@ import (
 	"github.com/DATA-DOG/go-sqlmock"
 	notificationsdk "github.com/domainry/domainry-notification-sdk"
 	sqlstore "github.com/domainry/domainry-notification/internal/infrastructure/persistence"
-	"github.com/domainry/domainry-notification/internal/infrastructure/persistence/base"
+	"github.com/domainry/domainry-notification/internal/infrastructure/persistence/database/base"
 
 	_ "modernc.org/sqlite"
 )

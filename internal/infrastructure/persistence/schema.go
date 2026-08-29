@@ -1,7 +1,7 @@
 package persistence
 
 import (
-	storeschema "github.com/domainry/domainry-notification/internal/infrastructure/persistence/schema"
+	storeschema "github.com/domainry/domainry-notification/internal/infrastructure/persistence/database/schema"
 	ormdialect "github.com/domainry/domainry-orm/dialect"
 )
 

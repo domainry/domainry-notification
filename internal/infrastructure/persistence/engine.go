@@ -3,11 +3,11 @@ package persistence
 import (
 	"fmt"
 
-	"github.com/domainry/domainry-notification/internal/infrastructure/persistence/base"
-	mysqlstore "github.com/domainry/domainry-notification/internal/infrastructure/persistence/mysql"
-	postgresstore "github.com/domainry/domainry-notification/internal/infrastructure/persistence/postgres"
-	storeschema "github.com/domainry/domainry-notification/internal/infrastructure/persistence/schema"
-	sqlitestore "github.com/domainry/domainry-notification/internal/infrastructure/persistence/sqlite"
+	"github.com/domainry/domainry-notification/internal/infrastructure/persistence/database/base"
+	mysqlstore "github.com/domainry/domainry-notification/internal/infrastructure/persistence/database/driver/mysql"
+	postgresstore "github.com/domainry/domainry-notification/internal/infrastructure/persistence/database/driver/postgres"
+	sqlitestore "github.com/domainry/domainry-notification/internal/infrastructure/persistence/database/driver/sqlite"
+	storeschema "github.com/domainry/domainry-notification/internal/infrastructure/persistence/database/schema"
 	ormdialect "github.com/domainry/domainry-orm/dialect"
 )
 
