@@ -17,10 +17,10 @@ func (s *Store) ListSavedViews(ctx context.Context, workspaceID notification.Wor
 		return nil, fmt.Errorf("notification saved-view owner identity is required")
 	}
 	ctx = s.workspaceScope.Context(ctx, workspaceID)
-	query := "SELECT " + s.dialect.Identifier("payload_json") + " FROM " + s.dialect.Table("notification_inbox_saved_views") + " WHERE " +
-		s.dialect.Identifier("workspace_id") + " = " + s.dialect.Placeholder(1) + " AND " + s.dialect.Identifier("recipient_user_id") + " = " + s.dialect.Placeholder(2) +
-		" AND " + s.dialect.Identifier("surface") + " = " + s.dialect.Placeholder(3) + " ORDER BY " + s.dialect.Identifier("view_key") + " ASC"
-	rows, err := s.database.QueryContext(ctx, query, workspaceID.String(), recipientID.String(), string(surface))
+	query := "SELECT " + s.Renderer.Identifier("payload_json") + " FROM " + s.Renderer.Table("notification_inbox_saved_views") + " WHERE " +
+		s.Renderer.Identifier("workspace_id") + " = " + s.Renderer.Placeholder(1) + " AND " + s.Renderer.Identifier("recipient_user_id") + " = " + s.Renderer.Placeholder(2) +
+		" AND " + s.Renderer.Identifier("surface") + " = " + s.Renderer.Placeholder(3) + " ORDER BY " + s.Renderer.Identifier("view_key") + " ASC"
+	rows, err := s.Database.QueryContext(ctx, query, workspaceID.String(), recipientID.String(), string(surface))
 	if err != nil {
 		return nil, fmt.Errorf("list notification inbox saved views: %w", err)
 	}
@@ -50,11 +50,11 @@ func (s *Store) SaveSavedView(ctx context.Context, workspaceID notification.Work
 	if err != nil {
 		return inbox.SavedView{}, fmt.Errorf("encode notification inbox saved view: %w", err)
 	}
-	query := "UPDATE " + s.dialect.Table("notification_inbox_saved_views") + " SET " + s.dialect.Identifier("payload_json") + " = " + s.dialect.Placeholder(1) +
-		", " + s.dialect.Identifier("updated_at") + " = " + s.dialect.Placeholder(2) + " WHERE " + s.dialect.Identifier("workspace_id") + " = " + s.dialect.Placeholder(3) +
-		" AND " + s.dialect.Identifier("recipient_user_id") + " = " + s.dialect.Placeholder(4) + " AND " + s.dialect.Identifier("surface") + " = " + s.dialect.Placeholder(5) +
-		" AND " + s.dialect.Identifier("view_key") + " = " + s.dialect.Placeholder(6)
-	result, err := s.database.ExecContext(ctx, query, string(raw), value.UpdatedAt, workspaceID.String(), recipientID.String(), string(surface), value.Key)
+	query := "UPDATE " + s.Renderer.Table("notification_inbox_saved_views") + " SET " + s.Renderer.Identifier("payload_json") + " = " + s.Renderer.Placeholder(1) +
+		", " + s.Renderer.Identifier("updated_at") + " = " + s.Renderer.Placeholder(2) + " WHERE " + s.Renderer.Identifier("workspace_id") + " = " + s.Renderer.Placeholder(3) +
+		" AND " + s.Renderer.Identifier("recipient_user_id") + " = " + s.Renderer.Placeholder(4) + " AND " + s.Renderer.Identifier("surface") + " = " + s.Renderer.Placeholder(5) +
+		" AND " + s.Renderer.Identifier("view_key") + " = " + s.Renderer.Placeholder(6)
+	result, err := s.Database.ExecContext(ctx, query, string(raw), value.UpdatedAt, workspaceID.String(), recipientID.String(), string(surface), value.Key)
 	if err != nil {
 		return inbox.SavedView{}, fmt.Errorf("update notification inbox saved view: %w", err)
 	}
@@ -63,7 +63,7 @@ func (s *Store) SaveSavedView(ctx context.Context, workspaceID notification.Work
 		return inbox.SavedView{}, err
 	}
 	if count == 0 {
-		_, err = s.database.ExecContext(ctx, s.dialect.Insert("notification_inbox_saved_views", []string{"workspace_id", "recipient_user_id", "surface", "view_key", "payload_json", "created_at", "updated_at"}),
+		_, err = s.Insert(ctx, s.Database, "notification_inbox_saved_views", []string{"workspace_id", "recipient_user_id", "surface", "view_key", "payload_json", "created_at", "updated_at"},
 			workspaceID.String(), recipientID.String(), string(surface), value.Key, string(raw), value.CreatedAt, value.UpdatedAt)
 		if err != nil {
 			return inbox.SavedView{}, fmt.Errorf("insert notification inbox saved view: %w", err)
@@ -78,10 +78,10 @@ func (s *Store) DeleteSavedView(ctx context.Context, workspaceID notification.Wo
 		return false, fmt.Errorf("notification saved-view identity is required")
 	}
 	ctx = s.workspaceScope.Context(ctx, workspaceID)
-	query := "DELETE FROM " + s.dialect.Table("notification_inbox_saved_views") + " WHERE " + s.dialect.Identifier("workspace_id") + " = " + s.dialect.Placeholder(1) +
-		" AND " + s.dialect.Identifier("recipient_user_id") + " = " + s.dialect.Placeholder(2) + " AND " + s.dialect.Identifier("surface") + " = " + s.dialect.Placeholder(3) +
-		" AND " + s.dialect.Identifier("view_key") + " = " + s.dialect.Placeholder(4)
-	result, err := s.database.ExecContext(ctx, query, workspaceID.String(), recipientID.String(), string(surface), key)
+	query := "DELETE FROM " + s.Renderer.Table("notification_inbox_saved_views") + " WHERE " + s.Renderer.Identifier("workspace_id") + " = " + s.Renderer.Placeholder(1) +
+		" AND " + s.Renderer.Identifier("recipient_user_id") + " = " + s.Renderer.Placeholder(2) + " AND " + s.Renderer.Identifier("surface") + " = " + s.Renderer.Placeholder(3) +
+		" AND " + s.Renderer.Identifier("view_key") + " = " + s.Renderer.Placeholder(4)
+	result, err := s.Database.ExecContext(ctx, query, workspaceID.String(), recipientID.String(), string(surface), key)
 	if err != nil {
 		return false, fmt.Errorf("delete notification inbox saved view: %w", err)
 	}

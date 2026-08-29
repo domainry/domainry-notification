@@ -31,11 +31,11 @@ func (s *Store) updateInboxPersonalState(ctx context.Context, query inbox.Query,
 	}
 	ctx = s.workspaceScope.Context(ctx, query.WorkspaceID)
 	clauses, args, position := s.mailboxAccessWhere(query, 3)
-	clauses = append(clauses, s.dialect.Identifier("id")+" = "+s.dialect.Placeholder(position))
+	clauses = append(clauses, s.Renderer.Identifier("id")+" = "+s.Renderer.Placeholder(position))
 	args = append([]any{strings.TrimSpace(value), strings.TrimSpace(updatedAt)}, append(args, itemID)...)
-	statement := "UPDATE " + s.dialect.Table("notification_inbox_items") + " SET " + s.dialect.Identifier(column) + " = " + s.dialect.Placeholder(1) +
-		", " + s.dialect.Identifier("updated_at") + " = " + s.dialect.Placeholder(2) + " WHERE " + strings.Join(clauses, " AND ")
-	result, err := s.database.ExecContext(ctx, statement, args...)
+	statement := "UPDATE " + s.Renderer.Table("notification_inbox_items") + " SET " + s.Renderer.Identifier(column) + " = " + s.Renderer.Placeholder(1) +
+		", " + s.Renderer.Identifier("updated_at") + " = " + s.Renderer.Placeholder(2) + " WHERE " + strings.Join(clauses, " AND ")
+	result, err := s.Database.ExecContext(ctx, statement, args...)
 	if err != nil {
 		return inbox.Item{}, false, fmt.Errorf("update notification inbox personal state: %w", err)
 	}
@@ -60,10 +60,10 @@ func (s *Store) MarkAllRead(ctx context.Context, query inbox.Query, readAt strin
 	args = append([]any{readAt, readAt}, args...)
 	boundaryPosition := len(args) + 1
 	args = append(args, readAt)
-	statement := "UPDATE " + s.dialect.Table("notification_inbox_items") + " SET " + s.dialect.Identifier("read_at") + " = " + s.dialect.Placeholder(1) +
-		", " + s.dialect.Identifier("updated_at") + " = " + s.dialect.Placeholder(2) + " WHERE " + where + " AND " + s.dialect.Identifier("read_at") + " = '' AND " +
-		s.dialect.Identifier("updated_at") + " <= " + s.dialect.Placeholder(boundaryPosition)
-	result, err := s.database.ExecContext(ctx, statement, args...)
+	statement := "UPDATE " + s.Renderer.Table("notification_inbox_items") + " SET " + s.Renderer.Identifier("read_at") + " = " + s.Renderer.Placeholder(1) +
+		", " + s.Renderer.Identifier("updated_at") + " = " + s.Renderer.Placeholder(2) + " WHERE " + where + " AND " + s.Renderer.Identifier("read_at") + " = '' AND " +
+		s.Renderer.Identifier("updated_at") + " <= " + s.Renderer.Placeholder(boundaryPosition)
+	result, err := s.Database.ExecContext(ctx, statement, args...)
 	if err != nil {
 		return 0, fmt.Errorf("mark notification inbox items read: %w", err)
 	}
@@ -81,7 +81,7 @@ func (s *Store) AcknowledgeAlert(ctx context.Context, query inbox.Query, itemID 
 		return inbox.Item{}, false, fmt.Errorf("notification alert acknowledgement identity is invalid")
 	}
 	ctx = s.workspaceScope.Context(ctx, query.WorkspaceID)
-	tx, err := s.database.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelSerializable})
+	tx, err := s.Database.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelSerializable})
 	if err != nil {
 		return inbox.Item{}, false, err
 	}
@@ -94,11 +94,11 @@ func (s *Store) AcknowledgeAlert(ctx context.Context, query inbox.Query, itemID 
 		return inbox.Item{}, false, fmt.Errorf("notification alert is not firing")
 	}
 	if item.AlertState != inbox.AlertAcknowledged {
-		groupUpdate := "UPDATE " + s.dialect.Table("notification_alert_groups") + " SET " + s.dialect.Identifier("state") + " = " + s.dialect.Placeholder(1) +
-			", " + s.dialect.Identifier("acknowledged_at") + " = " + s.dialect.Placeholder(2) + ", " + s.dialect.Identifier("acknowledged_by") + " = " + s.dialect.Placeholder(3) +
-			", " + s.dialect.Identifier("updated_at") + " = " + s.dialect.Placeholder(4) + " WHERE " + s.dialect.Identifier("workspace_id") + " = " + s.dialect.Placeholder(5) +
-			" AND " + s.dialect.Identifier("recipient_user_id") + " = " + s.dialect.Placeholder(6) + " AND " + s.dialect.Identifier("surface") + " = " + s.dialect.Placeholder(7) +
-			" AND " + s.dialect.Identifier("group_key") + " = " + s.dialect.Placeholder(8) + " AND " + s.dialect.Identifier("state") + " = 'firing'"
+		groupUpdate := "UPDATE " + s.Renderer.Table("notification_alert_groups") + " SET " + s.Renderer.Identifier("state") + " = " + s.Renderer.Placeholder(1) +
+			", " + s.Renderer.Identifier("acknowledged_at") + " = " + s.Renderer.Placeholder(2) + ", " + s.Renderer.Identifier("acknowledged_by") + " = " + s.Renderer.Placeholder(3) +
+			", " + s.Renderer.Identifier("updated_at") + " = " + s.Renderer.Placeholder(4) + " WHERE " + s.Renderer.Identifier("workspace_id") + " = " + s.Renderer.Placeholder(5) +
+			" AND " + s.Renderer.Identifier("recipient_user_id") + " = " + s.Renderer.Placeholder(6) + " AND " + s.Renderer.Identifier("surface") + " = " + s.Renderer.Placeholder(7) +
+			" AND " + s.Renderer.Identifier("group_key") + " = " + s.Renderer.Placeholder(8) + " AND " + s.Renderer.Identifier("state") + " = 'firing'"
 		result, updateErr := tx.ExecContext(ctx, groupUpdate, string(inbox.AlertAcknowledged), acknowledgedAt, actor.String(), acknowledgedAt,
 			item.WorkspaceID.String(), item.RecipientUserID.String(), string(item.Surface), item.GroupKey)
 		if updateErr != nil {
@@ -111,10 +111,10 @@ func (s *Store) AcknowledgeAlert(ctx context.Context, query inbox.Query, itemID 
 		if count != 1 {
 			return inbox.Item{}, false, ErrMutationConflict
 		}
-		itemUpdate := "UPDATE " + s.dialect.Table("notification_inbox_items") + " SET " + s.dialect.Identifier("alert_state") + " = " + s.dialect.Placeholder(1) +
-			", " + s.dialect.Identifier("updated_at") + " = " + s.dialect.Placeholder(2) + " WHERE " + s.dialect.Identifier("workspace_id") + " = " + s.dialect.Placeholder(3) +
-			" AND " + s.dialect.Identifier("recipient_user_id") + " = " + s.dialect.Placeholder(4) + " AND " + s.dialect.Identifier("surface") + " = " + s.dialect.Placeholder(5) +
-			" AND " + s.dialect.Identifier("id") + " = " + s.dialect.Placeholder(6)
+		itemUpdate := "UPDATE " + s.Renderer.Table("notification_inbox_items") + " SET " + s.Renderer.Identifier("alert_state") + " = " + s.Renderer.Placeholder(1) +
+			", " + s.Renderer.Identifier("updated_at") + " = " + s.Renderer.Placeholder(2) + " WHERE " + s.Renderer.Identifier("workspace_id") + " = " + s.Renderer.Placeholder(3) +
+			" AND " + s.Renderer.Identifier("recipient_user_id") + " = " + s.Renderer.Placeholder(4) + " AND " + s.Renderer.Identifier("surface") + " = " + s.Renderer.Placeholder(5) +
+			" AND " + s.Renderer.Identifier("id") + " = " + s.Renderer.Placeholder(6)
 		if _, updateErr = tx.ExecContext(ctx, itemUpdate, string(inbox.AlertAcknowledged), acknowledgedAt, item.WorkspaceID.String(), item.RecipientUserID.String(), string(item.Surface), item.ID); updateErr != nil {
 			return inbox.Item{}, false, fmt.Errorf("acknowledge notification inbox item: %w", updateErr)
 		}

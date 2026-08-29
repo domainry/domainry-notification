@@ -56,7 +56,7 @@ func (s *Store) ExportPortable(ctx context.Context, scope PortableScope) (Portab
 	if s == nil {
 		return PortableBundle{}, PortableInventory{}, fmt.Errorf("notification portable store is unavailable")
 	}
-	return ExportPortable(ctx, s.database, s.dialect, scope)
+	return ExportPortable(ctx, s.Database, s.Renderer, scope)
 }
 
 func (s *Store) ExportPortableMigration(ctx context.Context, scope PortableScope, migrationID string) (PortableBundle, PortableInventory, error) {
@@ -77,7 +77,7 @@ func (s *Store) ImportPortable(ctx context.Context, scope PortableScope, bundle 
 	if s == nil {
 		return PortableImportReceipt{}, fmt.Errorf("notification portable store is unavailable")
 	}
-	return ImportPortable(ctx, s.database, s.dialect, scope, bundle)
+	return ImportPortable(ctx, s.Database, s.Renderer, scope, bundle)
 }
 
 func ExportPortable(ctx context.Context, database sqlhost.Queryer, dialect modulehost.Dialect, scope PortableScope) (PortableBundle, PortableInventory, error) {

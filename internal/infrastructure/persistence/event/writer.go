@@ -35,7 +35,7 @@ func (s *Store) InsertEvent(ctx context.Context, executor sqlhost.Executor, even
 		return fmt.Errorf("encode notification event: %w", err)
 	}
 	ctx = s.workspaceScope.Context(ctx, event.WorkspaceID)
-	_, err = executor.ExecContext(ctx, s.dialect.Insert("notification_events", eventColumns), eventValues(event, string(raw))...)
+	_, err = s.Insert(ctx, executor, "notification_events", eventColumns, eventValues(event, string(raw))...)
 	if err != nil {
 		return fmt.Errorf("insert notification event: %w", err)
 	}

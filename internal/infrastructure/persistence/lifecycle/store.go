@@ -1,17 +1,19 @@
 package lifecyclestore
 
 import (
-	"github.com/domainry/domainry-notification-sdk/modulehost"
-	"github.com/domainry/domainry-orm/sqlhost"
+	"github.com/domainry/domainry-notification/internal/infrastructure/persistence/base"
 )
 
 type Config struct {
-	Database sqlhost.Database
-	Dialect  modulehost.Dialect
+	SQLStore *base.SQLStore
 }
 type Store struct {
-	database sqlhost.Database
-	dialect  modulehost.Dialect
+	*base.SQLStore
 }
 
-func New(config Config) *Store { return &Store{database: config.Database, dialect: config.Dialect} }
+func New(config Config) *Store {
+	if config.SQLStore == nil {
+		config.SQLStore = &base.SQLStore{}
+	}
+	return &Store{SQLStore: config.SQLStore}
+}

@@ -38,8 +38,8 @@ func (s *Store) MigrationStatus(ctx context.Context, workspaceID string) (Migrat
 		return MigrationControl{}, fmt.Errorf("notification migration workspace is required")
 	}
 	control := MigrationControl{WorkspaceID: workspaceID, State: MigrationStateActive}
-	query := "SELECT " + s.columns([]string{"migration_id", "role", "state", "bundle_fingerprint", "frozen_at", "activated_at", "updated_at"}) + " FROM " + s.dialect.Table("notification_migration_controls") + " WHERE " + s.dialect.Identifier("workspace_id") + " = " + s.dialect.Placeholder(1)
-	err := s.database.QueryRowContext(s.workspaceScope.Context(ctx, notification.WorkspaceID(workspaceID)), query, workspaceID).Scan(&control.MigrationID, &control.Role, &control.State, &control.BundleFingerprint, &control.FrozenAt, &control.ActivatedAt, &control.UpdatedAt)
+	query := "SELECT " + s.columns([]string{"migration_id", "role", "state", "bundle_fingerprint", "frozen_at", "activated_at", "updated_at"}) + " FROM " + s.Renderer.Table("notification_migration_controls") + " WHERE " + s.Renderer.Identifier("workspace_id") + " = " + s.Renderer.Placeholder(1)
+	err := s.Database.QueryRowContext(s.workspaceScope.Context(ctx, notification.WorkspaceID(workspaceID)), query, workspaceID).Scan(&control.MigrationID, &control.Role, &control.State, &control.BundleFingerprint, &control.FrozenAt, &control.ActivatedAt, &control.UpdatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return control, nil
 	}
@@ -67,10 +67,10 @@ func (s *Store) FreezeMigration(ctx context.Context, workspaceID, migrationID st
 	}
 	atText := at.UTC().Format(time.RFC3339Nano)
 	if current.MigrationID == "" {
-		_, err = s.database.ExecContext(s.workspaceScope.Context(ctx, notification.WorkspaceID(workspaceID)), s.dialect.Insert("notification_migration_controls", []string{"workspace_id", "migration_id", "role", "state", "bundle_fingerprint", "frozen_at", "activated_at", "updated_at"}), workspaceID, migrationID, MigrationRoleSource, MigrationStateFrozen, "", atText, "", atText)
+		_, err = s.Insert(s.workspaceScope.Context(ctx, notification.WorkspaceID(workspaceID)), s.Database, "notification_migration_controls", []string{"workspace_id", "migration_id", "role", "state", "bundle_fingerprint", "frozen_at", "activated_at", "updated_at"}, workspaceID, migrationID, MigrationRoleSource, MigrationStateFrozen, "", atText, "", atText)
 	} else {
-		query := "UPDATE " + s.dialect.Table("notification_migration_controls") + " SET " + s.dialect.Identifier("migration_id") + "=" + s.dialect.Placeholder(1) + "," + s.dialect.Identifier("role") + "=" + s.dialect.Placeholder(2) + "," + s.dialect.Identifier("state") + "=" + s.dialect.Placeholder(3) + "," + s.dialect.Identifier("bundle_fingerprint") + "=''," + s.dialect.Identifier("frozen_at") + "=" + s.dialect.Placeholder(4) + "," + s.dialect.Identifier("activated_at") + "=''," + s.dialect.Identifier("updated_at") + "=" + s.dialect.Placeholder(5) + " WHERE " + s.dialect.Identifier("workspace_id") + "=" + s.dialect.Placeholder(6) + " AND " + s.dialect.Identifier("state") + "=" + s.dialect.Placeholder(7)
-		_, err = s.database.ExecContext(s.workspaceScope.Context(ctx, notification.WorkspaceID(workspaceID)), query, migrationID, MigrationRoleSource, MigrationStateFrozen, atText, atText, workspaceID, MigrationStateActive)
+		query := "UPDATE " + s.Renderer.Table("notification_migration_controls") + " SET " + s.Renderer.Identifier("migration_id") + "=" + s.Renderer.Placeholder(1) + "," + s.Renderer.Identifier("role") + "=" + s.Renderer.Placeholder(2) + "," + s.Renderer.Identifier("state") + "=" + s.Renderer.Placeholder(3) + "," + s.Renderer.Identifier("bundle_fingerprint") + "=''," + s.Renderer.Identifier("frozen_at") + "=" + s.Renderer.Placeholder(4) + "," + s.Renderer.Identifier("activated_at") + "=''," + s.Renderer.Identifier("updated_at") + "=" + s.Renderer.Placeholder(5) + " WHERE " + s.Renderer.Identifier("workspace_id") + "=" + s.Renderer.Placeholder(6) + " AND " + s.Renderer.Identifier("state") + "=" + s.Renderer.Placeholder(7)
+		_, err = s.Database.ExecContext(s.workspaceScope.Context(ctx, notification.WorkspaceID(workspaceID)), query, migrationID, MigrationRoleSource, MigrationStateFrozen, atText, atText, workspaceID, MigrationStateActive)
 	}
 	if err != nil {
 		return MigrationControl{}, fmt.Errorf("freeze notification migration: %w", err)
@@ -95,7 +95,7 @@ func (s *Store) RecordImportedMigration(ctx context.Context, workspaceID, migrat
 		return MigrationControl{}, fmt.Errorf("notification migration target is not active-empty")
 	}
 	atText := at.UTC().Format(time.RFC3339Nano)
-	_, err = s.database.ExecContext(s.workspaceScope.Context(ctx, notification.WorkspaceID(workspaceID)), s.dialect.Insert("notification_migration_controls", []string{"workspace_id", "migration_id", "role", "state", "bundle_fingerprint", "frozen_at", "activated_at", "updated_at"}), workspaceID, migrationID, MigrationRoleTarget, MigrationStateImported, fingerprint, atText, "", atText)
+	_, err = s.Insert(s.workspaceScope.Context(ctx, notification.WorkspaceID(workspaceID)), s.Database, "notification_migration_controls", []string{"workspace_id", "migration_id", "role", "state", "bundle_fingerprint", "frozen_at", "activated_at", "updated_at"}, workspaceID, migrationID, MigrationRoleTarget, MigrationStateImported, fingerprint, atText, "", atText)
 	if err != nil {
 		return MigrationControl{}, fmt.Errorf("record imported notification migration: %w", err)
 	}
@@ -120,8 +120,8 @@ func (s *Store) transitionMigration(ctx context.Context, workspaceID, migrationI
 	if toState == MigrationStateCutover {
 		activatedAt = atText
 	}
-	query := "UPDATE " + s.dialect.Table("notification_migration_controls") + " SET " + s.dialect.Identifier("role") + "=" + s.dialect.Placeholder(1) + "," + s.dialect.Identifier("state") + "=" + s.dialect.Placeholder(2) + "," + s.dialect.Identifier("bundle_fingerprint") + "=" + s.dialect.Placeholder(3) + "," + s.dialect.Identifier("activated_at") + "=" + s.dialect.Placeholder(4) + "," + s.dialect.Identifier("updated_at") + "=" + s.dialect.Placeholder(5) + " WHERE " + s.dialect.Identifier("workspace_id") + "=" + s.dialect.Placeholder(6) + " AND " + s.dialect.Identifier("migration_id") + "=" + s.dialect.Placeholder(7) + " AND " + s.dialect.Identifier("role") + "=" + s.dialect.Placeholder(8) + " AND " + s.dialect.Identifier("state") + "=" + s.dialect.Placeholder(9) + " AND (" + s.dialect.Identifier("bundle_fingerprint") + "='' OR " + s.dialect.Identifier("bundle_fingerprint") + "=" + s.dialect.Placeholder(10) + ")"
-	result, err := s.database.ExecContext(s.workspaceScope.Context(ctx, notification.WorkspaceID(workspaceID)), query, toRole, toState, fingerprint, activatedAt, atText, workspaceID, migrationID, fromRole, fromState, fingerprint)
+	query := "UPDATE " + s.Renderer.Table("notification_migration_controls") + " SET " + s.Renderer.Identifier("role") + "=" + s.Renderer.Placeholder(1) + "," + s.Renderer.Identifier("state") + "=" + s.Renderer.Placeholder(2) + "," + s.Renderer.Identifier("bundle_fingerprint") + "=" + s.Renderer.Placeholder(3) + "," + s.Renderer.Identifier("activated_at") + "=" + s.Renderer.Placeholder(4) + "," + s.Renderer.Identifier("updated_at") + "=" + s.Renderer.Placeholder(5) + " WHERE " + s.Renderer.Identifier("workspace_id") + "=" + s.Renderer.Placeholder(6) + " AND " + s.Renderer.Identifier("migration_id") + "=" + s.Renderer.Placeholder(7) + " AND " + s.Renderer.Identifier("role") + "=" + s.Renderer.Placeholder(8) + " AND " + s.Renderer.Identifier("state") + "=" + s.Renderer.Placeholder(9) + " AND (" + s.Renderer.Identifier("bundle_fingerprint") + "='' OR " + s.Renderer.Identifier("bundle_fingerprint") + "=" + s.Renderer.Placeholder(10) + ")"
+	result, err := s.Database.ExecContext(s.workspaceScope.Context(ctx, notification.WorkspaceID(workspaceID)), query, toRole, toState, fingerprint, activatedAt, atText, workspaceID, migrationID, fromRole, fromState, fingerprint)
 	if err != nil {
 		return MigrationControl{}, fmt.Errorf("transition notification migration: %w", err)
 	}
@@ -135,16 +135,16 @@ func (s *Store) transitionMigration(ctx context.Context, workspaceID, migrationI
 func (s *Store) activeMigrationLeases(ctx context.Context, workspaceID string) (int, error) {
 	total := 0
 	for _, table := range []string{"notification_events", "notification_channel_plans"} {
-		query := "SELECT COUNT(*) FROM " + s.dialect.Table(table) + " WHERE " + s.dialect.Identifier("workspace_id") + "=" + s.dialect.Placeholder(1) + " AND " + s.dialect.Identifier("lease_owner") + "<>''"
+		query := "SELECT COUNT(*) FROM " + s.Renderer.Table(table) + " WHERE " + s.Renderer.Identifier("workspace_id") + "=" + s.Renderer.Placeholder(1) + " AND " + s.Renderer.Identifier("lease_owner") + "<>''"
 		var count int
-		if err := s.database.QueryRowContext(s.workspaceScope.Context(ctx, notification.WorkspaceID(workspaceID)), query, workspaceID).Scan(&count); err != nil {
+		if err := s.Database.QueryRowContext(s.workspaceScope.Context(ctx, notification.WorkspaceID(workspaceID)), query, workspaceID).Scan(&count); err != nil {
 			return 0, fmt.Errorf("count notification migration leases in %s: %w", table, err)
 		}
 		total += count
 	}
-	query := "SELECT COUNT(*) FROM " + s.dialect.Table("notification_template_publication_requests") + " WHERE " + s.dialect.Identifier("lease_owner") + "<>''"
+	query := "SELECT COUNT(*) FROM " + s.Renderer.Table("notification_template_publication_requests") + " WHERE " + s.Renderer.Identifier("lease_owner") + "<>''"
 	var count int
-	if err := s.database.QueryRowContext(ctx, query).Scan(&count); err != nil {
+	if err := s.Database.QueryRowContext(ctx, query).Scan(&count); err != nil {
 		return 0, fmt.Errorf("count notification publication migration leases: %w", err)
 	}
 	return total + count, nil

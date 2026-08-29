@@ -2,34 +2,23 @@ package migrationstore
 
 import (
 	"context"
-	"strings"
-
-	"github.com/domainry/domainry-notification-sdk/modulehost"
 	notification "github.com/domainry/domainry-notification/internal/domain/notification/model"
-	"github.com/domainry/domainry-orm/sqlhost"
+	"github.com/domainry/domainry-notification/internal/infrastructure/persistence/base"
 )
 
 type WorkspaceScope interface {
 	Context(context.Context, notification.WorkspaceID) context.Context
 }
 type Config struct {
-	Database       sqlhost.Database
-	Dialect        modulehost.Dialect
+	SQLStore       *base.SQLStore
 	WorkspaceScope WorkspaceScope
 }
 type Store struct {
-	database       sqlhost.Database
-	dialect        modulehost.Dialect
+	*base.SQLStore
 	workspaceScope WorkspaceScope
 }
 
 func New(config Config) *Store {
-	return &Store{database: config.Database, dialect: config.Dialect, workspaceScope: config.WorkspaceScope}
+	return &Store{SQLStore: config.SQLStore, workspaceScope: config.WorkspaceScope}
 }
-func (s *Store) columns(columns []string) string {
-	quoted := make([]string, len(columns))
-	for i, column := range columns {
-		quoted[i] = s.dialect.Identifier(column)
-	}
-	return strings.Join(quoted, ", ")
-}
+func (s *Store) columns(columns []string) string { return s.Columns(columns) }

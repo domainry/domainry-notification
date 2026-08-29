@@ -11,6 +11,7 @@ import (
 
 	"github.com/domainry/domainry-notification/internal/domain/delivery/service"
 	notification "github.com/domainry/domainry-notification/internal/domain/notification/model"
+	"github.com/domainry/domainry-orm/builder"
 	"github.com/domainry/domainry-orm/sqlhost"
 )
 
@@ -27,7 +28,7 @@ func (s *Store) ListDuePlans(ctx context.Context, now string, limit int) ([]deli
 	if limit <= 0 || limit > 100 {
 		limit = 25
 	}
-	workspaces, err := s.queueScopes.Workspaces(ctx, s.database, notification.WorkChannelPlan, workspaceScanLimit(limit))
+	workspaces, err := s.queueScopes.Workspaces(ctx, s.Database, notification.WorkChannelPlan, workspaceScanLimit(limit))
 	if err != nil {
 		return nil, err
 	}
@@ -52,12 +53,15 @@ func (s *Store) ListDuePlans(ctx context.Context, now string, limit int) ([]deli
 }
 
 func (s *Store) listDuePlansForWorkspace(ctx context.Context, workspaceID notification.WorkspaceID, now string, limit int) ([]delivery.Plan, error) {
-	query := "SELECT " + s.columns(channelPlanColumns) + " FROM " + s.dialect.Table("notification_channel_plans") +
-		" WHERE " + s.dialect.Identifier("workspace_id") + " = " + s.dialect.Placeholder(1) + " AND ((" + s.dialect.Identifier("status") + " = 'queued' AND (" +
-		s.dialect.Identifier("next_attempt_at") + " = '' OR " + s.dialect.Identifier("next_attempt_at") + " <= " + s.dialect.Placeholder(2) + ")) OR (" +
-		s.dialect.Identifier("status") + " = 'processing' AND " + s.dialect.Identifier("lease_expires_at") + " <= " + s.dialect.Placeholder(3) + "))" +
-		" ORDER BY " + s.dialect.Identifier("created_at") + " ASC LIMIT " + fmt.Sprint(limit)
-	rows, err := s.database.QueryContext(ctx, query, workspaceID.String(), now, now)
+	due := builder.Or(
+		builder.And(builder.Equal("status", "queued"), builder.Or(builder.Equal("next_attempt_at", ""), builder.LessThanOrEqual("next_attempt_at", now))),
+		builder.And(builder.Equal("status", "processing"), builder.LessThanOrEqual("lease_expires_at", now)),
+	)
+	query, args, err := builder.NewSelectBuilder(s.Renderer, "notification_channel_plans").Columns(channelPlanColumns...).Where(builder.And(builder.Equal("workspace_id", workspaceID.String()), due)).OrderBy(builder.Ascending("created_at")).Limit(limit).Build()
+	if err != nil {
+		return nil, err
+	}
+	rows, err := s.Database.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("list due notification channel plans: %w", err)
 	}
@@ -79,13 +83,12 @@ func (s *Store) ClaimPlan(ctx context.Context, workspaceID notification.Workspac
 		return delivery.Plan{}, false, fmt.Errorf("notification channel plan claim identity and lease are required")
 	}
 	ctx = s.workspaceScope.Context(ctx, workspaceID)
-	query := "UPDATE " + s.dialect.Table("notification_channel_plans") + " SET " + s.dialect.Identifier("status") + " = 'processing', " +
-		s.dialect.Identifier("lease_owner") + " = " + s.dialect.Placeholder(1) + ", " + s.dialect.Identifier("lease_expires_at") + " = " + s.dialect.Placeholder(2) + ", " +
-		s.dialect.Identifier("fencing_token") + " = " + s.dialect.Identifier("fencing_token") + " + 1, " + s.dialect.Identifier("updated_at") + " = " + s.dialect.Placeholder(3) +
-		" WHERE " + s.dialect.Identifier("workspace_id") + " = " + s.dialect.Placeholder(4) + " AND " + s.dialect.Identifier("id") + " = " + s.dialect.Placeholder(5) +
-		" AND ((" + s.dialect.Identifier("status") + " = 'queued' AND (" + s.dialect.Identifier("next_attempt_at") + " = '' OR " + s.dialect.Identifier("next_attempt_at") + " <= " + s.dialect.Placeholder(6) +
-		")) OR (" + s.dialect.Identifier("status") + " = 'processing' AND " + s.dialect.Identifier("lease_expires_at") + " <= " + s.dialect.Placeholder(7) + "))"
-	result, err := s.database.ExecContext(ctx, query, owner, expiresAt, now, workspaceID.String(), planID, now, now)
+	due := builder.Or(builder.And(builder.Equal("status", "queued"), builder.Or(builder.Equal("next_attempt_at", ""), builder.LessThanOrEqual("next_attempt_at", now))), builder.And(builder.Equal("status", "processing"), builder.LessThanOrEqual("lease_expires_at", now)))
+	query, args, err := builder.NewUpdateBuilder(s.Renderer, "notification_channel_plans").Set("status", "processing").Set("lease_owner", owner).Set("lease_expires_at", expiresAt).SetExpression("fencing_token", builder.Add(builder.Column("fencing_token"), builder.Value(1))).Set("updated_at", now).Where(builder.And(builder.Equal("workspace_id", workspaceID.String()), builder.Equal("id", planID), due)).Build()
+	if err != nil {
+		return delivery.Plan{}, false, err
+	}
+	result, err := s.Database.ExecContext(ctx, query, args...)
 	if err != nil {
 		return delivery.Plan{}, false, fmt.Errorf("claim notification channel plan: %w", err)
 	}
@@ -98,11 +101,12 @@ func (s *Store) ClaimPlan(ctx context.Context, workspaceID notification.Workspac
 
 func (s *Store) IsActionTerminal(ctx context.Context, plan delivery.Plan) (bool, error) {
 	ctx = s.workspaceScope.Context(ctx, plan.WorkspaceID)
-	query := "SELECT COUNT(*), COALESCE(SUM(CASE WHEN " + s.dialect.Identifier("action_state") + " = 'open' OR " + s.dialect.Identifier("alert_state") +
-		" = 'firing' THEN 1 ELSE 0 END), 0) FROM " + s.dialect.Table("notification_inbox_items") + " WHERE " +
-		s.dialect.Identifier("workspace_id") + " = " + s.dialect.Placeholder(1) + " AND " + s.dialect.Identifier("event_id") + " = " + s.dialect.Placeholder(2)
+	query, args, err := builder.NewSelectBuilder(s.Renderer, "notification_inbox_items").Projections(builder.Project(builder.CountAll()), builder.Project(builder.Coalesce(builder.Sum(builder.CaseWhen(builder.Or(builder.Equal("action_state", "open"), builder.Equal("alert_state", "firing")), 1).Else(0)), builder.Value(0)))).Where(builder.And(builder.Equal("workspace_id", plan.WorkspaceID.String()), builder.Equal("event_id", plan.EventID))).Build()
+	if err != nil {
+		return false, err
+	}
 	var total, active int
-	if err := s.database.QueryRowContext(ctx, query, plan.WorkspaceID.String(), plan.EventID).Scan(&total, &active); err != nil {
+	if err := s.Database.QueryRowContext(ctx, query, args...).Scan(&total, &active); err != nil {
 		return false, fmt.Errorf("inspect notification channel plan action state: %w", err)
 	}
 	return total > 0 && active == 0, nil
@@ -135,7 +139,7 @@ func (s *Store) CompletePlanBatch(ctx context.Context, plans []delivery.Plan, ou
 		}
 	}
 	ctx = s.workspaceScope.Context(ctx, workspaceID)
-	tx, err := s.database.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelSerializable})
+	tx, err := s.Database.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelSerializable})
 	if err != nil {
 		return err
 	}
@@ -149,7 +153,7 @@ func (s *Store) CompletePlanBatch(ctx context.Context, plans []delivery.Plan, ou
 }
 
 func (s *Store) transitionPlan(ctx context.Context, plan delivery.Plan, status string, attemptIncrement int, errorCode, outboxMessageID, nextAttemptAt, updatedAt string) error {
-	return s.transitionPlanWith(s.workspaceScope.Context(ctx, plan.WorkspaceID), s.database, plan, status, attemptIncrement, errorCode, outboxMessageID, nextAttemptAt, updatedAt)
+	return s.transitionPlanWith(s.workspaceScope.Context(ctx, plan.WorkspaceID), s.Database, plan, status, attemptIncrement, errorCode, outboxMessageID, nextAttemptAt, updatedAt)
 }
 
 func (s *Store) transitionPlanWith(ctx context.Context, executor sqlhost.Executor, plan delivery.Plan, status string, attemptIncrement int, errorCode, outboxMessageID, nextAttemptAt, updatedAt string) error {
@@ -157,15 +161,11 @@ func (s *Store) transitionPlanWith(ctx context.Context, executor sqlhost.Executo
 	if errorCode != "" && !failureCodePattern.MatchString(errorCode) {
 		return fmt.Errorf("notification channel plan error code is invalid")
 	}
-	query := "UPDATE " + s.dialect.Table("notification_channel_plans") + " SET " + s.dialect.Identifier("status") + " = " + s.dialect.Placeholder(1) + ", " +
-		s.dialect.Identifier("attempt_count") + " = " + s.dialect.Identifier("attempt_count") + " + " + fmt.Sprint(attemptIncrement) + ", " +
-		s.dialect.Identifier("next_attempt_at") + " = " + s.dialect.Placeholder(2) + ", " + s.dialect.Identifier("last_error_code") + " = " + s.dialect.Placeholder(3) + ", " +
-		s.dialect.Identifier("outbox_message_id") + " = " + s.dialect.Placeholder(4) + ", " + s.dialect.Identifier("lease_owner") + " = '', " +
-		s.dialect.Identifier("lease_expires_at") + " = '', " + s.dialect.Identifier("updated_at") + " = " + s.dialect.Placeholder(5) + " WHERE " +
-		s.dialect.Identifier("workspace_id") + " = " + s.dialect.Placeholder(6) + " AND " + s.dialect.Identifier("id") + " = " + s.dialect.Placeholder(7) +
-		" AND " + s.dialect.Identifier("status") + " = 'processing' AND " + s.dialect.Identifier("lease_owner") + " = " + s.dialect.Placeholder(8) +
-		" AND " + s.dialect.Identifier("fencing_token") + " = " + s.dialect.Placeholder(9)
-	result, err := executor.ExecContext(ctx, query, status, nextAttemptAt, errorCode, outboxMessageID, updatedAt, plan.WorkspaceID.String(), plan.ID, plan.LeaseOwner, plan.FencingToken)
+	query, args, err := builder.NewUpdateBuilder(s.Renderer, "notification_channel_plans").Set("status", status).SetExpression("attempt_count", builder.Add(builder.Column("attempt_count"), builder.Value(attemptIncrement))).Set("next_attempt_at", nextAttemptAt).Set("last_error_code", errorCode).Set("outbox_message_id", outboxMessageID).Set("lease_owner", "").Set("lease_expires_at", "").Set("updated_at", updatedAt).Where(builder.And(builder.Equal("workspace_id", plan.WorkspaceID.String()), builder.Equal("id", plan.ID), builder.Equal("status", "processing"), builder.Equal("lease_owner", plan.LeaseOwner), builder.Equal("fencing_token", plan.FencingToken))).Build()
+	if err != nil {
+		return err
+	}
+	result, err := executor.ExecContext(ctx, query, args...)
 	if err != nil {
 		return fmt.Errorf("transition notification channel plan: %w", err)
 	}
@@ -180,9 +180,11 @@ func (s *Store) transitionPlanWith(ctx context.Context, executor sqlhost.Executo
 }
 
 func (s *Store) planByID(ctx context.Context, workspaceID notification.WorkspaceID, planID string) (delivery.Plan, bool, error) {
-	query := "SELECT " + s.columns(channelPlanColumns) + " FROM " + s.dialect.Table("notification_channel_plans") + " WHERE " +
-		s.dialect.Identifier("workspace_id") + " = " + s.dialect.Placeholder(1) + " AND " + s.dialect.Identifier("id") + " = " + s.dialect.Placeholder(2)
-	plan, err := scanPlan(s.database.QueryRowContext(ctx, query, workspaceID.String(), planID))
+	query, args, err := builder.NewSelectBuilder(s.Renderer, "notification_channel_plans").Columns(channelPlanColumns...).Where(builder.And(builder.Equal("workspace_id", workspaceID.String()), builder.Equal("id", planID))).Build()
+	if err != nil {
+		return delivery.Plan{}, false, err
+	}
+	plan, err := scanPlan(s.Database.QueryRowContext(ctx, query, args...))
 	if errors.Is(err, sql.ErrNoRows) {
 		return delivery.Plan{}, false, nil
 	}

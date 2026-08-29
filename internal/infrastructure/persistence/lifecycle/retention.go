@@ -21,8 +21,8 @@ type retentionSpec struct {
 }
 
 func (s *Store) retentionSpecs(policyKey string) []retentionSpec {
-	id := s.dialect.Identifier
-	table := s.dialect.Table
+	id := s.Renderer.Identifier
+	table := s.Renderer.Table
 	specs := []retentionSpec{
 		{policyKey: contract.NotificationRetentionHistoryPolicy, table: "notification_inbox_items", idColumn: "id", workspaceColumn: "workspace_id", timeColumn: "updated_at", additionalWhere: id("action_state") + " <> 'open' AND " + id("alert_state") + " <> 'firing'"},
 		{policyKey: contract.NotificationRetentionHistoryPolicy, table: "notification_alert_groups", idColumn: "last_event_id", workspaceColumn: "workspace_id", timeColumn: "updated_at", statusColumn: "state", eligibleStatuses: []string{"resolved"}},
@@ -54,10 +54,10 @@ func (s *Store) PreviewRetention(ctx context.Context, request contract.Notificat
 	for _, spec := range specs {
 		where, args := s.retentionWhere(spec, request.WorkspaceID, request.Now.Add(-time.Duration(request.Policy.DefaultRetentionSeconds)*time.Second), 1)
 		where, args = s.excludeArchived(where, args, spec, request.WorkspaceID, request.Policy.Key)
-		query := "SELECT COUNT(*), MIN(" + s.dialect.Identifier(spec.timeColumn) + ") FROM " + s.dialect.Table(spec.table) + " WHERE " + where
+		query := "SELECT COUNT(*), MIN(" + s.Renderer.Identifier(spec.timeColumn) + ") FROM " + s.Renderer.Table(spec.table) + " WHERE " + where
 		var count int64
 		var oldest sql.NullString
-		if err := s.database.QueryRowContext(ctx, query, args...).Scan(&count, &oldest); err != nil {
+		if err := s.Database.QueryRowContext(ctx, query, args...).Scan(&count, &oldest); err != nil {
 			return contract.NotificationRetentionPreview{}, err
 		}
 		result.Rows += count
@@ -112,8 +112,8 @@ func (s *Store) processRetentionSpec(ctx context.Context, request contract.Notif
 		where, args = s.excludeArchived(where, args, spec, request.WorkspaceID, request.Policy.Key)
 	}
 	args = append(args, limit)
-	query := "SELECT " + s.dialect.Identifier(spec.idColumn) + ", " + s.dialect.Identifier(spec.timeColumn) + " FROM " + s.dialect.Table(spec.table) + " WHERE " + where + " ORDER BY " + s.dialect.Identifier(spec.timeColumn) + ", " + s.dialect.Identifier(spec.idColumn) + " LIMIT " + s.dialect.Placeholder(len(args))
-	rows, err := s.database.QueryContext(ctx, query, args...)
+	query := "SELECT " + s.Renderer.Identifier(spec.idColumn) + ", " + s.Renderer.Identifier(spec.timeColumn) + " FROM " + s.Renderer.Table(spec.table) + " WHERE " + where + " ORDER BY " + s.Renderer.Identifier(spec.timeColumn) + ", " + s.Renderer.Identifier(spec.idColumn) + " LIMIT " + s.Renderer.Placeholder(len(args))
+	rows, err := s.Database.QueryContext(ctx, query, args...)
 	if err != nil {
 		return contract.NotificationRetentionBatchResult{}, err
 	}
@@ -146,8 +146,8 @@ func (s *Store) processRetentionSpec(ctx context.Context, request contract.Notif
 		}
 		if spec.referenceTable != "" && request.Operation == "purge" {
 			var references int
-			query := "SELECT COUNT(*) FROM " + s.dialect.Table(spec.referenceTable) + " WHERE " + s.dialect.Identifier(spec.referenceColumn) + " = " + s.dialect.Placeholder(1)
-			if err := s.database.QueryRowContext(ctx, query, candidate.id).Scan(&references); err != nil {
+			query := "SELECT COUNT(*) FROM " + s.Renderer.Table(spec.referenceTable) + " WHERE " + s.Renderer.Identifier(spec.referenceColumn) + " = " + s.Renderer.Placeholder(1)
+			if err := s.Database.QueryRowContext(ctx, query, candidate.id).Scan(&references); err != nil {
 				return result, err
 			}
 			if references > 0 {
@@ -183,21 +183,21 @@ func (s *Store) retentionWhere(spec retentionSpec, workspaceID string, cutoff ti
 	position := start
 	parts, args := []string{}, []any{}
 	if spec.workspaceColumn != "" {
-		parts = append(parts, s.dialect.Identifier(spec.workspaceColumn)+" = "+s.dialect.Placeholder(position))
+		parts = append(parts, s.Renderer.Identifier(spec.workspaceColumn)+" = "+s.Renderer.Placeholder(position))
 		args = append(args, workspaceID)
 		position++
 	}
-	parts = append(parts, s.dialect.Identifier(spec.timeColumn)+" <> ''", s.dialect.Identifier(spec.timeColumn)+" <= "+s.dialect.Placeholder(position))
+	parts = append(parts, s.Renderer.Identifier(spec.timeColumn)+" <> ''", s.Renderer.Identifier(spec.timeColumn)+" <= "+s.Renderer.Placeholder(position))
 	args = append(args, cutoff.UTC().Format(time.RFC3339Nano))
 	position++
 	if len(spec.eligibleStatuses) > 0 {
 		placeholders := make([]string, len(spec.eligibleStatuses))
 		for index, status := range spec.eligibleStatuses {
-			placeholders[index] = s.dialect.Placeholder(position)
+			placeholders[index] = s.Renderer.Placeholder(position)
 			args = append(args, status)
 			position++
 		}
-		parts = append(parts, s.dialect.Identifier(spec.statusColumn)+" IN ("+strings.Join(placeholders, ", ")+")")
+		parts = append(parts, s.Renderer.Identifier(spec.statusColumn)+" IN ("+strings.Join(placeholders, ", ")+")")
 	}
 	if spec.additionalWhere != "" {
 		parts = append(parts, spec.additionalWhere)
@@ -208,7 +208,7 @@ func (s *Store) retentionWhere(spec retentionSpec, workspaceID string, cutoff ti
 func (s *Store) excludeArchived(where string, args []any, spec retentionSpec, workspaceID, policyKey string) (string, []any) {
 	args = append(args, workspaceID, spec.table, policyKey)
 	start := len(args) - 2
-	where += " AND NOT EXISTS (SELECT 1 FROM " + s.dialect.Table("notification_retention_archive") + " a WHERE a." + s.dialect.Identifier("workspace_id") + " = " + s.dialect.Placeholder(start) + " AND a." + s.dialect.Identifier("source_table") + " = " + s.dialect.Placeholder(start+1) + " AND a." + s.dialect.Identifier("policy_key") + " = " + s.dialect.Placeholder(start+2) + " AND a." + s.dialect.Identifier("resource_id") + " = " + s.dialect.Table(spec.table) + "." + s.dialect.Identifier(spec.idColumn) + ")"
+	where += " AND NOT EXISTS (SELECT 1 FROM " + s.Renderer.Table("notification_retention_archive") + " a WHERE a." + s.Renderer.Identifier("workspace_id") + " = " + s.Renderer.Placeholder(start) + " AND a." + s.Renderer.Identifier("source_table") + " = " + s.Renderer.Placeholder(start+1) + " AND a." + s.Renderer.Identifier("policy_key") + " = " + s.Renderer.Placeholder(start+2) + " AND a." + s.Renderer.Identifier("resource_id") + " = " + s.Renderer.Table(spec.table) + "." + s.Renderer.Identifier(spec.idColumn) + ")"
 	return where, args
 }
 
@@ -226,16 +226,16 @@ func retentionHeld(holds []contract.NotificationRetentionHold, table, resourceID
 
 func (s *Store) archiveRetentionCandidate(ctx context.Context, request contract.NotificationRetentionBatchRequest, spec retentionSpec, resourceID string) (bool, error) {
 	var exists int
-	check := "SELECT COUNT(*) FROM " + s.dialect.Table("notification_retention_archive") + " WHERE " + s.dialect.Identifier("workspace_id") + " = " + s.dialect.Placeholder(1) + " AND " + s.dialect.Identifier("policy_key") + " = " + s.dialect.Placeholder(2) + " AND " + s.dialect.Identifier("source_table") + " = " + s.dialect.Placeholder(3) + " AND " + s.dialect.Identifier("resource_id") + " = " + s.dialect.Placeholder(4)
-	if err := s.database.QueryRowContext(ctx, check, request.WorkspaceID, request.Policy.Key, spec.table, resourceID).Scan(&exists); err != nil || exists > 0 {
+	check := "SELECT COUNT(*) FROM " + s.Renderer.Table("notification_retention_archive") + " WHERE " + s.Renderer.Identifier("workspace_id") + " = " + s.Renderer.Placeholder(1) + " AND " + s.Renderer.Identifier("policy_key") + " = " + s.Renderer.Placeholder(2) + " AND " + s.Renderer.Identifier("source_table") + " = " + s.Renderer.Placeholder(3) + " AND " + s.Renderer.Identifier("resource_id") + " = " + s.Renderer.Placeholder(4)
+	if err := s.Database.QueryRowContext(ctx, check, request.WorkspaceID, request.Policy.Key, spec.table, resourceID).Scan(&exists); err != nil || exists > 0 {
 		return false, err
 	}
-	where, args := s.dialect.Identifier(spec.idColumn)+" = "+s.dialect.Placeholder(1), []any{resourceID}
+	where, args := s.Renderer.Identifier(spec.idColumn)+" = "+s.Renderer.Placeholder(1), []any{resourceID}
 	if spec.workspaceColumn != "" {
-		where = s.dialect.Identifier(spec.workspaceColumn) + " = " + s.dialect.Placeholder(1) + " AND " + s.dialect.Identifier(spec.idColumn) + " = " + s.dialect.Placeholder(2)
+		where = s.Renderer.Identifier(spec.workspaceColumn) + " = " + s.Renderer.Placeholder(1) + " AND " + s.Renderer.Identifier(spec.idColumn) + " = " + s.Renderer.Placeholder(2)
 		args = []any{request.WorkspaceID, resourceID}
 	}
-	rows, err := s.database.QueryContext(ctx, "SELECT * FROM "+s.dialect.Table(spec.table)+" WHERE "+where, args...)
+	rows, err := s.Database.QueryContext(ctx, "SELECT * FROM "+s.Renderer.Table(spec.table)+" WHERE "+where, args...)
 	if err != nil {
 		return false, err
 	}
@@ -268,7 +268,7 @@ func (s *Store) archiveRetentionCandidate(ctx context.Context, request contract.
 	digest := sha256.Sum256(raw)
 	identity := sha256.Sum256([]byte(request.WorkspaceID + "\x00" + request.Policy.Key + "\x00" + spec.table + "\x00" + resourceID))
 	columnsToInsert := []string{"id", "workspace_id", "policy_key", "policy_version", "job_id", "source_table", "resource_id", "payload_hash", "payload_json", "archived_at"}
-	_, err = s.database.ExecContext(ctx, s.dialect.Insert("notification_retention_archive", columnsToInsert), hex.EncodeToString(identity[:]), request.WorkspaceID, request.Policy.Key, request.Policy.Version, request.JobID, spec.table, resourceID, hex.EncodeToString(digest[:]), string(raw), request.Now.UTC().Format(time.RFC3339Nano))
+	_, err = s.Insert(ctx, s.Database, "notification_retention_archive", columnsToInsert, hex.EncodeToString(identity[:]), request.WorkspaceID, request.Policy.Key, request.Policy.Version, request.JobID, spec.table, resourceID, hex.EncodeToString(digest[:]), string(raw), request.Now.UTC().Format(time.RFC3339Nano))
 	if err != nil {
 		return false, fmt.Errorf("archive notification retention candidate %s/%s: %w", spec.table, resourceID, err)
 	}
@@ -276,12 +276,12 @@ func (s *Store) archiveRetentionCandidate(ctx context.Context, request contract.
 }
 
 func (s *Store) deleteRetentionCandidate(ctx context.Context, workspaceID string, spec retentionSpec, resourceID string) (int64, error) {
-	where, args := s.dialect.Identifier(spec.idColumn)+" = "+s.dialect.Placeholder(1), []any{resourceID}
+	where, args := s.Renderer.Identifier(spec.idColumn)+" = "+s.Renderer.Placeholder(1), []any{resourceID}
 	if spec.workspaceColumn != "" {
-		where = s.dialect.Identifier(spec.workspaceColumn) + " = " + s.dialect.Placeholder(1) + " AND " + s.dialect.Identifier(spec.idColumn) + " = " + s.dialect.Placeholder(2)
+		where = s.Renderer.Identifier(spec.workspaceColumn) + " = " + s.Renderer.Placeholder(1) + " AND " + s.Renderer.Identifier(spec.idColumn) + " = " + s.Renderer.Placeholder(2)
 		args = []any{workspaceID, resourceID}
 	}
-	result, err := s.database.ExecContext(ctx, "DELETE FROM "+s.dialect.Table(spec.table)+" WHERE "+where, args...)
+	result, err := s.Database.ExecContext(ctx, "DELETE FROM "+s.Renderer.Table(spec.table)+" WHERE "+where, args...)
 	if err != nil {
 		return 0, err
 	}

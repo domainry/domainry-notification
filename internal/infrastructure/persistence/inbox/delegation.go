@@ -18,10 +18,10 @@ func (s *Store) ListDelegations(ctx context.Context, workspaceID notification.Wo
 		return nil, fmt.Errorf("notification inbox delegation owner identity is required")
 	}
 	ctx = s.workspaceScope.Context(ctx, workspaceID)
-	query := "SELECT " + s.columns(delegationColumns) + " FROM " + s.dialect.Table("notification_inbox_delegations") + " WHERE " +
-		s.dialect.Identifier("workspace_id") + " = " + s.dialect.Placeholder(1) + " AND " + s.dialect.Identifier("owner_user_id") + " = " + s.dialect.Placeholder(2) +
-		" AND " + s.dialect.Identifier("surface") + " = " + s.dialect.Placeholder(3) + " ORDER BY " + s.dialect.Identifier("created_at") + " ASC"
-	rows, err := s.database.QueryContext(ctx, query, workspaceID.String(), ownerID.String(), string(surface))
+	query := "SELECT " + s.columns(delegationColumns) + " FROM " + s.Renderer.Table("notification_inbox_delegations") + " WHERE " +
+		s.Renderer.Identifier("workspace_id") + " = " + s.Renderer.Placeholder(1) + " AND " + s.Renderer.Identifier("owner_user_id") + " = " + s.Renderer.Placeholder(2) +
+		" AND " + s.Renderer.Identifier("surface") + " = " + s.Renderer.Placeholder(3) + " ORDER BY " + s.Renderer.Identifier("created_at") + " ASC"
+	rows, err := s.Database.QueryContext(ctx, query, workspaceID.String(), ownerID.String(), string(surface))
 	if err != nil {
 		return nil, fmt.Errorf("list notification inbox delegations: %w", err)
 	}
@@ -42,12 +42,12 @@ func (s *Store) SaveDelegation(ctx context.Context, value inbox.Delegation) (inb
 		return value, fmt.Errorf("notification inbox delegation identity is required")
 	}
 	ctx = s.workspaceScope.Context(ctx, value.WorkspaceID)
-	query := "UPDATE " + s.dialect.Table("notification_inbox_delegations") + " SET " + s.dialect.Identifier("delegate_user_id") + " = " + s.dialect.Placeholder(1) +
-		", " + s.dialect.Identifier("starts_at") + " = " + s.dialect.Placeholder(2) + ", " + s.dialect.Identifier("ends_at") + " = " + s.dialect.Placeholder(3) +
-		", " + s.dialect.Identifier("enabled") + " = " + s.dialect.Placeholder(4) + ", " + s.dialect.Identifier("updated_at") + " = " + s.dialect.Placeholder(5) +
-		" WHERE " + s.dialect.Identifier("workspace_id") + " = " + s.dialect.Placeholder(6) + " AND " + s.dialect.Identifier("owner_user_id") + " = " + s.dialect.Placeholder(7) +
-		" AND " + s.dialect.Identifier("id") + " = " + s.dialect.Placeholder(8)
-	result, err := s.database.ExecContext(ctx, query, value.DelegateUserID.String(), value.StartsAt, value.EndsAt, value.Enabled, value.UpdatedAt,
+	query := "UPDATE " + s.Renderer.Table("notification_inbox_delegations") + " SET " + s.Renderer.Identifier("delegate_user_id") + " = " + s.Renderer.Placeholder(1) +
+		", " + s.Renderer.Identifier("starts_at") + " = " + s.Renderer.Placeholder(2) + ", " + s.Renderer.Identifier("ends_at") + " = " + s.Renderer.Placeholder(3) +
+		", " + s.Renderer.Identifier("enabled") + " = " + s.Renderer.Placeholder(4) + ", " + s.Renderer.Identifier("updated_at") + " = " + s.Renderer.Placeholder(5) +
+		" WHERE " + s.Renderer.Identifier("workspace_id") + " = " + s.Renderer.Placeholder(6) + " AND " + s.Renderer.Identifier("owner_user_id") + " = " + s.Renderer.Placeholder(7) +
+		" AND " + s.Renderer.Identifier("id") + " = " + s.Renderer.Placeholder(8)
+	result, err := s.Database.ExecContext(ctx, query, value.DelegateUserID.String(), value.StartsAt, value.EndsAt, value.Enabled, value.UpdatedAt,
 		value.WorkspaceID.String(), value.OwnerUserID.String(), value.ID)
 	if err != nil {
 		return value, fmt.Errorf("update notification inbox delegation: %w", err)
@@ -57,7 +57,7 @@ func (s *Store) SaveDelegation(ctx context.Context, value inbox.Delegation) (inb
 		return value, err
 	}
 	if count == 0 {
-		_, err = s.database.ExecContext(ctx, s.dialect.Insert("notification_inbox_delegations", delegationColumns), value.ID, value.WorkspaceID.String(),
+		_, err = s.Insert(ctx, s.Database, "notification_inbox_delegations", delegationColumns, value.ID, value.WorkspaceID.String(),
 			value.OwnerUserID.String(), value.DelegateUserID.String(), string(value.Surface), value.StartsAt, value.EndsAt, value.Enabled, value.CreatedAt, value.UpdatedAt)
 		if err != nil {
 			return value, fmt.Errorf("insert notification inbox delegation: %w", err)
@@ -72,9 +72,9 @@ func (s *Store) DeleteDelegation(ctx context.Context, workspaceID notification.W
 		return false, fmt.Errorf("notification inbox delegation identity is required")
 	}
 	ctx = s.workspaceScope.Context(ctx, workspaceID)
-	query := "DELETE FROM " + s.dialect.Table("notification_inbox_delegations") + " WHERE " + s.dialect.Identifier("workspace_id") + " = " + s.dialect.Placeholder(1) +
-		" AND " + s.dialect.Identifier("owner_user_id") + " = " + s.dialect.Placeholder(2) + " AND " + s.dialect.Identifier("id") + " = " + s.dialect.Placeholder(3)
-	result, err := s.database.ExecContext(ctx, query, workspaceID.String(), ownerID.String(), delegationID)
+	query := "DELETE FROM " + s.Renderer.Table("notification_inbox_delegations") + " WHERE " + s.Renderer.Identifier("workspace_id") + " = " + s.Renderer.Placeholder(1) +
+		" AND " + s.Renderer.Identifier("owner_user_id") + " = " + s.Renderer.Placeholder(2) + " AND " + s.Renderer.Identifier("id") + " = " + s.Renderer.Placeholder(3)
+	result, err := s.Database.ExecContext(ctx, query, workspaceID.String(), ownerID.String(), delegationID)
 	if err != nil {
 		return false, fmt.Errorf("delete notification inbox delegation: %w", err)
 	}
@@ -87,12 +87,12 @@ func (s *Store) ListActiveDelegatedOwnerIDs(ctx context.Context, workspaceID not
 		return nil, fmt.Errorf("notification active delegation query identity is required")
 	}
 	ctx = s.workspaceScope.Context(ctx, workspaceID)
-	query := "SELECT DISTINCT " + s.dialect.Identifier("owner_user_id") + " FROM " + s.dialect.Table("notification_inbox_delegations") + " WHERE " +
-		s.dialect.Identifier("workspace_id") + " = " + s.dialect.Placeholder(1) + " AND " + s.dialect.Identifier("delegate_user_id") + " = " + s.dialect.Placeholder(2) +
-		" AND " + s.dialect.Identifier("surface") + " = " + s.dialect.Placeholder(3) + " AND " + s.dialect.Identifier("enabled") + " = " + s.dialect.Placeholder(4) +
-		" AND (" + s.dialect.Identifier("starts_at") + " = '' OR " + s.dialect.Identifier("starts_at") + " <= " + s.dialect.Placeholder(5) + ") AND (" +
-		s.dialect.Identifier("ends_at") + " = '' OR " + s.dialect.Identifier("ends_at") + " > " + s.dialect.Placeholder(6) + ") ORDER BY " + s.dialect.Identifier("owner_user_id") + " ASC"
-	rows, err := s.database.QueryContext(ctx, query, workspaceID.String(), delegateID.String(), string(surface), true, now, now)
+	query := "SELECT DISTINCT " + s.Renderer.Identifier("owner_user_id") + " FROM " + s.Renderer.Table("notification_inbox_delegations") + " WHERE " +
+		s.Renderer.Identifier("workspace_id") + " = " + s.Renderer.Placeholder(1) + " AND " + s.Renderer.Identifier("delegate_user_id") + " = " + s.Renderer.Placeholder(2) +
+		" AND " + s.Renderer.Identifier("surface") + " = " + s.Renderer.Placeholder(3) + " AND " + s.Renderer.Identifier("enabled") + " = " + s.Renderer.Placeholder(4) +
+		" AND (" + s.Renderer.Identifier("starts_at") + " = '' OR " + s.Renderer.Identifier("starts_at") + " <= " + s.Renderer.Placeholder(5) + ") AND (" +
+		s.Renderer.Identifier("ends_at") + " = '' OR " + s.Renderer.Identifier("ends_at") + " > " + s.Renderer.Placeholder(6) + ") ORDER BY " + s.Renderer.Identifier("owner_user_id") + " ASC"
+	rows, err := s.Database.QueryContext(ctx, query, workspaceID.String(), delegateID.String(), string(surface), true, now, now)
 	if err != nil {
 		return nil, fmt.Errorf("list active notification inbox delegations: %w", err)
 	}

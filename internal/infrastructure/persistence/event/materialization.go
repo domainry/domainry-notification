@@ -38,7 +38,7 @@ func (s *Store) Materialize(ctx context.Context, event inbox.Event, items []inbo
 		return fmt.Errorf("notification materialization requires a claimed event")
 	}
 	ctx = s.workspaceScope.Context(ctx, event.WorkspaceID)
-	tx, err := s.database.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelSerializable})
+	tx, err := s.Database.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelSerializable})
 	if err != nil {
 		return fmt.Errorf("begin notification materialization: %w", err)
 	}
@@ -61,11 +61,11 @@ func (s *Store) Materialize(ctx context.Context, event inbox.Event, items []inbo
 			return err
 		}
 	}
-	query := "UPDATE " + s.dialect.Table("notification_events") + " SET " + s.dialect.Identifier("status") + " = 'materialized', " +
-		s.dialect.Identifier("lease_owner") + " = '', " + s.dialect.Identifier("lease_expires_at") + " = '', " + s.dialect.Identifier("last_error_code") + " = '', " +
-		s.dialect.Identifier("updated_at") + " = " + s.dialect.Placeholder(1) + " WHERE " + s.dialect.Identifier("workspace_id") + " = " + s.dialect.Placeholder(2) +
-		" AND " + s.dialect.Identifier("id") + " = " + s.dialect.Placeholder(3) + " AND " + s.dialect.Identifier("status") + " = 'processing' AND " +
-		s.dialect.Identifier("lease_owner") + " = " + s.dialect.Placeholder(4) + " AND " + s.dialect.Identifier("fencing_token") + " = " + s.dialect.Placeholder(5)
+	query := "UPDATE " + s.Renderer.Table("notification_events") + " SET " + s.Renderer.Identifier("status") + " = 'materialized', " +
+		s.Renderer.Identifier("lease_owner") + " = '', " + s.Renderer.Identifier("lease_expires_at") + " = '', " + s.Renderer.Identifier("last_error_code") + " = '', " +
+		s.Renderer.Identifier("updated_at") + " = " + s.Renderer.Placeholder(1) + " WHERE " + s.Renderer.Identifier("workspace_id") + " = " + s.Renderer.Placeholder(2) +
+		" AND " + s.Renderer.Identifier("id") + " = " + s.Renderer.Placeholder(3) + " AND " + s.Renderer.Identifier("status") + " = 'processing' AND " +
+		s.Renderer.Identifier("lease_owner") + " = " + s.Renderer.Placeholder(4) + " AND " + s.Renderer.Identifier("fencing_token") + " = " + s.Renderer.Placeholder(5)
 	result, err := tx.ExecContext(ctx, query, event.UpdatedAt, event.WorkspaceID.String(), event.ID, event.LeaseOwner, event.FencingToken)
 	if err != nil {
 		return fmt.Errorf("finish notification event: %w", err)
@@ -91,14 +91,14 @@ func (s *Store) transitionAlertGroup(ctx context.Context, tx *sql.Tx, event inbo
 	if event.AlertState == inbox.AlertFiring {
 		increment = 1
 	}
-	update := "UPDATE " + s.dialect.Table("notification_alert_groups") + " SET " + s.dialect.Identifier("state") + " = " + s.dialect.Placeholder(1) + ", " +
-		s.dialect.Identifier("occurrence_count") + " = " + s.dialect.Identifier("occurrence_count") + " + " + fmt.Sprint(increment) + ", " +
-		s.dialect.Identifier("last_occurred_at") + " = " + s.dialect.Placeholder(2) + ", " + s.dialect.Identifier("acknowledged_at") + " = '', " +
-		s.dialect.Identifier("acknowledged_by") + " = '', " + s.dialect.Identifier("resolved_at") + " = " + s.dialect.Placeholder(3) + ", " +
-		s.dialect.Identifier("last_event_id") + " = " + s.dialect.Placeholder(4) + ", " + s.dialect.Identifier("updated_at") + " = " + s.dialect.Placeholder(5) +
-		" WHERE " + s.dialect.Identifier("workspace_id") + " = " + s.dialect.Placeholder(6) + " AND " + s.dialect.Identifier("recipient_user_id") + " = " + s.dialect.Placeholder(7) +
-		" AND " + s.dialect.Identifier("surface") + " = " + s.dialect.Placeholder(8) + " AND " + s.dialect.Identifier("group_key") + " = " + s.dialect.Placeholder(9) +
-		" AND " + s.dialect.Identifier("last_occurred_at") + " <= " + s.dialect.Placeholder(10)
+	update := "UPDATE " + s.Renderer.Table("notification_alert_groups") + " SET " + s.Renderer.Identifier("state") + " = " + s.Renderer.Placeholder(1) + ", " +
+		s.Renderer.Identifier("occurrence_count") + " = " + s.Renderer.Identifier("occurrence_count") + " + " + fmt.Sprint(increment) + ", " +
+		s.Renderer.Identifier("last_occurred_at") + " = " + s.Renderer.Placeholder(2) + ", " + s.Renderer.Identifier("acknowledged_at") + " = '', " +
+		s.Renderer.Identifier("acknowledged_by") + " = '', " + s.Renderer.Identifier("resolved_at") + " = " + s.Renderer.Placeholder(3) + ", " +
+		s.Renderer.Identifier("last_event_id") + " = " + s.Renderer.Placeholder(4) + ", " + s.Renderer.Identifier("updated_at") + " = " + s.Renderer.Placeholder(5) +
+		" WHERE " + s.Renderer.Identifier("workspace_id") + " = " + s.Renderer.Placeholder(6) + " AND " + s.Renderer.Identifier("recipient_user_id") + " = " + s.Renderer.Placeholder(7) +
+		" AND " + s.Renderer.Identifier("surface") + " = " + s.Renderer.Placeholder(8) + " AND " + s.Renderer.Identifier("group_key") + " = " + s.Renderer.Placeholder(9) +
+		" AND " + s.Renderer.Identifier("last_occurred_at") + " <= " + s.Renderer.Placeholder(10)
 	result, err := tx.ExecContext(ctx, update, string(event.AlertState), event.OccurredAt, resolvedAt, event.ID, event.UpdatedAt,
 		event.WorkspaceID.String(), item.RecipientUserID.String(), string(event.Surface), event.GroupKey, event.OccurredAt)
 	if err != nil {
@@ -109,16 +109,16 @@ func (s *Store) transitionAlertGroup(ctx context.Context, tx *sql.Tx, event inbo
 		return err
 	}
 	var exists int
-	lookup := "SELECT COUNT(*) FROM " + s.dialect.Table("notification_alert_groups") + " WHERE " + s.dialect.Identifier("workspace_id") + " = " + s.dialect.Placeholder(1) +
-		" AND " + s.dialect.Identifier("recipient_user_id") + " = " + s.dialect.Placeholder(2) + " AND " + s.dialect.Identifier("surface") + " = " + s.dialect.Placeholder(3) +
-		" AND " + s.dialect.Identifier("group_key") + " = " + s.dialect.Placeholder(4)
+	lookup := "SELECT COUNT(*) FROM " + s.Renderer.Table("notification_alert_groups") + " WHERE " + s.Renderer.Identifier("workspace_id") + " = " + s.Renderer.Placeholder(1) +
+		" AND " + s.Renderer.Identifier("recipient_user_id") + " = " + s.Renderer.Placeholder(2) + " AND " + s.Renderer.Identifier("surface") + " = " + s.Renderer.Placeholder(3) +
+		" AND " + s.Renderer.Identifier("group_key") + " = " + s.Renderer.Placeholder(4)
 	if err := tx.QueryRowContext(ctx, lookup, event.WorkspaceID.String(), item.RecipientUserID.String(), string(event.Surface), event.GroupKey).Scan(&exists); err != nil {
 		return err
 	}
 	if exists == 1 { // a newer transition already won
 		return nil
 	}
-	_, err = tx.ExecContext(ctx, s.dialect.Insert("notification_alert_groups", alertGroupColumns), event.WorkspaceID.String(), item.RecipientUserID.String(), string(event.Surface),
+	_, err = s.Insert(ctx, tx, "notification_alert_groups", alertGroupColumns, event.WorkspaceID.String(), item.RecipientUserID.String(), string(event.Surface),
 		event.GroupKey, string(event.AlertState), increment, event.OccurredAt, event.OccurredAt, "", "", resolvedAt, event.ID, event.UpdatedAt)
 	if err != nil {
 		return fmt.Errorf("insert notification alert group: %w", err)
@@ -139,12 +139,12 @@ func (s *Store) upsertInboxItem(ctx context.Context, tx *sql.Tx, item inbox.Item
 	args := []any{item.EventID, item.EventType, item.Source, item.Category, item.Severity, item.Title, item.Body, inboxSearchText(item), string(raw), item.SubjectType, item.SubjectID, string(item.ActionState), string(item.AlertState), item.LastOccurredAt, item.ExpiresAt, item.UpdatedAt}
 	assignments := make([]string, 0, len(mutable)+1)
 	for index, column := range mutable {
-		assignments = append(assignments, s.dialect.Identifier(column)+" = "+s.dialect.Placeholder(index+1))
+		assignments = append(assignments, s.Renderer.Identifier(column)+" = "+s.Renderer.Placeholder(index+1))
 	}
-	assignments = append(assignments, s.dialect.Identifier("occurrence_count")+" = "+s.dialect.Identifier("occurrence_count")+" + "+fmt.Sprint(increment))
-	query := "UPDATE " + s.dialect.Table("notification_inbox_items") + " SET " + strings.Join(assignments, ", ") + " WHERE " +
-		s.dialect.Identifier("workspace_id") + " = " + s.dialect.Placeholder(17) + " AND " + s.dialect.Identifier("id") + " = " + s.dialect.Placeholder(18) +
-		" AND " + s.dialect.Identifier("last_occurred_at") + " <= " + s.dialect.Placeholder(19)
+	assignments = append(assignments, s.Renderer.Identifier("occurrence_count")+" = "+s.Renderer.Identifier("occurrence_count")+" + "+fmt.Sprint(increment))
+	query := "UPDATE " + s.Renderer.Table("notification_inbox_items") + " SET " + strings.Join(assignments, ", ") + " WHERE " +
+		s.Renderer.Identifier("workspace_id") + " = " + s.Renderer.Placeholder(17) + " AND " + s.Renderer.Identifier("id") + " = " + s.Renderer.Placeholder(18) +
+		" AND " + s.Renderer.Identifier("last_occurred_at") + " <= " + s.Renderer.Placeholder(19)
 	args = append(args, item.WorkspaceID.String(), item.ID, item.LastOccurredAt)
 	result, err := tx.ExecContext(ctx, query, args...)
 	if err != nil {
@@ -155,7 +155,7 @@ func (s *Store) upsertInboxItem(ctx context.Context, tx *sql.Tx, item inbox.Item
 		return err
 	}
 	var exists int
-	lookup := "SELECT COUNT(*) FROM " + s.dialect.Table("notification_inbox_items") + " WHERE " + s.dialect.Identifier("workspace_id") + " = " + s.dialect.Placeholder(1) + " AND " + s.dialect.Identifier("id") + " = " + s.dialect.Placeholder(2)
+	lookup := "SELECT COUNT(*) FROM " + s.Renderer.Table("notification_inbox_items") + " WHERE " + s.Renderer.Identifier("workspace_id") + " = " + s.Renderer.Placeholder(1) + " AND " + s.Renderer.Identifier("id") + " = " + s.Renderer.Placeholder(2)
 	if err := tx.QueryRowContext(ctx, lookup, item.WorkspaceID.String(), item.ID).Scan(&exists); err != nil {
 		return err
 	}
@@ -169,7 +169,7 @@ func (s *Store) upsertInboxItem(ctx context.Context, tx *sql.Tx, item inbox.Item
 	values := []any{item.ID, item.WorkspaceID.String(), item.RecipientUserID.String(), string(item.Surface), item.EventID, item.EventType, item.Source, item.Category, item.Severity,
 		item.Title, item.Body, inboxSearchText(item), string(raw), item.SubjectType, item.SubjectID, string(item.ActionState), string(item.AlertState), item.GroupKey,
 		occurrences, item.FirstOccurredAt, item.LastOccurredAt, item.ReadAt, item.ArchivedAt, item.ExpiresAt, item.CreatedAt, item.UpdatedAt}
-	if _, err := tx.ExecContext(ctx, s.dialect.Insert("notification_inbox_items", inboxItemColumns), values...); err != nil {
+	if _, err := s.Insert(ctx, tx, "notification_inbox_items", inboxItemColumns, values...); err != nil {
 		return fmt.Errorf("insert notification inbox item: %w", err)
 	}
 	return nil
@@ -180,7 +180,7 @@ func (s *Store) insertChannelPlan(ctx context.Context, tx *sql.Tx, plan delivery
 	if err != nil {
 		return fmt.Errorf("encode notification channel plan: %w", err)
 	}
-	_, err = tx.ExecContext(ctx, s.dialect.Insert("notification_channel_plans", channelPlanColumns), plan.ID, plan.WorkspaceID.String(), plan.EventID, plan.Channel,
+	_, err = s.Insert(ctx, tx, "notification_channel_plans", channelPlanColumns, plan.ID, plan.WorkspaceID.String(), plan.EventID, plan.Channel,
 		plan.Status, string(raw), plan.AttemptCount, plan.NextAttemptAt, plan.LastErrorCode, plan.OutboxMessageID, plan.LeaseOwner, plan.LeaseExpiresAt,
 		plan.FencingToken, plan.CreatedAt, plan.UpdatedAt)
 	if err != nil {

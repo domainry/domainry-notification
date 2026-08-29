@@ -5,6 +5,7 @@ import (
 
 	"github.com/domainry/domainry-notification-sdk/modulehost"
 	notification "github.com/domainry/domainry-notification/internal/domain/notification/model"
+	"github.com/domainry/domainry-notification/internal/infrastructure/persistence/base"
 	deliverystore "github.com/domainry/domainry-notification/internal/infrastructure/persistence/delivery"
 	eventstore "github.com/domainry/domainry-notification/internal/infrastructure/persistence/event"
 	inboxstore "github.com/domainry/domainry-notification/internal/infrastructure/persistence/inbox"
@@ -49,19 +50,20 @@ func New(config Config) (*Store, error) {
 	if config.Database == nil || config.Dialect == nil || config.WorkspaceScope == nil || config.QueueScopes == nil || config.Clock == nil {
 		return nil, ErrIncompleteConfig
 	}
+	sqlStore := base.NewSQLStore(config.Database, config.Dialect)
 	return &Store{
 		inboxPersistence: &inboxPersistence{inboxstore.New(inboxstore.Config{
-			Database: config.Database, Dialect: config.Dialect, WorkspaceScope: config.WorkspaceScope, Clock: config.Clock,
+			SQLStore: sqlStore, WorkspaceScope: config.WorkspaceScope, Clock: config.Clock,
 		})},
 		deliveryPersistence: &deliveryPersistence{deliverystore.New(deliverystore.Config{
-			Database: config.Database, Dialect: config.Dialect, WorkspaceScope: config.WorkspaceScope, QueueScopes: config.QueueScopes,
+			SQLStore: sqlStore, WorkspaceScope: config.WorkspaceScope, QueueScopes: config.QueueScopes,
 		})},
 		eventPersistence: &eventPersistence{eventstore.New(eventstore.Config{
-			Database: config.Database, Dialect: config.Dialect, WorkspaceScope: config.WorkspaceScope, QueueScopes: config.QueueScopes,
+			SQLStore: sqlStore, WorkspaceScope: config.WorkspaceScope, QueueScopes: config.QueueScopes,
 		})},
-		templatePersistence:  &templatePersistence{templatestore.New(templatestore.Config{Database: config.Database, Dialect: config.Dialect, Clock: config.Clock})},
-		lifecyclePersistence: &lifecyclePersistence{lifecyclestore.New(lifecyclestore.Config{Database: config.Database, Dialect: config.Dialect})},
-		migrationPersistence: &migrationPersistence{migrationstore.New(migrationstore.Config{Database: config.Database, Dialect: config.Dialect, WorkspaceScope: config.WorkspaceScope})},
+		templatePersistence:  &templatePersistence{templatestore.New(templatestore.Config{SQLStore: sqlStore, Clock: config.Clock})},
+		lifecyclePersistence: &lifecyclePersistence{lifecyclestore.New(lifecyclestore.Config{SQLStore: sqlStore})},
+		migrationPersistence: &migrationPersistence{migrationstore.New(migrationstore.Config{SQLStore: sqlStore, WorkspaceScope: config.WorkspaceScope})},
 	}, nil
 }
 

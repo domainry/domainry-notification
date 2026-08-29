@@ -21,9 +21,9 @@ func (s *Store) ListItems(ctx context.Context, query inbox.Query) ([]inbox.Item,
 	}
 	ctx = s.workspaceScope.Context(ctx, query.WorkspaceID)
 	where, args := s.mailboxWhere(query, true, 1)
-	statement := "SELECT " + s.columns(inboxItemReadColumns) + " FROM " + s.dialect.Table("notification_inbox_items") + " WHERE " + where +
-		" ORDER BY " + s.dialect.Identifier("updated_at") + " DESC, " + s.dialect.Identifier("id") + " DESC LIMIT " + fmt.Sprint(query.Limit+1)
-	rows, err := s.database.QueryContext(ctx, statement, args...)
+	statement := "SELECT " + s.columns(inboxItemReadColumns) + " FROM " + s.Renderer.Table("notification_inbox_items") + " WHERE " + where +
+		" ORDER BY " + s.Renderer.Identifier("updated_at") + " DESC, " + s.Renderer.Identifier("id") + " DESC LIMIT " + fmt.Sprint(query.Limit+1)
+	rows, err := s.Database.QueryContext(ctx, statement, args...)
 	if err != nil {
 		return nil, false, fmt.Errorf("list notification inbox items: %w", err)
 	}
@@ -56,7 +56,7 @@ func (s *Store) GetItem(ctx context.Context, query inbox.Query, itemID string) (
 		return inbox.Item{}, false, fmt.Errorf("notification inbox item id is required")
 	}
 	ctx = s.workspaceScope.Context(ctx, query.WorkspaceID)
-	return s.getInboxItem(ctx, s.database, query, itemID)
+	return s.getInboxItem(ctx, s.Database, query, itemID)
 }
 
 func (s *Store) CountFacets(ctx context.Context, query inbox.Query) (inbox.Facets, error) {
@@ -67,10 +67,10 @@ func (s *Store) CountFacets(ctx context.Context, query inbox.Query) (inbox.Facet
 	ctx = s.workspaceScope.Context(ctx, query.WorkspaceID)
 	where, args := s.mailboxWhere(query, false, 1)
 	result := inbox.Facets{}
-	if err := s.database.QueryRowContext(ctx, "SELECT COUNT(*) FROM "+s.dialect.Table("notification_inbox_items")+" WHERE "+where+" AND "+s.dialect.Identifier("read_at")+" = ''", args...).Scan(&result.Unread); err != nil {
+	if err := s.Database.QueryRowContext(ctx, "SELECT COUNT(*) FROM "+s.Renderer.Table("notification_inbox_items")+" WHERE "+where+" AND "+s.Renderer.Identifier("read_at")+" = ''", args...).Scan(&result.Unread); err != nil {
 		return result, fmt.Errorf("count notification inbox unread: %w", err)
 	}
-	if err := s.database.QueryRowContext(ctx, "SELECT COUNT(*) FROM "+s.dialect.Table("notification_inbox_items")+" WHERE "+where+" AND "+s.dialect.Identifier("action_state")+" = 'open'", args...).Scan(&result.ActionRequired); err != nil {
+	if err := s.Database.QueryRowContext(ctx, "SELECT COUNT(*) FROM "+s.Renderer.Table("notification_inbox_items")+" WHERE "+where+" AND "+s.Renderer.Identifier("action_state")+" = 'open'", args...).Scan(&result.ActionRequired); err != nil {
 		return result, fmt.Errorf("count notification inbox actions: %w", err)
 	}
 	if result.Categories, err = s.mailboxFacetRows(ctx, where, args, "category"); err != nil {
@@ -86,9 +86,9 @@ func (s *Store) CountFacets(ctx context.Context, query inbox.Query) (inbox.Facet
 }
 
 func (s *Store) mailboxFacetRows(ctx context.Context, where string, args []any, column string) ([]inbox.Facet, error) {
-	statement := "SELECT " + s.dialect.Identifier(column) + ", COUNT(*) FROM " + s.dialect.Table("notification_inbox_items") + " WHERE " + where +
-		" GROUP BY " + s.dialect.Identifier(column) + " ORDER BY COUNT(*) DESC, " + s.dialect.Identifier(column) + " ASC"
-	rows, err := s.database.QueryContext(ctx, statement, args...)
+	statement := "SELECT " + s.Renderer.Identifier(column) + ", COUNT(*) FROM " + s.Renderer.Table("notification_inbox_items") + " WHERE " + where +
+		" GROUP BY " + s.Renderer.Identifier(column) + " ORDER BY COUNT(*) DESC, " + s.Renderer.Identifier(column) + " ASC"
+	rows, err := s.Database.QueryContext(ctx, statement, args...)
 	if err != nil {
 		return nil, fmt.Errorf("count notification inbox %s facets: %w", column, err)
 	}
@@ -106,9 +106,9 @@ func (s *Store) mailboxFacetRows(ctx context.Context, where string, args []any, 
 
 func (s *Store) getInboxItem(ctx context.Context, queryer sqlhost.Queryer, query inbox.Query, itemID string) (inbox.Item, bool, error) {
 	clauses, args, position := s.mailboxAccessWhere(query, 1)
-	clauses = append(clauses, s.dialect.Identifier("id")+" = "+s.dialect.Placeholder(position))
+	clauses = append(clauses, s.Renderer.Identifier("id")+" = "+s.Renderer.Placeholder(position))
 	args = append(args, itemID)
-	statement := "SELECT " + s.columns(inboxItemReadColumns) + " FROM " + s.dialect.Table("notification_inbox_items") + " WHERE " + strings.Join(clauses, " AND ")
+	statement := "SELECT " + s.columns(inboxItemReadColumns) + " FROM " + s.Renderer.Table("notification_inbox_items") + " WHERE " + strings.Join(clauses, " AND ")
 	value, err := scanInboxItem(queryer.QueryRowContext(ctx, statement, args...))
 	if errors.Is(err, sql.ErrNoRows) {
 		return inbox.Item{}, false, nil
@@ -120,16 +120,16 @@ func (s *Store) mailboxWhere(query inbox.Query, includeCursor bool, placeholderS
 	clauses, args, position := s.mailboxAccessWhere(query, placeholderStart)
 	switch query.Mailbox {
 	case inbox.MailboxUnread:
-		clauses = append(clauses, s.dialect.Identifier("archived_at")+" = ''", s.dialect.Identifier("read_at")+" = ''")
+		clauses = append(clauses, s.Renderer.Identifier("archived_at")+" = ''", s.Renderer.Identifier("read_at")+" = ''")
 	case inbox.MailboxActionRequired:
-		clauses = append(clauses, s.dialect.Identifier("archived_at")+" = ''", s.dialect.Identifier("action_state")+" = 'open'")
+		clauses = append(clauses, s.Renderer.Identifier("archived_at")+" = ''", s.Renderer.Identifier("action_state")+" = 'open'")
 	case inbox.MailboxArchived:
-		clauses = append(clauses, s.dialect.Identifier("archived_at")+" <> ''")
+		clauses = append(clauses, s.Renderer.Identifier("archived_at")+" <> ''")
 	default:
-		clauses = append(clauses, s.dialect.Identifier("archived_at")+" = ''")
+		clauses = append(clauses, s.Renderer.Identifier("archived_at")+" = ''")
 	}
 	if query.Query != "" {
-		clauses = append(clauses, "LOWER("+s.dialect.Identifier("search_text")+") LIKE "+s.dialect.Placeholder(position))
+		clauses = append(clauses, "LOWER("+s.Renderer.Identifier("search_text")+") LIKE "+s.Renderer.Placeholder(position))
 		args, position = append(args, "%"+strings.ToLower(query.Query)+"%"), position+1
 	}
 	clauses, args, position = appendStringFilter(s, clauses, args, position, "category", query.Categories)
@@ -141,16 +141,16 @@ func (s *Store) mailboxWhere(query inbox.Query, includeCursor bool, placeholderS
 	}
 	clauses, args, position = appendStringFilter(s, clauses, args, position, "action_state", actions)
 	if query.From != "" {
-		clauses = append(clauses, s.dialect.Identifier("last_occurred_at")+" >= "+s.dialect.Placeholder(position))
+		clauses = append(clauses, s.Renderer.Identifier("last_occurred_at")+" >= "+s.Renderer.Placeholder(position))
 		args, position = append(args, query.From), position+1
 	}
 	if query.To != "" {
-		clauses = append(clauses, s.dialect.Identifier("last_occurred_at")+" <= "+s.dialect.Placeholder(position))
+		clauses = append(clauses, s.Renderer.Identifier("last_occurred_at")+" <= "+s.Renderer.Placeholder(position))
 		args, position = append(args, query.To), position+1
 	}
 	if includeCursor && query.BeforeUpdatedAt != "" && query.BeforeID != "" {
-		clauses = append(clauses, "("+s.dialect.Identifier("updated_at")+" < "+s.dialect.Placeholder(position)+" OR ("+
-			s.dialect.Identifier("updated_at")+" = "+s.dialect.Placeholder(position+1)+" AND "+s.dialect.Identifier("id")+" < "+s.dialect.Placeholder(position+2)+"))")
+		clauses = append(clauses, "("+s.Renderer.Identifier("updated_at")+" < "+s.Renderer.Placeholder(position)+" OR ("+
+			s.Renderer.Identifier("updated_at")+" = "+s.Renderer.Placeholder(position+1)+" AND "+s.Renderer.Identifier("id")+" < "+s.Renderer.Placeholder(position+2)+"))")
 		args = append(args, query.BeforeUpdatedAt, query.BeforeUpdatedAt, query.BeforeID)
 	}
 	return strings.Join(clauses, " AND "), args
@@ -159,8 +159,8 @@ func (s *Store) mailboxWhere(query inbox.Query, includeCursor bool, placeholderS
 func (s *Store) mailboxAccessWhere(query inbox.Query, placeholderStart int) ([]string, []any, int) {
 	position := placeholderStart
 	clauses := []string{
-		s.dialect.Identifier("workspace_id") + " = " + s.dialect.Placeholder(position),
-		s.dialect.Identifier("surface") + " = " + s.dialect.Placeholder(position+1),
+		s.Renderer.Identifier("workspace_id") + " = " + s.Renderer.Placeholder(position),
+		s.Renderer.Identifier("surface") + " = " + s.Renderer.Placeholder(position+1),
 	}
 	args := []any{query.WorkspaceID.String(), string(query.Surface)}
 	position += 2
@@ -186,10 +186,10 @@ func appendStringFilter(s *Store, clauses []string, args []any, position int, co
 	}
 	placeholders := make([]string, len(clean))
 	for index, value := range clean {
-		placeholders[index] = s.dialect.Placeholder(position)
+		placeholders[index] = s.Renderer.Placeholder(position)
 		args, position = append(args, value), position+1
 	}
-	clauses = append(clauses, s.dialect.Identifier(column)+" IN ("+strings.Join(placeholders, ", ")+")")
+	clauses = append(clauses, s.Renderer.Identifier(column)+" IN ("+strings.Join(placeholders, ", ")+")")
 	return clauses, args, position
 }
 

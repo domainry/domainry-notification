@@ -16,7 +16,7 @@ import (
 )
 
 func (s *Store) PreviewSubject(ctx context.Context, workspaceID, subjectID string) (json.RawMessage, error) {
-	if s == nil || s.database == nil || strings.TrimSpace(workspaceID) == "" || strings.TrimSpace(subjectID) == "" {
+	if s == nil || s.Database == nil || strings.TrimSpace(workspaceID) == "" || strings.TrimSpace(subjectID) == "" {
 		return nil, fmt.Errorf("notification subject scope is required")
 	}
 	counts := map[string]int64{}
@@ -24,16 +24,16 @@ func (s *Store) PreviewSubject(ctx context.Context, workspaceID, subjectID strin
 		"inbox_items": {"notification_inbox_items", "recipient_user_id"}, "preferences": {"notification_recipient_preferences", "recipient_key"},
 		"delivery_reservations": {"notification_delivery_reservations", "recipient_key"}, "saved_views": {"notification_inbox_saved_views", "recipient_user_id"},
 	} {
-		query := "SELECT COUNT(*) FROM " + s.dialect.Table(tableColumn[0]) + " WHERE " + s.dialect.Identifier("workspace_id") + " = " + s.dialect.Placeholder(1) + " AND " + s.dialect.Identifier(tableColumn[1]) + " = " + s.dialect.Placeholder(2)
+		query := "SELECT COUNT(*) FROM " + s.Renderer.Table(tableColumn[0]) + " WHERE " + s.Renderer.Identifier("workspace_id") + " = " + s.Renderer.Placeholder(1) + " AND " + s.Renderer.Identifier(tableColumn[1]) + " = " + s.Renderer.Placeholder(2)
 		var count int64
-		if err := s.database.QueryRowContext(ctx, query, workspaceID, subjectID).Scan(&count); err != nil {
+		if err := s.Database.QueryRowContext(ctx, query, workspaceID, subjectID).Scan(&count); err != nil {
 			return nil, err
 		}
 		counts[key] = count
 	}
-	query := "SELECT COUNT(*) FROM " + s.dialect.Table("notification_inbox_delegations") + " WHERE " + s.dialect.Identifier("workspace_id") + " = " + s.dialect.Placeholder(1) + " AND (" + s.dialect.Identifier("owner_user_id") + " = " + s.dialect.Placeholder(2) + " OR " + s.dialect.Identifier("delegate_user_id") + " = " + s.dialect.Placeholder(3) + ")"
+	query := "SELECT COUNT(*) FROM " + s.Renderer.Table("notification_inbox_delegations") + " WHERE " + s.Renderer.Identifier("workspace_id") + " = " + s.Renderer.Placeholder(1) + " AND (" + s.Renderer.Identifier("owner_user_id") + " = " + s.Renderer.Placeholder(2) + " OR " + s.Renderer.Identifier("delegate_user_id") + " = " + s.Renderer.Placeholder(3) + ")"
 	var delegations int64
-	if err := s.database.QueryRowContext(ctx, query, workspaceID, subjectID, subjectID).Scan(&delegations); err != nil {
+	if err := s.Database.QueryRowContext(ctx, query, workspaceID, subjectID, subjectID).Scan(&delegations); err != nil {
 		return nil, err
 	}
 	counts["delegations"] = delegations
@@ -41,16 +41,16 @@ func (s *Store) PreviewSubject(ctx context.Context, workspaceID, subjectID strin
 }
 
 func (s *Store) ExportSubject(ctx context.Context, workspaceID, subjectID string) (json.RawMessage, error) {
-	if s == nil || s.database == nil || strings.TrimSpace(workspaceID) == "" || strings.TrimSpace(subjectID) == "" {
+	if s == nil || s.Database == nil || strings.TrimSpace(workspaceID) == "" || strings.TrimSpace(subjectID) == "" {
 		return nil, fmt.Errorf("notification subject scope is required")
 	}
 	columns := []string{"id", "surface", "event_type", "source", "category", "severity", "title", "body", "action_state", "alert_state", "first_occurred_at", "last_occurred_at", "read_at", "archived_at"}
 	quoted := make([]string, len(columns))
 	for i := range columns {
-		quoted[i] = s.dialect.Identifier(columns[i])
+		quoted[i] = s.Renderer.Identifier(columns[i])
 	}
-	query := "SELECT " + strings.Join(quoted, ", ") + " FROM " + s.dialect.Table("notification_inbox_items") + " WHERE " + s.dialect.Identifier("workspace_id") + " = " + s.dialect.Placeholder(1) + " AND " + s.dialect.Identifier("recipient_user_id") + " = " + s.dialect.Placeholder(2) + " ORDER BY " + s.dialect.Identifier("created_at")
-	rows, err := s.database.QueryContext(ctx, query, workspaceID, subjectID)
+	query := "SELECT " + strings.Join(quoted, ", ") + " FROM " + s.Renderer.Table("notification_inbox_items") + " WHERE " + s.Renderer.Identifier("workspace_id") + " = " + s.Renderer.Placeholder(1) + " AND " + s.Renderer.Identifier("recipient_user_id") + " = " + s.Renderer.Placeholder(2) + " ORDER BY " + s.Renderer.Identifier("created_at")
+	rows, err := s.Database.QueryContext(ctx, query, workspaceID, subjectID)
 	if err != nil {
 		return nil, err
 	}
@@ -78,10 +78,10 @@ func (s *Store) ExportSubject(ctx context.Context, workspaceID, subjectID string
 }
 
 func (s *Store) EraseSubject(ctx context.Context, workspaceID, subjectID string, _ json.RawMessage) (json.RawMessage, error) {
-	if s == nil || s.database == nil || strings.TrimSpace(workspaceID) == "" || strings.TrimSpace(subjectID) == "" {
+	if s == nil || s.Database == nil || strings.TrimSpace(workspaceID) == "" || strings.TrimSpace(subjectID) == "" {
 		return nil, fmt.Errorf("notification subject scope is required")
 	}
-	tx, err := s.database.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelSerializable})
+	tx, err := s.Database.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelSerializable})
 	if err != nil {
 		return nil, err
 	}
@@ -125,26 +125,26 @@ func (s *Store) EraseSubject(ctx context.Context, workspaceID, subjectID string,
 		return nil, err
 	}
 	for _, update := range []struct{ key, table, column string }{{"alert_groups", "notification_alert_groups", "recipient_user_id"}, {"delivery_reservations", "notification_delivery_reservations", "recipient_key"}} {
-		query := "UPDATE " + s.dialect.Table(update.table) + " SET " + s.dialect.Identifier(update.column) + " = " + s.dialect.Placeholder(1) + " WHERE " + s.dialect.Identifier("workspace_id") + " = " + s.dialect.Placeholder(2) + " AND " + s.dialect.Identifier(update.column) + " = " + s.dialect.Placeholder(3)
+		query := "UPDATE " + s.Renderer.Table(update.table) + " SET " + s.Renderer.Identifier(update.column) + " = " + s.Renderer.Placeholder(1) + " WHERE " + s.Renderer.Identifier("workspace_id") + " = " + s.Renderer.Placeholder(2) + " AND " + s.Renderer.Identifier(update.column) + " = " + s.Renderer.Placeholder(3)
 		result, updateErr := tx.ExecContext(ctx, query, anonymous, workspaceID, subjectID)
 		if updateErr != nil {
 			return nil, updateErr
 		}
 		changed[update.key], _ = result.RowsAffected()
 	}
-	result, err := tx.ExecContext(ctx, "UPDATE "+s.dialect.Table("notification_alert_groups")+" SET "+s.dialect.Identifier("acknowledged_by")+" = "+s.dialect.Placeholder(1)+" WHERE "+s.dialect.Identifier("workspace_id")+" = "+s.dialect.Placeholder(2)+" AND "+s.dialect.Identifier("acknowledged_by")+" = "+s.dialect.Placeholder(3), anonymous, workspaceID, subjectID)
+	result, err := tx.ExecContext(ctx, "UPDATE "+s.Renderer.Table("notification_alert_groups")+" SET "+s.Renderer.Identifier("acknowledged_by")+" = "+s.Renderer.Placeholder(1)+" WHERE "+s.Renderer.Identifier("workspace_id")+" = "+s.Renderer.Placeholder(2)+" AND "+s.Renderer.Identifier("acknowledged_by")+" = "+s.Renderer.Placeholder(3), anonymous, workspaceID, subjectID)
 	if err != nil {
 		return nil, err
 	}
 	changed["alert_acknowledgements"], _ = result.RowsAffected()
 	for key, tableColumn := range map[string][2]string{"preferences": {"notification_recipient_preferences", "recipient_key"}, "saved_views": {"notification_inbox_saved_views", "recipient_user_id"}, "delegations": {"notification_inbox_delegations", "owner_user_id"}} {
-		condition := s.dialect.Identifier(tableColumn[1]) + " = " + s.dialect.Placeholder(2)
+		condition := s.Renderer.Identifier(tableColumn[1]) + " = " + s.Renderer.Placeholder(2)
 		args := []any{workspaceID, subjectID}
 		if key == "delegations" {
-			condition = "(" + condition + " OR " + s.dialect.Identifier("delegate_user_id") + " = " + s.dialect.Placeholder(3) + ")"
+			condition = "(" + condition + " OR " + s.Renderer.Identifier("delegate_user_id") + " = " + s.Renderer.Placeholder(3) + ")"
 			args = append(args, subjectID)
 		}
-		result, deleteErr := tx.ExecContext(ctx, "DELETE FROM "+s.dialect.Table(tableColumn[0])+" WHERE "+s.dialect.Identifier("workspace_id")+" = "+s.dialect.Placeholder(1)+" AND "+condition, args...)
+		result, deleteErr := tx.ExecContext(ctx, "DELETE FROM "+s.Renderer.Table(tableColumn[0])+" WHERE "+s.Renderer.Identifier("workspace_id")+" = "+s.Renderer.Placeholder(1)+" AND "+condition, args...)
 		if deleteErr != nil {
 			return nil, deleteErr
 		}
@@ -157,7 +157,7 @@ func (s *Store) EraseSubject(ctx context.Context, workspaceID, subjectID string,
 }
 
 func (s *Store) anonymizeInboxItems(ctx context.Context, tx *sql.Tx, workspaceID, subjectID, anonymous string) (int64, error) {
-	query := "SELECT " + s.dialect.Identifier("id") + ", " + s.dialect.Identifier("payload_json") + " FROM " + s.dialect.Table("notification_inbox_items") + " WHERE " + s.dialect.Identifier("workspace_id") + " = " + s.dialect.Placeholder(1) + " AND " + s.dialect.Identifier("recipient_user_id") + " = " + s.dialect.Placeholder(2)
+	query := "SELECT " + s.Renderer.Identifier("id") + ", " + s.Renderer.Identifier("payload_json") + " FROM " + s.Renderer.Table("notification_inbox_items") + " WHERE " + s.Renderer.Identifier("workspace_id") + " = " + s.Renderer.Placeholder(1) + " AND " + s.Renderer.Identifier("recipient_user_id") + " = " + s.Renderer.Placeholder(2)
 	rows, err := tx.QueryContext(ctx, query, workspaceID, subjectID)
 	if err != nil {
 		return 0, err
@@ -182,7 +182,7 @@ func (s *Store) anonymizeInboxItems(ctx context.Context, tx *sql.Tx, workspaceID
 		item.RecipientUserID, item.Title, item.Body, item.Facts, item.Actions = notification.UserID(anonymous), "[erased]", "[erased]", nil, nil
 		item.SubjectID, item.SubjectVersion, item.TemplateContentHash = "", "", ""
 		raw, _ := json.Marshal(item)
-		statement := "UPDATE " + s.dialect.Table("notification_inbox_items") + " SET " + s.dialect.Identifier("recipient_user_id") + " = " + s.dialect.Placeholder(1) + ", " + s.dialect.Identifier("title") + " = '[erased]', " + s.dialect.Identifier("body") + " = '[erased]', " + s.dialect.Identifier("search_text") + " = '', " + s.dialect.Identifier("payload_json") + " = " + s.dialect.Placeholder(2) + ", " + s.dialect.Identifier("subject_id") + " = '' WHERE " + s.dialect.Identifier("workspace_id") + " = " + s.dialect.Placeholder(3) + " AND " + s.dialect.Identifier("id") + " = " + s.dialect.Placeholder(4)
+		statement := "UPDATE " + s.Renderer.Table("notification_inbox_items") + " SET " + s.Renderer.Identifier("recipient_user_id") + " = " + s.Renderer.Placeholder(1) + ", " + s.Renderer.Identifier("title") + " = '[erased]', " + s.Renderer.Identifier("body") + " = '[erased]', " + s.Renderer.Identifier("search_text") + " = '', " + s.Renderer.Identifier("payload_json") + " = " + s.Renderer.Placeholder(2) + ", " + s.Renderer.Identifier("subject_id") + " = '' WHERE " + s.Renderer.Identifier("workspace_id") + " = " + s.Renderer.Placeholder(3) + " AND " + s.Renderer.Identifier("id") + " = " + s.Renderer.Placeholder(4)
 		if _, err := tx.ExecContext(ctx, statement, anonymous, string(raw), workspaceID, value[0]); err != nil {
 			return 0, err
 		}
@@ -191,7 +191,7 @@ func (s *Store) anonymizeInboxItems(ctx context.Context, tx *sql.Tx, workspaceID
 }
 
 func (s *Store) rewritePayloads(ctx context.Context, tx *sql.Tx, table, workspaceID string, rewrite func([]byte) ([]byte, bool, error)) (int64, error) {
-	rows, err := tx.QueryContext(ctx, "SELECT "+s.dialect.Identifier("id")+", "+s.dialect.Identifier("payload_json")+" FROM "+s.dialect.Table(table)+" WHERE "+s.dialect.Identifier("workspace_id")+" = "+s.dialect.Placeholder(1), workspaceID)
+	rows, err := tx.QueryContext(ctx, "SELECT "+s.Renderer.Identifier("id")+", "+s.Renderer.Identifier("payload_json")+" FROM "+s.Renderer.Table(table)+" WHERE "+s.Renderer.Identifier("workspace_id")+" = "+s.Renderer.Placeholder(1), workspaceID)
 	if err != nil {
 		return 0, err
 	}
@@ -212,7 +212,7 @@ func (s *Store) rewritePayloads(ctx context.Context, tx *sql.Tx, table, workspac
 			return changed, rewriteErr
 		}
 		if matched {
-			if _, err := tx.ExecContext(ctx, "UPDATE "+s.dialect.Table(table)+" SET "+s.dialect.Identifier("payload_json")+" = "+s.dialect.Placeholder(1)+" WHERE "+s.dialect.Identifier("workspace_id")+" = "+s.dialect.Placeholder(2)+" AND "+s.dialect.Identifier("id")+" = "+s.dialect.Placeholder(3), string(raw), workspaceID, value[0]); err != nil {
+			if _, err := tx.ExecContext(ctx, "UPDATE "+s.Renderer.Table(table)+" SET "+s.Renderer.Identifier("payload_json")+" = "+s.Renderer.Placeholder(1)+" WHERE "+s.Renderer.Identifier("workspace_id")+" = "+s.Renderer.Placeholder(2)+" AND "+s.Renderer.Identifier("id")+" = "+s.Renderer.Placeholder(3), string(raw), workspaceID, value[0]); err != nil {
 				return changed, err
 			}
 			changed++

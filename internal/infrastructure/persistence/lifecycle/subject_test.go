@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"testing"
 
+	"github.com/domainry/domainry-notification/internal/infrastructure/persistence/base"
 	lifecyclestore "github.com/domainry/domainry-notification/internal/infrastructure/persistence/lifecycle"
 	ormdialect "github.com/domainry/domainry-orm/dialect"
 )
@@ -17,7 +18,7 @@ func TestSubjectLifecyclePreviewExportAndEraseOwnedRows(t *testing.T) {
 		t.Fatal(err)
 	}
 	dialect, _ := ormdialect.ParseRenderer("sqlite", "", "")
-	store := lifecyclestore.New(lifecyclestore.Config{Database: database, Dialect: dialect})
+	store := lifecyclestore.New(lifecyclestore.Config{SQLStore: base.NewSQLStore(database, dialect)})
 	preview, err := store.PreviewSubject(t.Context(), "workspace", "user")
 	if err != nil {
 		t.Fatal(err)
