@@ -39,7 +39,7 @@ func (s *Store) seedPublishedTemplate(ctx context.Context, value template.Templa
 	}
 	defer tx.Rollback()
 	var exists int
-	lookup, args, err := builder.NewSelectBuilder(s.Renderer, "notification_template_records").Projections(builder.Project(builder.CountAll())).Where(builder.Equal("template_key", value.Key)).Build()
+	lookup, args, err := builder.NewSelectBuilder(s.Renderer, "_notification_templates").Projections(builder.Project(builder.CountAll())).Where(builder.Equal("template_key", value.Key)).Build()
 	if err != nil {
 		return err
 	}
@@ -54,7 +54,7 @@ func (s *Store) seedPublishedTemplate(ctx context.Context, value template.Templa
 		return fmt.Errorf("encode notification template seed: %w", err)
 	}
 	now := notification.Timestamp(s.clock.Now())
-	_, err = s.Insert(ctx, tx, "notification_template_records", templateRecordColumns, value.Key, nil, string(raw), value.Version, "active", "manifest", now, now)
+	_, err = s.Insert(ctx, tx, "_notification_templates", templateRecordColumns, value.Key, nil, string(raw), value.Version, "active", "manifest", now, now)
 	if err != nil {
 		return fmt.Errorf("insert notification template seed: %w", err)
 	}
@@ -65,7 +65,7 @@ func (s *Store) seedPublishedTemplate(ctx context.Context, value template.Templa
 }
 
 func (s *Store) List(ctx context.Context) ([]template.Record, error) {
-	query, args, err := builder.NewSelectBuilder(s.Renderer, "notification_template_records").Columns(templateRecordColumns...).OrderBy(builder.Ascending("template_key")).Build()
+	query, args, err := builder.NewSelectBuilder(s.Renderer, "_notification_templates").Columns(templateRecordColumns...).OrderBy(builder.Ascending("template_key")).Build()
 	if err != nil {
 		return nil, err
 	}
@@ -86,7 +86,7 @@ func (s *Store) List(ctx context.Context) ([]template.Record, error) {
 }
 
 func (s *Store) PublishedRevision(ctx context.Context) (string, error) {
-	query, args, err := builder.NewSelectBuilder(s.Renderer, "notification_template_records").Projections(builder.Project(builder.CountAll()), builder.Project(builder.Max(builder.Column("updated_at")))).Where(builder.And(builder.Equal("status", "active"), builder.IsNotNull("published_json"))).Build()
+	query, args, err := builder.NewSelectBuilder(s.Renderer, "_notification_templates").Projections(builder.Project(builder.CountAll()), builder.Project(builder.Max(builder.Column("updated_at")))).Where(builder.And(builder.Equal("status", "active"), builder.IsNotNull("published_json"))).Build()
 	if err != nil {
 		return "", err
 	}
@@ -103,7 +103,7 @@ func (s *Store) Get(ctx context.Context, key string) (template.Record, bool, err
 	if key == "" {
 		return template.Record{}, false, fmt.Errorf("notification template key is required")
 	}
-	query, args, err := builder.NewSelectBuilder(s.Renderer, "notification_template_records").Columns(templateRecordColumns...).Where(builder.Equal("template_key", key)).Build()
+	query, args, err := builder.NewSelectBuilder(s.Renderer, "_notification_templates").Columns(templateRecordColumns...).Where(builder.Equal("template_key", key)).Build()
 	if err != nil {
 		return template.Record{}, false, err
 	}
@@ -116,7 +116,7 @@ func (s *Store) Get(ctx context.Context, key string) (template.Record, bool, err
 
 func (s *Store) ListVersions(ctx context.Context, key string) ([]template.Version, error) {
 	key = strings.TrimSpace(key)
-	query, args, err := builder.NewSelectBuilder(s.Renderer, "notification_template_versions").Columns(templateVersionColumns...).Where(builder.Equal("template_key", key)).OrderBy(builder.Descending("version")).Build()
+	query, args, err := builder.NewSelectBuilder(s.Renderer, "_notification_template_versions").Columns(templateVersionColumns...).Where(builder.Equal("template_key", key)).OrderBy(builder.Descending("version")).Build()
 	if err != nil {
 		return nil, err
 	}
@@ -137,7 +137,7 @@ func (s *Store) ListVersions(ctx context.Context, key string) ([]template.Versio
 }
 
 func (s *Store) GetVersion(ctx context.Context, key string, version int) (template.Version, bool, error) {
-	query, args, err := builder.NewSelectBuilder(s.Renderer, "notification_template_versions").Columns(templateVersionColumns...).Where(builder.And(builder.Equal("template_key", strings.TrimSpace(key)), builder.Equal("version", version))).Build()
+	query, args, err := builder.NewSelectBuilder(s.Renderer, "_notification_template_versions").Columns(templateVersionColumns...).Where(builder.And(builder.Equal("template_key", strings.TrimSpace(key)), builder.Equal("version", version))).Build()
 	if err != nil {
 		return template.Version{}, false, err
 	}
@@ -162,7 +162,7 @@ func (s *Store) SaveDraft(ctx context.Context, value template.Template, expected
 	if expectedUpdatedAt != "" {
 		predicate = builder.And(predicate, builder.Equal("updated_at", expectedUpdatedAt))
 	}
-	query, args, err := builder.NewUpdateBuilder(s.Renderer, "notification_template_records").Set("draft_json", string(raw)).Set("status", "active").Set("updated_by", actor).Set("updated_at", now).Where(predicate).Build()
+	query, args, err := builder.NewUpdateBuilder(s.Renderer, "_notification_templates").Set("draft_json", string(raw)).Set("status", "active").Set("updated_by", actor).Set("updated_at", now).Where(predicate).Build()
 	if err != nil {
 		return template.Record{}, err
 	}
@@ -178,7 +178,7 @@ func (s *Store) SaveDraft(ctx context.Context, value template.Template, expected
 		return template.Record{}, template.ErrRecordConflict
 	}
 	if count == 0 {
-		_, err = s.Insert(ctx, s.Database, "notification_template_records", templateRecordColumns, value.Key, string(raw), nil, 0, "active", actor, now, now)
+		_, err = s.Insert(ctx, s.Database, "_notification_templates", templateRecordColumns, value.Key, string(raw), nil, 0, "active", actor, now, now)
 		if err != nil {
 			return template.Record{}, fmt.Errorf("insert notification template draft: %w", err)
 		}
@@ -214,7 +214,7 @@ func (s *Store) Publish(ctx context.Context, value template.Template, expectedUp
 	if expectedUpdatedAt != "" {
 		predicate = builder.And(predicate, builder.Equal("updated_at", expectedUpdatedAt))
 	}
-	query, args, err := builder.NewUpdateBuilder(s.Renderer, "notification_template_records").Set("draft_json", nil).Set("published_json", string(raw)).Set("published_version", value.Version).Set("status", "active").Set("updated_by", actor).Set("updated_at", now).Where(predicate).Build()
+	query, args, err := builder.NewUpdateBuilder(s.Renderer, "_notification_templates").Set("draft_json", nil).Set("published_json", string(raw)).Set("published_version", value.Version).Set("status", "active").Set("updated_by", actor).Set("updated_at", now).Where(predicate).Build()
 	if err != nil {
 		return template.Record{}, err
 	}
@@ -255,7 +255,7 @@ func (s *Store) Disable(ctx context.Context, key, expectedUpdatedAt, actor strin
 	if expectedUpdatedAt != "" {
 		predicate = builder.And(predicate, builder.Equal("updated_at", expectedUpdatedAt))
 	}
-	query, args, err := builder.NewUpdateBuilder(s.Renderer, "notification_template_records").Set("status", "disabled").Set("updated_by", actor).Set("updated_at", now).Where(predicate).Build()
+	query, args, err := builder.NewUpdateBuilder(s.Renderer, "_notification_templates").Set("status", "disabled").Set("updated_by", actor).Set("updated_at", now).Where(predicate).Build()
 	if err != nil {
 		return template.Record{}, err
 	}
@@ -285,7 +285,7 @@ func (s *Store) insertTemplateVersion(ctx context.Context, executor sqlhost.Exec
 		return fmt.Errorf("encode notification template version: %w", err)
 	}
 	columns := []string{"id", "template_key", "version", "payload_json", "content_hash", "published_by", "published_at"}
-	_, err = s.Insert(ctx, executor, "notification_template_versions", columns, fmt.Sprintf("%s:%d", value.Key, value.Version), value.Key,
+	_, err = s.Insert(ctx, executor, "_notification_template_versions", columns, fmt.Sprintf("%s:%d", value.Key, value.Version), value.Key,
 		value.Version, string(raw), value.ContentHash, actor, publishedAt)
 	if err != nil {
 		return fmt.Errorf("insert notification template version: %w", err)

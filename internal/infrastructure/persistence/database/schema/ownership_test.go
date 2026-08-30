@@ -25,16 +25,16 @@ func TestSchemaOwnershipSeparatesSystemAndWorkspaceState(t *testing.T) {
 		}
 	}
 	wantSystem := []string{
-		"notification_delivery_policy",
-		"notification_template_publication_locks",
-		"notification_template_publication_requests",
-		"notification_template_records",
-		"notification_template_versions",
+		"_notification_delivery_policies",
+		"_notification_template_publication_locks",
+		"_notification_template_publication_requests",
+		"_notification_template_versions",
+		"_notification_templates",
 	}
 	if !slices.Equal(system, wantSystem) {
 		t.Fatalf("system tables=%v", system)
 	}
-	if len(workspace) != 11 || !slices.Contains(workspace, "notification_retention_archive") || !slices.Contains(workspace, "notification_migration_controls") {
+	if len(workspace) != 11 || !slices.Contains(workspace, "_notification_retention_archive_entries") || !slices.Contains(workspace, "_notification_migration_controls") {
 		t.Fatalf("workspace tables=%v", workspace)
 	}
 	flat := schema.OwnedTables()

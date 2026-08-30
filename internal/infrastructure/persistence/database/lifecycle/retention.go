@@ -22,14 +22,14 @@ type retentionSpec struct {
 
 func (s *Store) retentionSpecs(policyKey string) []retentionSpec {
 	specs := []retentionSpec{
-		{policyKey: contract.NotificationRetentionHistoryPolicy, table: "notification_inbox_items", idColumn: "id", workspaceColumn: "workspace_id", timeColumn: "updated_at", additionalPredicate: builder.And(builder.NotEqual("action_state", "open"), builder.NotEqual("alert_state", "firing"))},
-		{policyKey: contract.NotificationRetentionHistoryPolicy, table: "notification_alert_groups", idColumn: "last_event_id", workspaceColumn: "workspace_id", timeColumn: "updated_at", statusColumn: "state", eligibleStatuses: []string{"resolved"}},
-		{policyKey: contract.NotificationRetentionHistoryPolicy, table: "notification_channel_plans", idColumn: "id", workspaceColumn: "workspace_id", timeColumn: "updated_at", statusColumn: "status", eligibleStatuses: []string{"planned", "failed", "cancelled"}},
-		{policyKey: contract.NotificationRetentionHistoryPolicy, table: "notification_events", idColumn: "id", workspaceColumn: "workspace_id", timeColumn: "updated_at", statusColumn: "status", eligibleStatuses: []string{"materialized", "failed"}},
-		{policyKey: contract.NotificationRetentionHistoryPolicy, table: "notification_event_failures", idColumn: "id", workspaceColumn: "workspace_id", timeColumn: "occurred_at"},
-		{policyKey: contract.NotificationRetentionHistoryPolicy, table: "notification_delivery_reservations", idColumn: "id", workspaceColumn: "workspace_id", timeColumn: "created_at"},
-		{policyKey: contract.NotificationRetentionPublicationPolicy, table: "notification_template_versions", idColumn: "id", timeColumn: "published_at", additionalPredicate: builder.LessThanExpressions(builder.TableColumn("notification_template_versions", "version"), builder.Coalesce(builder.ScalarSubquery("notification_template_records", builder.Column("published_version"), builder.EqualExpressions(builder.TableColumn("notification_template_records", "template_key"), builder.TableColumn("notification_template_versions", "template_key"))), builder.TableColumn("notification_template_versions", "version")))},
-		{policyKey: contract.NotificationRetentionPublicationPolicy, table: "notification_template_publication_requests", idColumn: "id", timeColumn: "updated_at", statusColumn: "status", eligibleStatuses: []string{"published", "rejected", "failed", "cancelled"}, referenceTable: "notification_template_publication_locks", referenceColumn: "request_id"},
+		{policyKey: contract.NotificationRetentionHistoryPolicy, table: "_notification_inbox_items", idColumn: "id", workspaceColumn: "workspace_id", timeColumn: "updated_at", additionalPredicate: builder.And(builder.NotEqual("action_state", "open"), builder.NotEqual("alert_state", "firing"))},
+		{policyKey: contract.NotificationRetentionHistoryPolicy, table: "_notification_alert_groups", idColumn: "last_event_id", workspaceColumn: "workspace_id", timeColumn: "updated_at", statusColumn: "state", eligibleStatuses: []string{"resolved"}},
+		{policyKey: contract.NotificationRetentionHistoryPolicy, table: "_notification_channel_plans", idColumn: "id", workspaceColumn: "workspace_id", timeColumn: "updated_at", statusColumn: "status", eligibleStatuses: []string{"planned", "failed", "cancelled"}},
+		{policyKey: contract.NotificationRetentionHistoryPolicy, table: "_notification_events", idColumn: "id", workspaceColumn: "workspace_id", timeColumn: "updated_at", statusColumn: "status", eligibleStatuses: []string{"materialized", "failed"}},
+		{policyKey: contract.NotificationRetentionHistoryPolicy, table: "_notification_event_failures", idColumn: "id", workspaceColumn: "workspace_id", timeColumn: "occurred_at"},
+		{policyKey: contract.NotificationRetentionHistoryPolicy, table: "_notification_delivery_reservations", idColumn: "id", workspaceColumn: "workspace_id", timeColumn: "created_at"},
+		{policyKey: contract.NotificationRetentionPublicationPolicy, table: "_notification_template_versions", idColumn: "id", timeColumn: "published_at", additionalPredicate: builder.LessThanExpressions(builder.TableColumn("_notification_template_versions", "version"), builder.Coalesce(builder.ScalarSubquery("_notification_templates", builder.Column("published_version"), builder.EqualExpressions(builder.TableColumn("_notification_templates", "template_key"), builder.TableColumn("_notification_template_versions", "template_key"))), builder.TableColumn("_notification_template_versions", "version")))},
+		{policyKey: contract.NotificationRetentionPublicationPolicy, table: "_notification_template_publication_requests", idColumn: "id", timeColumn: "updated_at", statusColumn: "status", eligibleStatuses: []string{"published", "rejected", "failed", "cancelled"}, referenceTable: "_notification_template_publication_locks", referenceColumn: "request_id"},
 	}
 	result := []retentionSpec{}
 	for _, spec := range specs {
@@ -209,8 +209,8 @@ func (s *Store) retentionPredicate(spec retentionSpec, cutoff time.Time) builder
 }
 
 func (s *Store) excludeArchived(predicate builder.Predicate, spec retentionSpec, workspaceID, policyKey string) builder.Predicate {
-	archive := builder.And(builder.Equal("workspace_id", workspaceID), builder.Equal("source_table", spec.table), builder.Equal("policy_key", policyKey), builder.EqualExpressions(builder.TableColumn("notification_retention_archive", "resource_id"), builder.TableColumn(spec.table, spec.idColumn)))
-	return builder.And(predicate, builder.NotExists("notification_retention_archive", archive))
+	archive := builder.And(builder.Equal("workspace_id", workspaceID), builder.Equal("source_table", spec.table), builder.Equal("policy_key", policyKey), builder.EqualExpressions(builder.TableColumn("_notification_retention_archive_entries", "resource_id"), builder.TableColumn(spec.table, spec.idColumn)))
+	return builder.And(predicate, builder.NotExists("_notification_retention_archive_entries", archive))
 }
 
 func retentionHeld(holds []contract.NotificationRetentionHold, table, resourceID string, now time.Time) bool {
@@ -227,7 +227,7 @@ func retentionHeld(holds []contract.NotificationRetentionHold, table, resourceID
 
 func (s *Store) archiveRetentionCandidate(ctx context.Context, request contract.NotificationRetentionBatchRequest, spec retentionSpec, resourceID string) (bool, error) {
 	var exists int
-	check, checkArgs, err := builder.NewWorkspaceSelectBuilder(s.Renderer, "notification_retention_archive", request.WorkspaceID).Projections(builder.Project(builder.CountAll())).Where(builder.And(builder.Equal("policy_key", request.Policy.Key), builder.Equal("source_table", spec.table), builder.Equal("resource_id", resourceID))).Build()
+	check, checkArgs, err := builder.NewWorkspaceSelectBuilder(s.Renderer, "_notification_retention_archive_entries", request.WorkspaceID).Projections(builder.Project(builder.CountAll())).Where(builder.And(builder.Equal("policy_key", request.Policy.Key), builder.Equal("source_table", spec.table), builder.Equal("resource_id", resourceID))).Build()
 	if err != nil {
 		return false, err
 	}
@@ -276,7 +276,7 @@ func (s *Store) archiveRetentionCandidate(ctx context.Context, request contract.
 	digest := sha256.Sum256(raw)
 	identity := sha256.Sum256([]byte(request.WorkspaceID + "\x00" + request.Policy.Key + "\x00" + spec.table + "\x00" + resourceID))
 	columnsToInsert := []string{"id", "workspace_id", "policy_key", "policy_version", "job_id", "source_table", "resource_id", "payload_hash", "payload_json", "archived_at"}
-	_, err = s.WorkspaceInsert(ctx, s.Database, request.WorkspaceID, "notification_retention_archive", columnsToInsert, hex.EncodeToString(identity[:]), request.WorkspaceID, request.Policy.Key, request.Policy.Version, request.JobID, spec.table, resourceID, hex.EncodeToString(digest[:]), string(raw), request.Now.UTC().Format(time.RFC3339Nano))
+	_, err = s.WorkspaceInsert(ctx, s.Database, request.WorkspaceID, "_notification_retention_archive_entries", columnsToInsert, hex.EncodeToString(identity[:]), request.WorkspaceID, request.Policy.Key, request.Policy.Version, request.JobID, spec.table, resourceID, hex.EncodeToString(digest[:]), string(raw), request.Now.UTC().Format(time.RFC3339Nano))
 	if err != nil {
 		return false, fmt.Errorf("archive notification retention candidate %s/%s: %w", spec.table, resourceID, err)
 	}

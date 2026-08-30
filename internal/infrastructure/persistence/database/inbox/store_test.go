@@ -78,7 +78,7 @@ func claimedEvent() inbox.Event {
 func insertClaimedEvent(t *testing.T, database *sql.DB, event inbox.Event) {
 	t.Helper()
 	raw := `{"id":"event-1"}`
-	_, err := database.Exec(`INSERT INTO notification_events VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, event.ID, event.WorkspaceID, event.Source, event.SourceEventID, event.Status, raw, 0, "", "", event.LeaseOwner, "", event.FencingToken, event.OccurredAt, event.CreatedAt, event.UpdatedAt)
+	_, err := database.Exec(`INSERT INTO _notification_events VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, event.ID, event.WorkspaceID, event.Source, event.SourceEventID, event.Status, raw, 0, "", "", event.LeaseOwner, "", event.FencingToken, event.OccurredAt, event.CreatedAt, event.UpdatedAt)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -116,7 +116,7 @@ func (s *Store) ListDue(ctx context.Context, now string, limit int) ([]inbox.Eve
 
 func (s *Store) listDueForWorkspace(ctx context.Context, workspaceID notification.WorkspaceID, now string, limit int) ([]inbox.Event, error) {
 	due := builder.Or(builder.And(builder.Equal("status", "queued"), builder.Or(builder.Equal("next_attempt_at", ""), builder.LessThanOrEqual("next_attempt_at", now))), builder.And(builder.Equal("status", "processing"), builder.LessThanOrEqual("lease_expires_at", now)))
-	query, args, err := builder.NewWorkspaceSelectBuilder(s.Renderer, "notification_events", workspaceID.String()).Columns(eventColumns...).Where(due).OrderBy(builder.Ascending("occurred_at")).Limit(limit).Build()
+	query, args, err := builder.NewWorkspaceSelectBuilder(s.Renderer, "_notification_events", workspaceID.String()).Columns(eventColumns...).Where(due).OrderBy(builder.Ascending("occurred_at")).Limit(limit).Build()
 	if err != nil {
 		return nil, err
 	}
@@ -143,7 +143,7 @@ func (s *Store) Claim(ctx context.Context, workspaceID notification.WorkspaceID,
 	}
 	ctx = s.workspaceScope.Context(ctx, workspaceID)
 	due := builder.Or(builder.And(builder.Equal("status", "queued"), builder.Or(builder.Equal("next_attempt_at", ""), builder.LessThanOrEqual("next_attempt_at", now))), builder.And(builder.Equal("status", "processing"), builder.LessThanOrEqual("lease_expires_at", now)))
-	query, args, err := builder.NewWorkspaceUpdateBuilder(s.Renderer, "notification_events", workspaceID.String()).Set("status", "processing").Set("lease_owner", owner).Set("lease_expires_at", expiresAt).SetExpression("fencing_token", builder.Add(builder.Column("fencing_token"), builder.Value(1))).Set("updated_at", now).Where(builder.And(builder.Equal("id", eventID), due)).Build()
+	query, args, err := builder.NewWorkspaceUpdateBuilder(s.Renderer, "_notification_events", workspaceID.String()).Set("status", "processing").Set("lease_owner", owner).Set("lease_expires_at", expiresAt).SetExpression("fencing_token", builder.Add(builder.Column("fencing_token"), builder.Value(1))).Set("updated_at", now).Where(builder.And(builder.Equal("id", eventID), due)).Build()
 	if err != nil {
 		return inbox.Event{}, false, err
 	}
@@ -177,7 +177,7 @@ func (s *Store) transitionFailure(ctx context.Context, event inbox.Event, status
 		return err
 	}
 	defer tx.Rollback()
-	query, args, err := builder.NewWorkspaceUpdateBuilder(s.Renderer, "notification_events", event.WorkspaceID.String()).Set("status", string(status)).SetExpression("attempt_count", builder.Add(builder.Column("attempt_count"), builder.Value(1))).Set("next_attempt_at", strings.TrimSpace(nextAttemptAt)).Set("last_error_code", errorCode).Set("lease_owner", "").Set("lease_expires_at", "").Set("updated_at", strings.TrimSpace(updatedAt)).Where(builder.And(builder.Equal("id", event.ID), builder.Equal("status", "processing"), builder.Equal("lease_owner", event.LeaseOwner), builder.Equal("fencing_token", event.FencingToken))).Build()
+	query, args, err := builder.NewWorkspaceUpdateBuilder(s.Renderer, "_notification_events", event.WorkspaceID.String()).Set("status", string(status)).SetExpression("attempt_count", builder.Add(builder.Column("attempt_count"), builder.Value(1))).Set("next_attempt_at", strings.TrimSpace(nextAttemptAt)).Set("last_error_code", errorCode).Set("lease_owner", "").Set("lease_expires_at", "").Set("updated_at", strings.TrimSpace(updatedAt)).Where(builder.And(builder.Equal("id", event.ID), builder.Equal("status", "processing"), builder.Equal("lease_owner", event.LeaseOwner), builder.Equal("fencing_token", event.FencingToken))).Build()
 	if err != nil {
 		return err
 	}
@@ -203,7 +203,7 @@ func (s *Store) transitionFailure(ctx context.Context, event inbox.Event, status
 		NextAttemptAt: strings.TrimSpace(nextAttemptAt), FencingToken: event.FencingToken, OccurredAt: strings.TrimSpace(updatedAt),
 	}
 	columns := []string{"id", "workspace_id", "event_id", "event_type", "source", "source_event_id", "stage", "error_code", "attempt", "disposition", "retryable", "next_attempt_at", "fencing_token", "occurred_at"}
-	_, err = s.WorkspaceInsert(ctx, tx, failure.WorkspaceID.String(), "notification_event_failures", columns, failure.ID, failure.WorkspaceID.String(), failure.EventID, failure.EventType, failure.Source, failure.SourceEventID, failure.Stage, failure.ErrorCode, failure.Attempt, failure.Disposition, retryable, failure.NextAttemptAt, failure.FencingToken, failure.OccurredAt)
+	_, err = s.WorkspaceInsert(ctx, tx, failure.WorkspaceID.String(), "_notification_event_failures", columns, failure.ID, failure.WorkspaceID.String(), failure.EventID, failure.EventType, failure.Source, failure.SourceEventID, failure.Stage, failure.ErrorCode, failure.Attempt, failure.Disposition, retryable, failure.NextAttemptAt, failure.FencingToken, failure.OccurredAt)
 	if err != nil {
 		return fmt.Errorf("record notification event failure: %w", err)
 	}
@@ -212,7 +212,7 @@ func (s *Store) transitionFailure(ctx context.Context, event inbox.Event, status
 
 func (s *Store) eventByID(ctx context.Context, workspaceID notification.WorkspaceID, eventID string) (inbox.Event, bool, error) {
 	ctx = s.workspaceScope.Context(ctx, workspaceID)
-	query, args, err := builder.NewWorkspaceSelectBuilder(s.Renderer, "notification_events", workspaceID.String()).Columns(eventColumns...).Where(builder.Equal("id", strings.TrimSpace(eventID))).Build()
+	query, args, err := builder.NewWorkspaceSelectBuilder(s.Renderer, "_notification_events", workspaceID.String()).Columns(eventColumns...).Where(builder.Equal("id", strings.TrimSpace(eventID))).Build()
 	if err != nil {
 		return inbox.Event{}, false, err
 	}
@@ -225,7 +225,7 @@ func (s *Store) eventByID(ctx context.Context, workspaceID notification.Workspac
 
 func (s *Store) eventBySource(ctx context.Context, workspaceID notification.WorkspaceID, source, sourceEventID string) (inbox.Event, bool, error) {
 	ctx = s.workspaceScope.Context(ctx, workspaceID)
-	query, args, err := builder.NewWorkspaceSelectBuilder(s.Renderer, "notification_events", workspaceID.String()).Columns(eventColumns...).Where(builder.And(builder.Equal("source", strings.TrimSpace(source)), builder.Equal("source_event_id", strings.TrimSpace(sourceEventID)))).Build()
+	query, args, err := builder.NewWorkspaceSelectBuilder(s.Renderer, "_notification_events", workspaceID.String()).Columns(eventColumns...).Where(builder.And(builder.Equal("source", strings.TrimSpace(source)), builder.Equal("source_event_id", strings.TrimSpace(sourceEventID)))).Build()
 	if err != nil {
 		return inbox.Event{}, false, err
 	}
@@ -238,7 +238,7 @@ func (s *Store) eventBySource(ctx context.Context, workspaceID notification.Work
 
 // EventCommitted reports whether the exact source identity has already been
 // durably accepted. It keeps replay checks behind Notification's store
-// ownership instead of exposing notification_events SQL to a Module host.
+// ownership instead of exposing _notification_events SQL to a Module host.
 func (s *Store) EventCommitted(ctx context.Context, workspaceID notification.WorkspaceID, source, sourceEventID string) (bool, error) {
 	_, found, err := s.eventBySource(ctx, workspaceID, source, sourceEventID)
 	return found, err

@@ -49,7 +49,7 @@ func SchemaMigrations(profile Profile, dialect modulehost.Dialect, tablePrefix s
 	}
 	return []SchemaMigration{
 		{Version: 1, Name: "create_notification_schema", Statements: statements},
-		{Version: 2, Name: "create_notification_retention_archive", Statements: retentionStatements},
+		{Version: 2, Name: "create_notification_retention_archive_entries", Statements: retentionStatements},
 		{Version: 3, Name: "create_notification_migration_control", Statements: migrationControlStatements},
 	}, nil
 }
@@ -109,7 +109,7 @@ func ApplicationSchemaMigrations(profile Profile, dialect modulehost.Dialect, ta
 	}
 	return []SchemaMigration{
 		{Version: 1, Name: "create_application_schema", Statements: statements},
-		{Version: 2, Name: "create_notification_retention_archive", Statements: retentionStatements},
+		{Version: 2, Name: "create_notification_retention_archive_entries", Statements: retentionStatements},
 		{Version: 3, Name: "create_notification_migration_control", Statements: migrationControlStatements},
 	}, nil
 }

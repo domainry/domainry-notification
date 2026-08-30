@@ -33,15 +33,15 @@ func TestSQLPersistencePreparesAndReopensExactApplication(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if first.Table("notification_events") != second.Table("notification_events") {
-		t.Fatalf("application namespace changed: %s != %s", first.Table("notification_events"), second.Table("notification_events"))
+	if first.Table("_notification_events") != second.Table("_notification_events") {
+		t.Fatalf("application namespace changed: %s != %s", first.Table("_notification_events"), second.Table("_notification_events"))
 	}
 	var migrations int
 	if err := db.QueryRow(`SELECT COUNT(*) FROM _schema_migrations WHERE namespace = ?`, applicationKey(application)).Scan(&migrations); err != nil || migrations != 3 {
 		t.Fatalf("migration count=%d err=%v", migrations, err)
 	}
 	var columns int
-	table := strings.Trim(first.Table("notification_events"), `"`)
+	table := strings.Trim(first.Table("_notification_events"), `"`)
 	if err := db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info(?) WHERE name IN ('tenant_id', 'application_key', 'workspace_id')`, table).Scan(&columns); err != nil || columns != 3 {
 		t.Fatalf("ownership columns=%d err=%v", columns, err)
 	}
@@ -63,8 +63,8 @@ func TestSQLPersistenceRejectsASecondApplicationInStandaloneDatabase(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	if leftDialect.Table("notification_events") != `"notification_events"` {
-		t.Fatalf("standalone table=%s", leftDialect.Table("notification_events"))
+	if leftDialect.Table("_notification_events") != `"_notification_events"` {
+		t.Fatalf("standalone table=%s", leftDialect.Table("_notification_events"))
 	}
 	if _, err := persistence.PrepareApplication(t.Context(), right); err == nil || !strings.Contains(err.Error(), "already bound") {
 		t.Fatalf("second application error=%v", err)

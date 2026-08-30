@@ -72,7 +72,7 @@ func TestDeliveryReservationBatchRollsBackPartialRecipients(t *testing.T) {
 		t.Fatalf("err=%v", err)
 	}
 	var count int
-	if err := db.QueryRow(`SELECT COUNT(*) FROM notification_delivery_reservations`).Scan(&count); err != nil || count != 0 {
+	if err := db.QueryRow(`SELECT COUNT(*) FROM _notification_delivery_reservations`).Scan(&count); err != nil || count != 0 {
 		t.Fatalf("count=%d err=%v", count, err)
 	}
 }

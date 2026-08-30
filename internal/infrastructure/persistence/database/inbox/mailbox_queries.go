@@ -21,7 +21,7 @@ func (s *Store) ListItems(ctx context.Context, query inbox.Query) ([]inbox.Item,
 		return nil, false, err
 	}
 	ctx = s.workspaceScope.Context(ctx, query.WorkspaceID)
-	statement, args, err := builder.NewWorkspaceSelectBuilder(s.Renderer, "notification_inbox_items", query.WorkspaceID.String()).Columns(inboxItemReadColumns...).Where(mailboxPredicate(query, true)).OrderBy(builder.Descending("updated_at"), builder.Descending("id")).Limit(query.Limit + 1).Build()
+	statement, args, err := builder.NewWorkspaceSelectBuilder(s.Renderer, "_notification_inbox_items", query.WorkspaceID.String()).Columns(inboxItemReadColumns...).Where(mailboxPredicate(query, true)).OrderBy(builder.Descending("updated_at"), builder.Descending("id")).Limit(query.Limit + 1).Build()
 	if err != nil {
 		return nil, false, err
 	}
@@ -69,14 +69,14 @@ func (s *Store) CountFacets(ctx context.Context, query inbox.Query) (inbox.Facet
 	ctx = s.workspaceScope.Context(ctx, query.WorkspaceID)
 	predicate := mailboxPredicate(query, false)
 	result := inbox.Facets{}
-	unreadSQL, unreadArgs, buildErr := builder.NewWorkspaceSelectBuilder(s.Renderer, "notification_inbox_items", query.WorkspaceID.String()).Projections(builder.Project(builder.CountAll())).Where(builder.And(predicate, builder.Equal("read_at", ""))).Build()
+	unreadSQL, unreadArgs, buildErr := builder.NewWorkspaceSelectBuilder(s.Renderer, "_notification_inbox_items", query.WorkspaceID.String()).Projections(builder.Project(builder.CountAll())).Where(builder.And(predicate, builder.Equal("read_at", ""))).Build()
 	if buildErr != nil {
 		return result, buildErr
 	}
 	if err := s.Database.QueryRowContext(ctx, unreadSQL, unreadArgs...).Scan(&result.Unread); err != nil {
 		return result, fmt.Errorf("count notification inbox unread: %w", err)
 	}
-	actionSQL, actionArgs, buildErr := builder.NewWorkspaceSelectBuilder(s.Renderer, "notification_inbox_items", query.WorkspaceID.String()).Projections(builder.Project(builder.CountAll())).Where(builder.And(predicate, builder.Equal("action_state", "open"))).Build()
+	actionSQL, actionArgs, buildErr := builder.NewWorkspaceSelectBuilder(s.Renderer, "_notification_inbox_items", query.WorkspaceID.String()).Projections(builder.Project(builder.CountAll())).Where(builder.And(predicate, builder.Equal("action_state", "open"))).Build()
 	if buildErr != nil {
 		return result, buildErr
 	}
@@ -96,7 +96,7 @@ func (s *Store) CountFacets(ctx context.Context, query inbox.Query) (inbox.Facet
 }
 
 func (s *Store) mailboxFacetRows(ctx context.Context, workspaceID string, predicate builder.Predicate, column string) ([]inbox.Facet, error) {
-	statement, args, err := builder.NewWorkspaceSelectBuilder(s.Renderer, "notification_inbox_items", workspaceID).Projections(builder.Project(builder.Column(column)), builder.Project(builder.CountAll())).Where(predicate).GroupBy(builder.Column(column)).OrderBy(builder.DescendingExpression(builder.CountAll()), builder.Ascending(column)).Build()
+	statement, args, err := builder.NewWorkspaceSelectBuilder(s.Renderer, "_notification_inbox_items", workspaceID).Projections(builder.Project(builder.Column(column)), builder.Project(builder.CountAll())).Where(predicate).GroupBy(builder.Column(column)).OrderBy(builder.DescendingExpression(builder.CountAll()), builder.Ascending(column)).Build()
 	if err != nil {
 		return nil, err
 	}
@@ -117,7 +117,7 @@ func (s *Store) mailboxFacetRows(ctx context.Context, workspaceID string, predic
 }
 
 func (s *Store) getInboxItem(ctx context.Context, queryer sqlhost.Queryer, query inbox.Query, itemID string) (inbox.Item, bool, error) {
-	statement, args, err := builder.NewWorkspaceSelectBuilder(s.Renderer, "notification_inbox_items", query.WorkspaceID.String()).Columns(inboxItemReadColumns...).Where(builder.And(mailboxAccessPredicate(query), builder.Equal("id", itemID))).Build()
+	statement, args, err := builder.NewWorkspaceSelectBuilder(s.Renderer, "_notification_inbox_items", query.WorkspaceID.String()).Columns(inboxItemReadColumns...).Where(builder.And(mailboxAccessPredicate(query), builder.Equal("id", itemID))).Build()
 	if err != nil {
 		return inbox.Item{}, false, err
 	}

@@ -144,7 +144,7 @@ func TestSchemaMigrationsRenderPhysicalNamesAndMySQLTypes(t *testing.T) {
 	}
 	joined := strings.Join(migrations[0].Statements, "\n")
 	for _, fragment := range []string{
-		"`tenant`.`domainry_notification_events`",
+		"`tenant`.`domainry__notification_events`",
 		"`domainry_uniq_notification_event_workspace_identity`",
 		"VARCHAR(191) CHARACTER SET ascii COLLATE ascii_bin",
 		"LONGTEXT",
@@ -220,11 +220,11 @@ func TestApplicationSchemaMigrationsPersistExactOwnership(t *testing.T) {
 			}
 		}
 	}
-	if _, err := db.Exec(`INSERT INTO app_one_notification_events (id, workspace_id, source, source_event_id, status, payload_json, occurred_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, "event-one", scope.WorkspaceID, "test", "source-event-one", "pending", `{}`, "1", "1", "1"); err != nil {
+	if _, err := db.Exec(`INSERT INTO app_one__notification_events (id, workspace_id, source, source_event_id, status, payload_json, occurred_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, "event-one", scope.WorkspaceID, "test", "source-event-one", "pending", `{}`, "1", "1", "1"); err != nil {
 		t.Fatal(err)
 	}
 	var tenantID, applicationKey string
-	if err := db.QueryRow(`SELECT tenant_id, application_key FROM app_one_notification_events WHERE id = ?`, "event-one").Scan(&tenantID, &applicationKey); err != nil {
+	if err := db.QueryRow(`SELECT tenant_id, application_key FROM app_one__notification_events WHERE id = ?`, "event-one").Scan(&tenantID, &applicationKey); err != nil {
 		t.Fatal(err)
 	}
 	if tenantID != scope.TenantID || applicationKey != scope.ApplicationKey {
@@ -242,10 +242,10 @@ func TestApplicationSchemaMigrationsUseDistinctPhysicalNamespaces(t *testing.T) 
 		t.Fatal(err)
 	}
 	leftSQL, rightSQL := strings.Join(left[0].Statements, "\n"), strings.Join(right[0].Statements, "\n")
-	if !strings.Contains(leftSQL, `"left_notification_events"`) || strings.Contains(leftSQL, `"right_notification_events"`) {
+	if !strings.Contains(leftSQL, `"left__notification_events"`) || strings.Contains(leftSQL, `"right__notification_events"`) {
 		t.Fatalf("left migration has an invalid physical namespace")
 	}
-	if !strings.Contains(rightSQL, `"right_notification_events"`) || strings.Contains(rightSQL, `"left_notification_events"`) {
+	if !strings.Contains(rightSQL, `"right__notification_events"`) || strings.Contains(rightSQL, `"left__notification_events"`) {
 		t.Fatalf("right migration has an invalid physical namespace")
 	}
 }

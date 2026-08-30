@@ -39,7 +39,7 @@ func (s *Store) MigrationStatus(ctx context.Context, workspaceID string) (Migrat
 		return MigrationControl{}, fmt.Errorf("notification migration workspace is required")
 	}
 	control := MigrationControl{WorkspaceID: workspaceID, State: MigrationStateActive}
-	query, args, err := builder.NewWorkspaceSelectBuilder(s.Renderer, "notification_migration_controls", workspaceID).Columns("migration_id", "role", "state", "bundle_fingerprint", "frozen_at", "activated_at", "updated_at").Build()
+	query, args, err := builder.NewWorkspaceSelectBuilder(s.Renderer, "_notification_migration_controls", workspaceID).Columns("migration_id", "role", "state", "bundle_fingerprint", "frozen_at", "activated_at", "updated_at").Build()
 	if err != nil {
 		return MigrationControl{}, err
 	}
@@ -71,9 +71,9 @@ func (s *Store) FreezeMigration(ctx context.Context, workspaceID, migrationID st
 	}
 	atText := at.UTC().Format(time.RFC3339Nano)
 	if current.MigrationID == "" {
-		_, err = s.WorkspaceInsert(s.workspaceScope.Context(ctx, notification.WorkspaceID(workspaceID)), s.Database, workspaceID, "notification_migration_controls", []string{"workspace_id", "migration_id", "role", "state", "bundle_fingerprint", "frozen_at", "activated_at", "updated_at"}, workspaceID, migrationID, MigrationRoleSource, MigrationStateFrozen, "", atText, "", atText)
+		_, err = s.WorkspaceInsert(s.workspaceScope.Context(ctx, notification.WorkspaceID(workspaceID)), s.Database, workspaceID, "_notification_migration_controls", []string{"workspace_id", "migration_id", "role", "state", "bundle_fingerprint", "frozen_at", "activated_at", "updated_at"}, workspaceID, migrationID, MigrationRoleSource, MigrationStateFrozen, "", atText, "", atText)
 	} else {
-		query, args, buildErr := builder.NewWorkspaceUpdateBuilder(s.Renderer, "notification_migration_controls", workspaceID).Set("migration_id", migrationID).Set("role", MigrationRoleSource).Set("state", MigrationStateFrozen).Set("bundle_fingerprint", "").Set("frozen_at", atText).Set("activated_at", "").Set("updated_at", atText).Where(builder.Equal("state", MigrationStateActive)).Build()
+		query, args, buildErr := builder.NewWorkspaceUpdateBuilder(s.Renderer, "_notification_migration_controls", workspaceID).Set("migration_id", migrationID).Set("role", MigrationRoleSource).Set("state", MigrationStateFrozen).Set("bundle_fingerprint", "").Set("frozen_at", atText).Set("activated_at", "").Set("updated_at", atText).Where(builder.Equal("state", MigrationStateActive)).Build()
 		if buildErr != nil {
 			return MigrationControl{}, buildErr
 		}
@@ -102,7 +102,7 @@ func (s *Store) RecordImportedMigration(ctx context.Context, workspaceID, migrat
 		return MigrationControl{}, fmt.Errorf("notification migration target is not active-empty")
 	}
 	atText := at.UTC().Format(time.RFC3339Nano)
-	_, err = s.WorkspaceInsert(s.workspaceScope.Context(ctx, notification.WorkspaceID(workspaceID)), s.Database, workspaceID, "notification_migration_controls", []string{"workspace_id", "migration_id", "role", "state", "bundle_fingerprint", "frozen_at", "activated_at", "updated_at"}, workspaceID, migrationID, MigrationRoleTarget, MigrationStateImported, fingerprint, atText, "", atText)
+	_, err = s.WorkspaceInsert(s.workspaceScope.Context(ctx, notification.WorkspaceID(workspaceID)), s.Database, workspaceID, "_notification_migration_controls", []string{"workspace_id", "migration_id", "role", "state", "bundle_fingerprint", "frozen_at", "activated_at", "updated_at"}, workspaceID, migrationID, MigrationRoleTarget, MigrationStateImported, fingerprint, atText, "", atText)
 	if err != nil {
 		return MigrationControl{}, fmt.Errorf("record imported notification migration: %w", err)
 	}
@@ -128,7 +128,7 @@ func (s *Store) transitionMigration(ctx context.Context, workspaceID, migrationI
 		activatedAt = atText
 	}
 	predicate := builder.And(builder.Equal("migration_id", migrationID), builder.Equal("role", fromRole), builder.Equal("state", fromState), builder.Or(builder.Equal("bundle_fingerprint", ""), builder.Equal("bundle_fingerprint", fingerprint)))
-	query, args, err := builder.NewWorkspaceUpdateBuilder(s.Renderer, "notification_migration_controls", workspaceID).Set("role", toRole).Set("state", toState).Set("bundle_fingerprint", fingerprint).Set("activated_at", activatedAt).Set("updated_at", atText).Where(predicate).Build()
+	query, args, err := builder.NewWorkspaceUpdateBuilder(s.Renderer, "_notification_migration_controls", workspaceID).Set("role", toRole).Set("state", toState).Set("bundle_fingerprint", fingerprint).Set("activated_at", activatedAt).Set("updated_at", atText).Where(predicate).Build()
 	if err != nil {
 		return MigrationControl{}, err
 	}
@@ -145,7 +145,7 @@ func (s *Store) transitionMigration(ctx context.Context, workspaceID, migrationI
 
 func (s *Store) activeMigrationLeases(ctx context.Context, workspaceID string) (int, error) {
 	total := 0
-	for _, table := range []string{"notification_events", "notification_channel_plans"} {
+	for _, table := range []string{"_notification_events", "_notification_channel_plans"} {
 		query, args, err := builder.NewWorkspaceSelectBuilder(s.Renderer, table, workspaceID).Projections(builder.Project(builder.CountAll())).Where(builder.NotEqual("lease_owner", "")).Build()
 		if err != nil {
 			return 0, err
@@ -156,7 +156,7 @@ func (s *Store) activeMigrationLeases(ctx context.Context, workspaceID string) (
 		}
 		total += count
 	}
-	query, args, err := builder.NewSelectBuilder(s.Renderer, "notification_template_publication_requests").Projections(builder.Project(builder.CountAll())).Where(builder.NotEqual("lease_owner", "")).Build()
+	query, args, err := builder.NewSelectBuilder(s.Renderer, "_notification_template_publication_requests").Projections(builder.Project(builder.CountAll())).Where(builder.NotEqual("lease_owner", "")).Build()
 	if err != nil {
 		return 0, err
 	}

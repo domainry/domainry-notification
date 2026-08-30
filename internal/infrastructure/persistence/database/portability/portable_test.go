@@ -12,7 +12,7 @@ import (
 func TestPortableMigrationFiltersWorkspaceImportsOwnershipAndReconciles(t *testing.T) {
 	source := openPortableDatabase(t, "source")
 	applyPortableMigrations(t, source, mustSchemaMigrations(t, ""))
-	if _, err := source.Exec(`INSERT INTO notification_template_records (template_key, draft_json, published_json, published_version, status, updated_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, "welcome", nil, `{}`, 1, "active", "admin", "now", "now"); err != nil {
+	if _, err := source.Exec(`INSERT INTO _notification_templates (template_key, draft_json, published_json, published_version, status, updated_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, "welcome", nil, `{}`, 1, "active", "admin", "now", "now"); err != nil {
 		t.Fatal(err)
 	}
 	insertPortableEvent(t, source, "workspace", "event-one", "source-one", "worker")
@@ -25,7 +25,7 @@ func TestPortableMigrationFiltersWorkspaceImportsOwnershipAndReconciles(t *testi
 	if err != nil {
 		t.Fatal(err)
 	}
-	if inventory.Rows != 3 || inventory.ActiveLeases != 1 || inventory.Tables["notification_events"] != 1 || inventory.Tables["notification_retention_archive"] != 1 || bundle.Fingerprint == "" {
+	if inventory.Rows != 3 || inventory.ActiveLeases != 1 || inventory.Tables["_notification_events"] != 1 || inventory.Tables["_notification_retention_archive_entries"] != 1 || bundle.Fingerprint == "" {
 		t.Fatalf("inventory=%+v bundle=%+v", inventory, bundle)
 	}
 
@@ -49,14 +49,14 @@ func TestPortableMigrationFiltersWorkspaceImportsOwnershipAndReconciles(t *testi
 		t.Fatalf("repeated=%+v err=%v", repeated, err)
 	}
 	var tenantID, applicationKey, workspaceID string
-	if err := target.QueryRow(`SELECT tenant_id, application_key, workspace_id FROM application_notification_events WHERE id = ?`, "event-one").Scan(&tenantID, &applicationKey, &workspaceID); err != nil {
+	if err := target.QueryRow(`SELECT tenant_id, application_key, workspace_id FROM application__notification_events WHERE id = ?`, "event-one").Scan(&tenantID, &applicationKey, &workspaceID); err != nil {
 		t.Fatal(err)
 	}
 	if tenantID != scope.TenantID || applicationKey != scope.ApplicationKey || workspaceID != scope.WorkspaceID {
 		t.Fatalf("ownership=(%q,%q,%q)", tenantID, applicationKey, workspaceID)
 	}
 	var archivedWorkspaceID string
-	if err := target.QueryRow(`SELECT workspace_id FROM application_notification_retention_archive WHERE id = ?`, "archive-one").Scan(&archivedWorkspaceID); err != nil {
+	if err := target.QueryRow(`SELECT workspace_id FROM application__notification_retention_archive_entries WHERE id = ?`, "archive-one").Scan(&archivedWorkspaceID); err != nil {
 		t.Fatal(err)
 	}
 	if archivedWorkspaceID != scope.WorkspaceID {
@@ -95,7 +95,7 @@ func TestPortableMigrationReconcilesEachWorkspaceWithoutCrossContamination(t *te
 			if err != nil {
 				t.Fatal(err)
 			}
-			if inventory.Rows != 2 || inventory.Tables["notification_events"] != 1 || inventory.Tables["notification_retention_archive"] != 1 {
+			if inventory.Rows != 2 || inventory.Tables["_notification_events"] != 1 || inventory.Tables["_notification_retention_archive_entries"] != 1 {
 				t.Fatalf("source inventory=%+v", inventory)
 			}
 			target := openPortableDatabase(t, "multi-workspace-target-"+workspaceID)
@@ -114,14 +114,14 @@ func TestPortableMigrationReconcilesEachWorkspaceWithoutCrossContamination(t *te
 				t.Fatalf("receipt=%+v inventory=%+v", receipt, inventory)
 			}
 			var importedWorkspace, importedEvent string
-			if err := target.QueryRow(`SELECT workspace_id,id FROM application_notification_events`).Scan(&importedWorkspace, &importedEvent); err != nil {
+			if err := target.QueryRow(`SELECT workspace_id,id FROM application__notification_events`).Scan(&importedWorkspace, &importedEvent); err != nil {
 				t.Fatal(err)
 			}
 			if importedWorkspace != workspaceID || importedEvent != "event-"+workspaceID[len("workspace-"):] {
 				t.Fatalf("imported workspace=%q event=%q", importedWorkspace, importedEvent)
 			}
 			var events int
-			if err := target.QueryRow(`SELECT COUNT(*) FROM application_notification_events`).Scan(&events); err != nil {
+			if err := target.QueryRow(`SELECT COUNT(*) FROM application__notification_events`).Scan(&events); err != nil {
 				t.Fatal(err)
 			}
 			if events != 1 {
@@ -164,14 +164,14 @@ func applyPortableMigrations(t *testing.T, database *sql.DB, migrations []Schema
 
 func insertPortableEvent(t *testing.T, database *sql.DB, workspaceID, id, sourceEventID, leaseOwner string) {
 	t.Helper()
-	if _, err := database.Exec(`INSERT INTO notification_events (id, workspace_id, source, source_event_id, status, payload_json, lease_owner, occurred_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, id, workspaceID, "test", sourceEventID, "queued", `{}`, leaseOwner, "now", "now", "now"); err != nil {
+	if _, err := database.Exec(`INSERT INTO _notification_events (id, workspace_id, source, source_event_id, status, payload_json, lease_owner, occurred_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, id, workspaceID, "test", sourceEventID, "queued", `{}`, leaseOwner, "now", "now", "now"); err != nil {
 		t.Fatal(err)
 	}
 }
 
 func insertPortableArchive(t *testing.T, database *sql.DB, workspaceID, id string) {
 	t.Helper()
-	if _, err := database.Exec(`INSERT INTO notification_retention_archive (id, workspace_id, policy_key, policy_version, job_id, source_table, resource_id, payload_hash, payload_json, archived_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, id, workspaceID, "notification.history.v1", "1", "job", "notification_events", "event", "hash", `{}`, "now"); err != nil {
+	if _, err := database.Exec(`INSERT INTO _notification_retention_archive_entries (id, workspace_id, policy_key, policy_version, job_id, source_table, resource_id, payload_hash, payload_json, archived_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, id, workspaceID, "notification.history.v1", "1", "job", "_notification_events", "event", "hash", `{}`, "now"); err != nil {
 		t.Fatal(err)
 	}
 }

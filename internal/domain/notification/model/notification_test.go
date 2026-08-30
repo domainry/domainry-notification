@@ -15,12 +15,12 @@ func TestOwnedTablesAreCanonicalAndSorted(t *testing.T) {
 	}
 	seen := map[string]bool{}
 	for _, table := range tables {
-		if table != strings.TrimSpace(table) || !strings.HasPrefix(table, "notification_") || seen[table] {
+		if table != strings.TrimSpace(table) || !strings.HasPrefix(table, "_notification_") || seen[table] {
 			t.Fatalf("invalid notification-owned table %q", table)
 		}
 		seen[table] = true
 	}
-	if len(seen) != 16 || !seen["notification_retention_archive"] || !seen["notification_migration_controls"] {
+	if len(seen) != 16 || !seen["_notification_retention_archive_entries"] || !seen["_notification_migration_controls"] {
 		t.Fatalf("notification table ownership=%v", tables)
 	}
 }

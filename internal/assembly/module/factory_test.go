@@ -196,11 +196,11 @@ func TestModuleSystemMigrationExportsAndIdempotentlyReconcilesExactApplication(t
 	if !ok || migration.SystemMigration() == nil {
 		t.Fatal("Module Binding did not expose system migration")
 	}
-	if _, err := host.database.Exec(`INSERT INTO notification_retention_archive (id, workspace_id, policy_key, policy_version, job_id, source_table, resource_id, payload_hash, payload_json, archived_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, "archive", "workspace", "notification.history.v1", "1", "job", "notification_events", "event", "hash", `{}`, "now"); err != nil {
+	if _, err := host.database.Exec(`INSERT INTO _notification_retention_archive_entries (id, workspace_id, policy_key, policy_version, job_id, source_table, resource_id, payload_hash, payload_json, archived_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, "archive", "workspace", "notification.history.v1", "1", "job", "_notification_events", "event", "hash", `{}`, "now"); err != nil {
 		t.Fatal(err)
 	}
 	const snapshotPayload = `{"recipient_user_ids":["user"],"snapshot":{"title":"Frozen title","body":"Frozen body","template_key":"report.completed","template_version":7,"template_content_hash":"sha256"}}`
-	if _, err := host.database.Exec(`INSERT INTO notification_events (id, workspace_id, source, source_event_id, status, payload_json, lease_owner, occurred_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, "leased-event", "workspace", "test", "source", "processing", snapshotPayload, "worker", "now", "now", "now"); err != nil {
+	if _, err := host.database.Exec(`INSERT INTO _notification_events (id, workspace_id, source, source_event_id, status, payload_json, lease_owner, occurred_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, "leased-event", "workspace", "test", "source", "processing", snapshotPayload, "worker", "now", "now", "now"); err != nil {
 		t.Fatal(err)
 	}
 	command := contract.NotificationMigrationCommand{MigrationID: "migration", At: time.Date(2026, 8, 29, 2, 0, 0, 0, time.UTC)}
@@ -297,7 +297,7 @@ func TestModuleSystemMigrationExportsAndIdempotentlyReconcilesExactApplication(t
 	if _, err := migration.SystemMigration().Export(t.Context()); err == nil {
 		t.Fatal("source exported while an active lease remained")
 	}
-	if _, err := host.database.Exec(`UPDATE notification_events SET lease_owner = '' WHERE id = ?`, "leased-event"); err != nil {
+	if _, err := host.database.Exec(`UPDATE _notification_events SET lease_owner = '' WHERE id = ?`, "leased-event"); err != nil {
 		t.Fatal(err)
 	}
 	exported, err := migration.SystemMigration().Export(t.Context())
@@ -325,7 +325,7 @@ func TestModuleSystemMigrationExportsAndIdempotentlyReconcilesExactApplication(t
 		t.Fatalf("repeated receipt=%+v err=%v", repeated, err)
 	}
 	var importedSnapshot string
-	if err := targetHost.database.QueryRow(`SELECT payload_json FROM notification_events WHERE workspace_id = ? AND id = ?`, "workspace", "leased-event").Scan(&importedSnapshot); err != nil {
+	if err := targetHost.database.QueryRow(`SELECT payload_json FROM _notification_events WHERE workspace_id = ? AND id = ?`, "workspace", "leased-event").Scan(&importedSnapshot); err != nil {
 		t.Fatal(err)
 	}
 	if importedSnapshot != snapshotPayload {

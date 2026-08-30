@@ -18,22 +18,22 @@ type TableOwnership struct {
 }
 
 var tableOwnership = [...]TableOwnership{
-	{Name: "notification_alert_groups", Scope: WorkspaceData},
-	{Name: "notification_channel_plans", Scope: WorkspaceData},
-	{Name: "notification_delivery_policy", Scope: SystemData},
-	{Name: "notification_delivery_reservations", Scope: WorkspaceData},
-	{Name: "notification_event_failures", Scope: WorkspaceData},
-	{Name: "notification_events", Scope: WorkspaceData},
-	{Name: "notification_inbox_delegations", Scope: WorkspaceData},
-	{Name: "notification_inbox_items", Scope: WorkspaceData},
-	{Name: "notification_inbox_saved_views", Scope: WorkspaceData},
-	{Name: "notification_migration_controls", Scope: WorkspaceData},
-	{Name: "notification_recipient_preferences", Scope: WorkspaceData},
-	{Name: "notification_retention_archive", Scope: WorkspaceData},
-	{Name: "notification_template_publication_locks", Scope: SystemData},
-	{Name: "notification_template_publication_requests", Scope: SystemData},
-	{Name: "notification_template_records", Scope: SystemData},
-	{Name: "notification_template_versions", Scope: SystemData},
+	{Name: "_notification_alert_groups", Scope: WorkspaceData},
+	{Name: "_notification_channel_plans", Scope: WorkspaceData},
+	{Name: "_notification_delivery_policies", Scope: SystemData},
+	{Name: "_notification_delivery_reservations", Scope: WorkspaceData},
+	{Name: "_notification_event_failures", Scope: WorkspaceData},
+	{Name: "_notification_events", Scope: WorkspaceData},
+	{Name: "_notification_inbox_delegations", Scope: WorkspaceData},
+	{Name: "_notification_inbox_items", Scope: WorkspaceData},
+	{Name: "_notification_inbox_saved_views", Scope: WorkspaceData},
+	{Name: "_notification_migration_controls", Scope: WorkspaceData},
+	{Name: "_notification_recipient_preferences", Scope: WorkspaceData},
+	{Name: "_notification_retention_archive_entries", Scope: WorkspaceData},
+	{Name: "_notification_template_publication_locks", Scope: SystemData},
+	{Name: "_notification_template_publication_requests", Scope: SystemData},
+	{Name: "_notification_template_versions", Scope: SystemData},
+	{Name: "_notification_templates", Scope: SystemData},
 }
 
 // SchemaOwnership returns a defensive copy of the module's durable table

@@ -136,7 +136,7 @@ func TestHandlerSystemMigrationRejectsCrossApplicationBundleBeforeImport(t *test
 	bundle := contract.NotificationPortableBundle{
 		FormatVersion: contract.NotificationPortableFormatV1,
 		Source:        contract.NotificationPortableScope{TenantID: "tenant-a", WorkspaceID: "workspace-b", ApplicationKey: "runtime-a"},
-		Tables:        []contract.NotificationPortableTable{{Name: "notification_events", Columns: []string{"id"}, Rows: [][]json.RawMessage{{json.RawMessage(`"event"`)}}}},
+		Tables:        []contract.NotificationPortableTable{{Name: "_notification_events", Columns: []string{"id"}, Rows: [][]json.RawMessage{{json.RawMessage(`"event"`)}}}},
 		Fingerprint:   "fingerprint",
 	}
 	body, _ := json.Marshal(bundle)

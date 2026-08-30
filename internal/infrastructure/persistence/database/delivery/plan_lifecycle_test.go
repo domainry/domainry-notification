@@ -47,7 +47,7 @@ func insertPlan(t *testing.T, executor *sql.DB, plan delivery.Plan) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = executor.Exec(`INSERT INTO notification_channel_plans VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, plan.ID, plan.WorkspaceID.String(), plan.EventID, plan.Channel,
+	_, err = executor.Exec(`INSERT INTO _notification_channel_plans VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, plan.ID, plan.WorkspaceID.String(), plan.EventID, plan.Channel,
 		plan.Status, string(raw), plan.AttemptCount, plan.NextAttemptAt, plan.LastErrorCode, plan.OutboxMessageID, plan.LeaseOwner, plan.LeaseExpiresAt, plan.FencingToken, plan.CreatedAt, plan.UpdatedAt)
 	if err != nil {
 		t.Fatal(err)

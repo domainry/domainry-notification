@@ -32,7 +32,7 @@ func (s *Store) updateInboxPersonalState(ctx context.Context, query inbox.Query,
 		return inbox.Item{}, false, fmt.Errorf("notification inbox mutation identity and timestamp are required")
 	}
 	ctx = s.workspaceScope.Context(ctx, query.WorkspaceID)
-	statement, args, err := builder.NewWorkspaceUpdateBuilder(s.Renderer, "notification_inbox_items", query.WorkspaceID.String()).Set(column, strings.TrimSpace(value)).Set("updated_at", strings.TrimSpace(updatedAt)).Where(builder.And(mailboxAccessPredicate(query), builder.Equal("id", itemID))).Build()
+	statement, args, err := builder.NewWorkspaceUpdateBuilder(s.Renderer, "_notification_inbox_items", query.WorkspaceID.String()).Set(column, strings.TrimSpace(value)).Set("updated_at", strings.TrimSpace(updatedAt)).Where(builder.And(mailboxAccessPredicate(query), builder.Equal("id", itemID))).Build()
 	if err != nil {
 		return inbox.Item{}, false, err
 	}
@@ -57,7 +57,7 @@ func (s *Store) MarkAllRead(ctx context.Context, query inbox.Query, readAt strin
 		return 0, fmt.Errorf("notification inbox read timestamp is required")
 	}
 	ctx = s.workspaceScope.Context(ctx, query.WorkspaceID)
-	statement, args, err := builder.NewWorkspaceUpdateBuilder(s.Renderer, "notification_inbox_items", query.WorkspaceID.String()).Set("read_at", readAt).Set("updated_at", readAt).Where(builder.And(mailboxPredicate(query, false), builder.Equal("read_at", ""), builder.LessThanOrEqual("updated_at", readAt))).Build()
+	statement, args, err := builder.NewWorkspaceUpdateBuilder(s.Renderer, "_notification_inbox_items", query.WorkspaceID.String()).Set("read_at", readAt).Set("updated_at", readAt).Where(builder.And(mailboxPredicate(query, false), builder.Equal("read_at", ""), builder.LessThanOrEqual("updated_at", readAt))).Build()
 	if err != nil {
 		return 0, err
 	}
@@ -92,7 +92,7 @@ func (s *Store) AcknowledgeAlert(ctx context.Context, query inbox.Query, itemID 
 		return inbox.Item{}, false, fmt.Errorf("notification alert is not firing")
 	}
 	if item.AlertState != inbox.AlertAcknowledged {
-		groupUpdate, groupArgs, buildErr := builder.NewWorkspaceUpdateBuilder(s.Renderer, "notification_alert_groups", item.WorkspaceID.String()).Set("state", string(inbox.AlertAcknowledged)).Set("acknowledged_at", acknowledgedAt).Set("acknowledged_by", actor.String()).Set("updated_at", acknowledgedAt).Where(builder.And(builder.Equal("recipient_user_id", item.RecipientUserID.String()), builder.Equal("surface", string(item.Surface)), builder.Equal("group_key", item.GroupKey), builder.Equal("state", "firing"))).Build()
+		groupUpdate, groupArgs, buildErr := builder.NewWorkspaceUpdateBuilder(s.Renderer, "_notification_alert_groups", item.WorkspaceID.String()).Set("state", string(inbox.AlertAcknowledged)).Set("acknowledged_at", acknowledgedAt).Set("acknowledged_by", actor.String()).Set("updated_at", acknowledgedAt).Where(builder.And(builder.Equal("recipient_user_id", item.RecipientUserID.String()), builder.Equal("surface", string(item.Surface)), builder.Equal("group_key", item.GroupKey), builder.Equal("state", "firing"))).Build()
 		if buildErr != nil {
 			return inbox.Item{}, false, buildErr
 		}
@@ -107,7 +107,7 @@ func (s *Store) AcknowledgeAlert(ctx context.Context, query inbox.Query, itemID 
 		if count != 1 {
 			return inbox.Item{}, false, mutation.MutationConflict("notification_alert_group", item.GroupKey, mutation.MutationConflictOptimistic, nil)
 		}
-		itemUpdate, itemArgs, buildErr := builder.NewWorkspaceUpdateBuilder(s.Renderer, "notification_inbox_items", item.WorkspaceID.String()).Set("alert_state", string(inbox.AlertAcknowledged)).Set("updated_at", acknowledgedAt).Where(builder.And(builder.Equal("recipient_user_id", item.RecipientUserID.String()), builder.Equal("surface", string(item.Surface)), builder.Equal("id", item.ID))).Build()
+		itemUpdate, itemArgs, buildErr := builder.NewWorkspaceUpdateBuilder(s.Renderer, "_notification_inbox_items", item.WorkspaceID.String()).Set("alert_state", string(inbox.AlertAcknowledged)).Set("updated_at", acknowledgedAt).Where(builder.And(builder.Equal("recipient_user_id", item.RecipientUserID.String()), builder.Equal("surface", string(item.Surface)), builder.Equal("id", item.ID))).Build()
 		if buildErr != nil {
 			return inbox.Item{}, false, buildErr
 		}
