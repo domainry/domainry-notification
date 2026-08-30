@@ -64,6 +64,16 @@ func TestDDDPackageBoundaries(t *testing.T) {
 	}
 }
 
+func TestModuleUsesTaggedDependencies(t *testing.T) {
+	content, err := os.ReadFile("go.mod")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(content), "replace ") || strings.Contains(string(content), "../domainry-") {
+		t.Fatal("Notification must consume released module tags, not local directory replacements")
+	}
+}
+
 func TestWorkspaceTablesCannotUseSystemBuilders(t *testing.T) {
 	workspaceTables := map[string]bool{}
 	for _, table := range storeschema.SchemaOwnership() {
