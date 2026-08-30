@@ -29,6 +29,45 @@ func TestNotificationBusinessPersistenceStaysClassifiedAndStructured(t *testing.
 	}
 }
 
+func TestNotificationDatabaseChoiceIsConfinedToEngineFactoryAndProfiles(t *testing.T) {
+	root := persistenceRoot(t)
+	allowed := map[string]bool{"engine.go": true, "schema.go": true}
+	err := filepath.WalkDir(root, func(path string, entry os.DirEntry, walkErr error) error {
+		if walkErr != nil || entry.IsDir() || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
+			return walkErr
+		}
+		normalized := filepath.ToSlash(path)
+		if allowed[filepath.Base(path)] || strings.Contains(normalized, "/sqlite/") || strings.Contains(normalized, "/mysql/") || strings.Contains(normalized, "/postgres/") || strings.Contains(normalized, "/testkit/") {
+			return nil
+		}
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		file, err := parser.ParseFile(token.NewFileSet(), path, raw, 0)
+		if err != nil {
+			return err
+		}
+		ast.Inspect(file, func(node ast.Node) bool {
+			literal, ok := node.(*ast.BasicLit)
+			if !ok || literal.Kind != token.STRING {
+				return true
+			}
+			value, _ := strconv.Unquote(literal.Value)
+			for _, database := range []string{"sqlite", "sqlite3", "mysql", "postgres", "postgresql", "pgx"} {
+				if strings.EqualFold(strings.TrimSpace(value), database) {
+					t.Errorf("Notification database %q escaped engine/profile boundary: %s", database, path)
+				}
+			}
+			return true
+		})
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
 func assertStructuredOwner(t *testing.T, root string) {
 	t.Helper()
 	err := filepath.WalkDir(root, func(path string, entry os.DirEntry, walkErr error) error {
