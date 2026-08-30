@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/domainry/domainry-foundation/worker"
 	notification "github.com/domainry/domainry-notification/internal/domain/notification/model"
 	"github.com/domainry/domainry-notification/internal/domain/template/service"
 )
@@ -219,10 +220,12 @@ func (p *Processor) renderFallbacks(ctx context.Context, plan Plan, content temp
 
 func (p *Processor) recordFailure(ctx context.Context, plan Plan, now time.Time) error {
 	updatedAt := notification.Timestamp(now)
-	if plan.AttemptCount+1 >= maximumAttempts {
+	attempt := plan.AttemptCount + 1
+	policy := worker.RetryPolicy{MaxAttempts: maximumAttempts, BaseDelay: time.Minute, MaxDelay: 32 * time.Minute, Backoff: worker.BackoffExponential}
+	if !policy.Allows(attempt, now) {
 		return p.plans.FailPlan(ctx, plan, "backend.notification.channel_plan_failed", updatedAt)
 	}
-	return p.plans.RetryPlan(ctx, plan, "backend.notification.channel_plan_failed", notification.Timestamp(now.Add(retryDelay(plan.AttemptCount+1))), updatedAt)
+	return p.plans.RetryPlan(ctx, plan, "backend.notification.channel_plan_failed", notification.Timestamp(now.Add(policy.Delay(attempt, nil))), updatedAt)
 }
 
 func digestCandidates(plans []Plan, first Plan, consumed map[string]bool) []Plan {
@@ -281,14 +284,4 @@ func cloneVariables(source map[string]any) map[string]any {
 		result[key] = value
 	}
 	return result
-}
-
-func retryDelay(attempt int) time.Duration {
-	if attempt < 1 {
-		attempt = 1
-	}
-	if attempt > 6 {
-		attempt = 6
-	}
-	return time.Duration(1<<(attempt-1)) * time.Minute
 }

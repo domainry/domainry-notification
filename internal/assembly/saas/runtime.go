@@ -10,6 +10,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/domainry/domainry-foundation/worker"
 	identitysdk "github.com/domainry/domainry-identity-sdk"
 	notificationsdk "github.com/domainry/domainry-notification-sdk"
 	notificationidentity "github.com/domainry/domainry-notification/internal/infrastructure/identity"
@@ -209,17 +210,11 @@ func (r *Runtime) Close(ctx context.Context) error {
 
 func (r *Runtime) runWorkers(ctx context.Context) {
 	defer r.workers.Done()
-	ticker := time.NewTicker(r.workerOptions.PollInterval)
-	defer ticker.Stop()
-	for {
+	done := worker.StartNamedLoop(ctx, "notification", r.workerOptions.PollInterval, func() {
 		r.processDue(ctx)
 		r.ready.Store(true)
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-		}
-	}
+	})
+	<-done
 }
 
 func (r *Runtime) processDue(ctx context.Context) {

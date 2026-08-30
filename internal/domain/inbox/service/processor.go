@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/domainry/domainry-foundation/worker"
 	notification "github.com/domainry/domainry-notification/internal/domain/notification/model"
 	"github.com/domainry/domainry-notification/internal/domain/template/service"
 )
@@ -143,21 +144,13 @@ func (p *Processor) recordFailure(ctx context.Context, event Event, cause error,
 	if causeCode := notification.ErrorCode(cause); strings.HasPrefix(causeCode, "backend.notification.inbox_audience_") {
 		stage, code = "audience_resolution", causeCode
 	}
-	if event.AttemptCount+1 >= maximumAttempts {
+	attempt := event.AttemptCount + 1
+	policy := worker.RetryPolicy{MaxAttempts: maximumAttempts, BaseDelay: time.Minute, MaxDelay: 32 * time.Minute, Backoff: worker.BackoffExponential}
+	if !policy.Allows(attempt, now) {
 		return p.events.Fail(ctx, event, stage, code, updatedAt)
 	}
-	next := notification.Timestamp(now.Add(retryDelay(event.AttemptCount + 1)))
+	next := notification.Timestamp(now.Add(policy.Delay(attempt, nil)))
 	return p.events.Retry(ctx, event, stage, code, next, updatedAt)
-}
-
-func retryDelay(attempt int) time.Duration {
-	if attempt < 1 {
-		attempt = 1
-	}
-	if attempt > 6 {
-		attempt = 6
-	}
-	return time.Duration(1<<(attempt-1)) * time.Minute
 }
 
 func itemFromEvent(event Event, recipient notification.UserID, locale string) Item {

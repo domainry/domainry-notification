@@ -6,6 +6,8 @@ toolchain go1.26.6
 
 replace github.com/domainry/domainry-orm => ../domainry-orm
 
+replace github.com/domainry/domainry-foundation => ../domainry-foundation
+
 require (
 	github.com/DATA-DOG/go-sqlmock v1.5.2
 	github.com/domainry/domainry-foundation v0.1.0-dev.3
@@ -40,6 +42,8 @@ require (
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp v1.44.0 // indirect
 	go.opentelemetry.io/otel/metric v1.44.0 // indirect
 	go.opentelemetry.io/proto/otlp v1.10.0 // indirect
+	go.uber.org/multierr v1.10.0 // indirect
+	go.uber.org/zap v1.27.1 // indirect
 	golang.org/x/net v0.55.0 // indirect
 	golang.org/x/sync v0.22.0 // indirect
 	golang.org/x/sys v0.47.0 // indirect
