@@ -9,7 +9,7 @@ import (
 	"strings"
 
 	"github.com/domainry/domainry-notification/internal/domain/template/service"
-	"github.com/domainry/domainry-orm/builder"
+	builder "github.com/domainry/domainry-orm/query"
 	"github.com/domainry/domainry-orm/sqlhost"
 )
 

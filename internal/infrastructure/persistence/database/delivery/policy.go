@@ -11,7 +11,7 @@ import (
 
 	"github.com/domainry/domainry-notification/internal/domain/delivery/service"
 	notification "github.com/domainry/domainry-notification/internal/domain/notification/model"
-	"github.com/domainry/domainry-orm/builder"
+	builder "github.com/domainry/domainry-orm/query"
 )
 
 var _ delivery.PolicyStore = (*Store)(nil)

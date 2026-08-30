@@ -10,7 +10,7 @@ import (
 	"strings"
 
 	"github.com/domainry/domainry-notification-sdk/modulehost"
-	"github.com/domainry/domainry-orm/builder"
+	builder "github.com/domainry/domainry-orm/query"
 	"github.com/domainry/domainry-orm/sqlhost"
 )
 

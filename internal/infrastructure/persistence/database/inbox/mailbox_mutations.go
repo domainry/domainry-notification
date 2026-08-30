@@ -9,7 +9,7 @@ import (
 	"github.com/domainry/domainry-foundation/mutation"
 	"github.com/domainry/domainry-notification/internal/domain/inbox/service"
 	notification "github.com/domainry/domainry-notification/internal/domain/notification/model"
-	"github.com/domainry/domainry-orm/builder"
+	builder "github.com/domainry/domainry-orm/query"
 )
 
 var _ inbox.MailboxStore = (*Store)(nil)

@@ -3,10 +3,10 @@ package schema
 import (
 	"database/sql"
 	"fmt"
+	ormschema "github.com/domainry/domainry-orm/schema"
 	"strings"
 	"testing"
 
-	ormbuilder "github.com/domainry/domainry-orm/builder"
 	ormdialect "github.com/domainry/domainry-orm/dialect"
 	_ "modernc.org/sqlite"
 )
@@ -38,25 +38,25 @@ func (p testSchemaProfile) ColumnType(kind ColumnKind) (string, error) {
 	}
 }
 
-func (p testSchemaProfile) SchemaColumn(name string, kind ColumnKind) (ormbuilder.SchemaColumn, error) {
-	var columnType ormbuilder.ColumnType
+func (p testSchemaProfile) SchemaColumn(name string, kind ColumnKind) (ormschema.ColumnDefinition, error) {
+	var columnType ormschema.ColumnType
 	switch kind {
 	case IdentifierColumn, IndexedTextColumn:
-		columnType = ormbuilder.TextKeyType(191)
+		columnType = ormschema.TextKey(191)
 	case DocumentColumn:
-		columnType = ormbuilder.LongTextType()
+		columnType = ormschema.LongText()
 	case PlainTextColumn:
-		columnType = ormbuilder.TextType()
+		columnType = ormschema.Text()
 	case IntegerColumn:
-		columnType = ormbuilder.IntegerType()
+		columnType = ormschema.Integer()
 	case BigIntegerColumn:
-		columnType = ormbuilder.BigIntType()
+		columnType = ormschema.BigInt()
 	case BooleanColumn:
-		columnType = ormbuilder.BooleanType()
+		columnType = ormschema.Boolean()
 	default:
-		return ormbuilder.SchemaColumn{}, fmt.Errorf("test column kind %d is unsupported", kind)
+		return ormschema.ColumnDefinition{}, fmt.Errorf("test column kind %d is unsupported", kind)
 	}
-	column := ormbuilder.DefineColumn(name, columnType)
+	column := ormschema.Column(name, columnType)
 	if p.driver == "mysql" && kind == IndexedTextColumn {
 		column = column.CharacterSet("ascii").Collation("ascii_bin")
 	}

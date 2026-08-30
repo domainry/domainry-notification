@@ -2,9 +2,9 @@ package schema
 
 import (
 	"fmt"
+	ormschema "github.com/domainry/domainry-orm/schema"
 
 	storeschema "github.com/domainry/domainry-notification/internal/infrastructure/persistence/database/schema"
-	ormbuilder "github.com/domainry/domainry-orm/builder"
 )
 
 type Profile struct{}
@@ -24,23 +24,23 @@ func (Profile) ColumnType(kind storeschema.ColumnKind) (string, error) {
 	}
 }
 
-func (Profile) SchemaColumn(name string, kind storeschema.ColumnKind) (ormbuilder.SchemaColumn, error) {
-	var columnType ormbuilder.ColumnType
+func (Profile) SchemaColumn(name string, kind storeschema.ColumnKind) (ormschema.ColumnDefinition, error) {
+	var columnType ormschema.ColumnType
 	switch kind {
 	case storeschema.IdentifierColumn, storeschema.IndexedTextColumn:
-		columnType = ormbuilder.TextKeyType(191)
+		columnType = ormschema.TextKey(191)
 	case storeschema.DocumentColumn:
-		columnType = ormbuilder.LongTextType()
+		columnType = ormschema.LongText()
 	case storeschema.PlainTextColumn:
-		columnType = ormbuilder.TextType()
+		columnType = ormschema.Text()
 	case storeschema.IntegerColumn:
-		columnType = ormbuilder.IntegerType()
+		columnType = ormschema.Integer()
 	case storeschema.BigIntegerColumn:
-		columnType = ormbuilder.BigIntType()
+		columnType = ormschema.BigInt()
 	case storeschema.BooleanColumn:
-		columnType = ormbuilder.BooleanType()
+		columnType = ormschema.Boolean()
 	default:
-		return ormbuilder.SchemaColumn{}, fmt.Errorf("notification PostgreSQL column kind %d is unsupported", kind)
+		return ormschema.ColumnDefinition{}, fmt.Errorf("notification PostgreSQL column kind %d is unsupported", kind)
 	}
-	return ormbuilder.DefineColumn(name, columnType), nil
+	return ormschema.Column(name, columnType), nil
 }

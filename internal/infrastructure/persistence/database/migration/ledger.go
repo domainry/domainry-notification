@@ -5,9 +5,10 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	ormschema "github.com/domainry/domainry-orm/schema"
 
-	ormbuilder "github.com/domainry/domainry-orm/builder"
 	ormdialect "github.com/domainry/domainry-orm/dialect"
+	ormbuilder "github.com/domainry/domainry-orm/query"
 )
 
 const LedgerTable = "_schema_migrations"
@@ -29,11 +30,11 @@ func NewLedger(renderer ormdialect.Renderer) Ledger {
 }
 
 func (l Ledger) Ensure(ctx context.Context, executor Executor) error {
-	statement, args, err := ormbuilder.NewCreateTableBuilder(l.renderer, LedgerTable).WithoutSystemColumns().IfNotExists().Columns(
-		ormbuilder.DefineColumn("namespace", ormbuilder.TextKeyType(512)).NotNull(),
-		ormbuilder.DefineColumn("version", ormbuilder.BigIntType()).NotNull(),
-		ormbuilder.DefineColumn("checksum", ormbuilder.TextKeyType(64)).NotNull(),
-		ormbuilder.DefineColumn("applied_at", ormbuilder.TextKeyType(64)).NotNull(),
+	statement, args, err := ormschema.NewTable(l.renderer, LedgerTable).IfNotExists().Columns(
+		ormschema.Column("namespace", ormschema.TextKey(512)).NotNull(),
+		ormschema.Column("version", ormschema.BigInt()).NotNull(),
+		ormschema.Column("checksum", ormschema.TextKey(64)).NotNull(),
+		ormschema.Column("applied_at", ormschema.TextKey(64)).NotNull(),
 	).PrimaryKey("namespace", "version").Build()
 	if err != nil {
 		return fmt.Errorf("build Notification SaaS migration ledger: %w", err)

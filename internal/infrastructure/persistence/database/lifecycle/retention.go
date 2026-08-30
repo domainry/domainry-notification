@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/domainry/domainry-notification-sdk/contract"
-	"github.com/domainry/domainry-orm/builder"
+	builder "github.com/domainry/domainry-orm/query"
 )
 
 type retentionSpec struct {

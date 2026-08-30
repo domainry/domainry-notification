@@ -13,7 +13,7 @@ import (
 
 	"github.com/domainry/domainry-notification-sdk/modulehost"
 	storeschema "github.com/domainry/domainry-notification/internal/infrastructure/persistence/database/schema"
-	"github.com/domainry/domainry-orm/builder"
+	builder "github.com/domainry/domainry-orm/query"
 	"github.com/domainry/domainry-orm/sqlhost"
 )
 

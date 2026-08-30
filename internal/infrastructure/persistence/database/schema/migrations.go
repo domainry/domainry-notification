@@ -2,16 +2,16 @@ package schema
 
 import (
 	"fmt"
+	ormschema "github.com/domainry/domainry-orm/schema"
 	"strings"
 
 	"github.com/domainry/domainry-notification-sdk/modulehost"
-	ormbuilder "github.com/domainry/domainry-orm/builder"
 	ormmigration "github.com/domainry/domainry-orm/migration"
 )
 
 type Profile interface {
 	ColumnType(ColumnKind) (string, error)
-	SchemaColumn(string, ColumnKind) (ormbuilder.SchemaColumn, error)
+	SchemaColumn(string, ColumnKind) (ormschema.ColumnDefinition, error)
 }
 
 type ApplicationScope struct {
@@ -172,7 +172,7 @@ func renderSchema(profile Profile, indexPrefix string, dialect modulehost.Dialec
 				defaulted("application_key", identifierColumn, application.ApplicationKey),
 			}, columns...)
 		}
-		definitions := make([]ormbuilder.SchemaColumn, len(columns))
+		definitions := make([]ormschema.ColumnDefinition, len(columns))
 		primaryColumns := []string{}
 		for index, column := range columns {
 			definition, err := profile.SchemaColumn(column.name, column.kind)
@@ -190,7 +190,7 @@ func renderSchema(profile Profile, indexPrefix string, dialect modulehost.Dialec
 			}
 			definitions[index] = definition
 		}
-		create := ormbuilder.NewCreateTableBuilder(dialect, table.name).WithoutSystemColumns().Columns(definitions...)
+		create := ormschema.NewTable(dialect, table.name).Columns(definitions...)
 		if len(primaryColumns) > 0 {
 			create.PrimaryKey(primaryColumns...)
 		}
@@ -201,7 +201,7 @@ func renderSchema(profile Profile, indexPrefix string, dialect modulehost.Dialec
 		statements = append(statements, statement)
 	}
 	for _, index := range indexes {
-		create := ormbuilder.NewCreateIndexBuilder(dialect, indexPrefix+index.name, index.table).Columns(index.columns...)
+		create := ormschema.NewIndex(dialect, indexPrefix+index.name, index.table).Columns(index.columns...)
 		if index.unique {
 			create.Unique()
 		}

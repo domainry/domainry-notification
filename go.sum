@@ -15,8 +15,8 @@ github.com/domainry/domainry-identity-sdk v0.1.0-dev9 h1:96RdyUSluOQPHL9Hdy8EfMJ
 github.com/domainry/domainry-identity-sdk v0.1.0-dev9/go.mod h1:6DLdAWQS3aTU5D87w8UIS4HSK/Lj9f7/qFslLJR0Gxw=
 github.com/domainry/domainry-notification-sdk v0.1.0-dev.4 h1:VeLnka6b9dtg3cAbYC8pqGmcOI4K7FKVmyENCoz7+Mw=
 github.com/domainry/domainry-notification-sdk v0.1.0-dev.4/go.mod h1:7asWVtaFNMEaFPE6pDE3nwM9EuNdVBJIuTTQpqCekRY=
-github.com/domainry/domainry-orm v0.1.25 h1:Q/FRU/3sbJU6G2lnZ1laufD+7k2hwDtHzakQd4h6oq0=
-github.com/domainry/domainry-orm v0.1.25/go.mod h1:NKMojLuridkYCS4i5L7BO7LMTMsf/uOkWQ9OQ+9Vdn4=
+github.com/domainry/domainry-orm v0.1.27 h1:bXpjvroFrwaj8tgI2zKmXeX4RCaSqCzfRs1AAkpCeHE=
+github.com/domainry/domainry-orm v0.1.27/go.mod h1:NKMojLuridkYCS4i5L7BO7LMTMsf/uOkWQ9OQ+9Vdn4=
 github.com/dustin/go-humanize v1.0.1 h1:GzkhY7T5VNhEkwH0PVJgjz+fX1rhBrR7pRT3mDkpeCY=
 github.com/dustin/go-humanize v1.0.1/go.mod h1:Mu1zIs6XwVuF/gI1OepvI0qD18qycQx+mFykh5fBlto=
 github.com/go-logr/logr v1.2.2/go.mod h1:jdQByPbusPIv2/zmleS9BjJVeZ6kBagPoEUsqbVz/1A=
