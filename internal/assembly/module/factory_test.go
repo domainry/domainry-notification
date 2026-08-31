@@ -171,7 +171,7 @@ func TestModuleFactoryContractAndBorrowedDatabaseLifecycle(t *testing.T) {
 	if err := modulehttp.ValidateSurface(provider.HTTPSurfaces()[0]); err != nil {
 		t.Fatal(err)
 	}
-	if routes := provider.HTTPSurfaces()[0].Routes(); len(routes) != 22 {
+	if routes := provider.HTTPSurfaces()[0].Routes(); len(routes) != 64 {
 		t.Fatalf("Notification routes=%d", len(routes))
 	}
 }

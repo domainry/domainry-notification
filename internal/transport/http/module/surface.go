@@ -57,6 +57,9 @@ func NewSurface(binding notificationsdk.Binding) (modulehttp.Surface, error) {
 		templateReadRoute("GET /notifications/governance/catalog"),
 		templateRoute("GET /notifications/governance/inbox-metrics", "integration.audit.view", "notification.policy.read"),
 	}
+	for _, prefix := range []string{"/business", "/portal"} {
+		s.routes = append(s.routes, inboxRoutes(prefix)...)
+	}
 	s.mux.HandleFunc("GET /notifications/capabilities", s.capabilities)
 	s.mux.HandleFunc("GET /notifications/templates", s.list)
 	s.mux.HandleFunc("GET /notifications/templates/{templateKey}", s.get)
@@ -79,6 +82,9 @@ func NewSurface(binding notificationsdk.Binding) (modulehttp.Surface, error) {
 	s.mux.HandleFunc("GET /notifications/metrics", s.metrics)
 	s.mux.HandleFunc("GET /notifications/governance/catalog", s.governanceCatalog)
 	s.mux.HandleFunc("GET /notifications/governance/inbox-metrics", s.inboxGovernanceMetrics)
+	for _, prefix := range []string{"/business", "/portal"} {
+		s.registerInboxRoutes(prefix)
+	}
 	return s, nil
 }
 
