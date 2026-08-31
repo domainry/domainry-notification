@@ -23,7 +23,6 @@ func inboxRoutes(prefix string) []modulehttp.Route {
 		"DELETE " + prefix + "/notifications/saved-views/{viewKey}", "GET " + prefix + "/notifications/delegations",
 		"PUT " + prefix + "/notifications/delegations/{delegationID}", "DELETE " + prefix + "/notifications/delegations/{delegationID}",
 		"GET " + prefix + "/notifications/delegated-owners", "GET " + prefix + "/notifications/{notificationID}",
-		"GET " + prefix + "/notifications/{notificationID}/actions/{actionKey}/resolve",
 		"POST " + prefix + "/notifications/{notificationID}/read", "POST " + prefix + "/notifications/{notificationID}/unread",
 		"POST " + prefix + "/notifications/{notificationID}/archive", "POST " + prefix + "/notifications/{notificationID}/restore",
 		"POST " + prefix + "/notifications/{notificationID}/acknowledge", "POST " + prefix + "/notifications/read-all",
@@ -51,7 +50,6 @@ func (s *surface) registerInboxRoutes(prefix string) {
 	m.HandleFunc("DELETE "+prefix+"/notifications/delegations/{delegationID}", s.deleteDelegation)
 	m.HandleFunc("GET "+prefix+"/notifications/delegated-owners", s.listDelegatedOwners)
 	m.HandleFunc("GET "+prefix+"/notifications/{notificationID}", s.getInbox)
-	m.HandleFunc("GET "+prefix+"/notifications/{notificationID}/actions/{actionKey}/resolve", s.resolveInboxAction)
 	m.HandleFunc("POST "+prefix+"/notifications/{notificationID}/read", func(w http.ResponseWriter, r *http.Request) { s.setInboxRead(w, r, true) })
 	m.HandleFunc("POST "+prefix+"/notifications/{notificationID}/unread", func(w http.ResponseWriter, r *http.Request) { s.setInboxRead(w, r, false) })
 	m.HandleFunc("POST "+prefix+"/notifications/{notificationID}/archive", func(w http.ResponseWriter, r *http.Request) { s.setInboxArchived(w, r, true) })
@@ -147,18 +145,6 @@ func (s *surface) inboxUnreadCount(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, 200, map[string]int{"unread": v.Unread})
-}
-func (s *surface) resolveInboxAction(w http.ResponseWriter, r *http.Request) {
-	a, q, ok := s.withInbox(w, r)
-	if !ok {
-		return
-	}
-	v, e := s.binding.Inbox().ResolveAction(r.Context(), a, r.PathValue("notificationID"), r.PathValue("actionKey"), q)
-	if e != nil {
-		writeError(w, e)
-		return
-	}
-	writeJSON(w, 200, v)
 }
 func (s *surface) setInboxRead(w http.ResponseWriter, r *http.Request, v bool) {
 	a, _, ok := s.withInbox(w, r)

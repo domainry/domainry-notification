@@ -180,7 +180,7 @@ func TestRemotePublicationReconcilesResponseLossWithoutDuplicateIngest(t *testin
 		t.Fatal(err)
 	}
 	provider, ok := remoteBinding.(modulehttp.Provider)
-	if !ok || len(provider.HTTPSurfaces()) != 1 || len(provider.HTTPSurfaces()[0].Routes()) != 64 {
+	if !ok || len(provider.HTTPSurfaces()) != 1 || len(provider.HTTPSurfaces()[0].Routes()) != 62 {
 		t.Fatalf("SaaS Notification HTTP surfaces=%v", provider)
 	}
 	intent := contract.NotificationIntent{ID: "event", WorkspaceID: "workspace", SourceEventID: "source", EventType: "report.completed", Surface: "business_workspace", RecipientUserIDs: []string{"user"}, OccurredAt: "2026-08-29T00:00:00Z", SubjectType: "report", SubjectID: "report", SubjectVersion: "one"}
