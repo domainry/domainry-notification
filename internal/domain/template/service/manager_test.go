@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	apptemplate "github.com/domainry/domainry-notification/internal/application/template"
 	notification "github.com/domainry/domainry-notification/internal/domain/notification/model"
 	"github.com/domainry/domainry-notification/internal/domain/template/service"
 )
@@ -219,7 +220,7 @@ func TestPublicationProcessorApprovesClaimsAndPublishesSnapshot(t *testing.T) {
 	}
 	now := time.Date(2026, 8, 24, 1, 0, 0, 0, time.UTC)
 	notifier := &workNotifier{}
-	processor, err := template.NewPublicationProcessor(template.PublicationProcessorDependencies{
+	processor, err := apptemplate.NewPublicationProcessor(apptemplate.PublicationProcessorDependencies{
 		Store: store, Manager: manager, Clock: publicationClock{now: now}, WorkerID: "worker-1", WorkNotifier: notifier,
 		NewRequestID:     func() (string, error) { return "request-1", nil },
 		AuthorizeResumed: func(context.Context, string) (bool, error) { return true, nil },
@@ -255,7 +256,7 @@ func TestPublicationProcessorRejectsSelfApprovalAndSupersedesChangedCandidate(t 
 	draft := validEmailTemplate()
 	draft.Status = "draft"
 	record, _ := manager.SaveDraft(t.Context(), draft.Key, draft, "", "requester")
-	processor, _ := template.NewPublicationProcessor(template.PublicationProcessorDependencies{
+	processor, _ := apptemplate.NewPublicationProcessor(apptemplate.PublicationProcessorDependencies{
 		Store: store, Manager: manager, Clock: publicationClock{now: time.Now()}, WorkerID: "worker-1",
 		NewRequestID:     func() (string, error) { return "request-1", nil },
 		AuthorizeResumed: func(context.Context, string) (bool, error) { return true, nil },
@@ -304,7 +305,7 @@ func TestPublicationProcessorReauthorizesReviewerBeforeResumedPublish(t *testing
 			draft.Status = "draft"
 			record, _ := manager.SaveDraft(t.Context(), draft.Key, draft, "", "requester")
 			seenActor := ""
-			processor, err := template.NewPublicationProcessor(template.PublicationProcessorDependencies{
+			processor, err := apptemplate.NewPublicationProcessor(apptemplate.PublicationProcessorDependencies{
 				Store: store, Manager: manager, Clock: publicationClock{now: time.Now()}, WorkerID: "worker-1",
 				NewRequestID: func() (string, error) { return "request-1", nil },
 				AuthorizeResumed: func(_ context.Context, actor string) (bool, error) {

@@ -12,9 +12,12 @@ and Runtime. Deployment topology is not a domain boundary.
 - `internal/domain/<capability>/model` owns domain state and value types;
 - `internal/domain/<capability>/repository` owns persistence ports;
 - `internal/domain/<capability>/service` owns domain behavior;
-- `internal/application` owns use-case contracts shared by adapters;
-- `internal/infrastructure` implements Identity and persistence ports;
-- `internal/transport/http` implements the standalone HTTP adapter;
+- `internal/application/<capability>` owns use-case orchestration, durable
+  processors, leases, retries, and contracts shared by adapters;
+- `internal/adapter/identitysdk` and `internal/adapter/notificationsdk` isolate
+  external SDK and wire-contract conversion;
+- `internal/infrastructure` implements persistence ports;
+- `internal/transport/http/saas` implements the standalone HTTP adapter;
 - `internal/assembly/module` and `internal/assembly/saas` are the two composition
   roots over the same domain implementation;
 - public `module` is the narrow in-process Factory and schema contract facade;
@@ -29,13 +32,18 @@ boundaries and do not define domain ownership.
 ```text
 cmd / public module
   -> assembly
-       -> transport / infrastructure / application
+       -> transport / adapter / infrastructure / application
             -> domain service -> domain repository + domain model
 
 domain never imports application, infrastructure, transport, or assembly
 application never imports infrastructure, transport, or assembly
 infrastructure and transport never import assembly
 ```
+
+Durable inbox, delivery, and publication processors live in
+`internal/application`. Domain services contain domain behavior and do not own
+worker scheduling, claim leases, retry policy execution, or cross-capability
+use-case orchestration.
 
 The host owns authentication and translates its principal into explicit
 workspace, actor, recipient, and surface values before invoking this module.

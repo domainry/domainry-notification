@@ -13,7 +13,7 @@ import (
 
 	"github.com/domainry/domainry-notification-sdk/modulehost"
 	storeschema "github.com/domainry/domainry-notification/internal/infrastructure/persistence/database/schema"
-	builder "github.com/domainry/domainry-orm/query"
+	"github.com/domainry/domainry-orm/query"
 	"github.com/domainry/domainry-orm/sqlhost"
 )
 
@@ -94,9 +94,9 @@ func ExportPortable(ctx context.Context, database sqlhost.Queryer, dialect modul
 		for index, column := range definition.Columns {
 			columns[index] = column.Name
 		}
-		selectBuilder := builder.NewSelectBuilder(dialect, definition.Name).Columns(columns...)
+		selectBuilder := query.NewSelectBuilder(dialect, definition.Name).Columns(columns...)
 		if ownership[definition.Name] == storeschema.WorkspaceData {
-			selectBuilder = builder.NewWorkspaceSelectBuilder(dialect, definition.Name, scope.WorkspaceID).Columns(columns...)
+			selectBuilder = query.NewWorkspaceSelectBuilder(dialect, definition.Name, scope.WorkspaceID).Columns(columns...)
 		}
 		statement, args, err := selectBuilder.Build()
 		if err != nil {
@@ -193,15 +193,15 @@ func ImportPortable(ctx context.Context, database sqlhost.Database, dialect modu
 				values[index] = value
 			}
 			columns := append([]string(nil), table.Columns...)
-			insertBuilder := builder.NewInsertBuilder(dialect, table.Name)
+			insertBuilder := query.NewInsertBuilder(dialect, table.Name)
 			if ownershipByTable()[table.Name] == storeschema.WorkspaceData {
-				workspaceIndex := slices.Index(columns, builder.WorkspaceIDColumn)
+				workspaceIndex := slices.Index(columns, query.WorkspaceIDColumn)
 				if workspaceIndex < 0 || strings.TrimSpace(fmt.Sprint(values[workspaceIndex])) != target.WorkspaceID {
 					return PortableImportReceipt{}, fmt.Errorf("notification portable table %s contains an invalid workspace row", table.Name)
 				}
 				columns = slices.Delete(columns, workspaceIndex, workspaceIndex+1)
 				values = slices.Delete(values, workspaceIndex, workspaceIndex+1)
-				insertBuilder = builder.NewWorkspaceInsertBuilder(dialect, table.Name, target.WorkspaceID)
+				insertBuilder = query.NewWorkspaceInsertBuilder(dialect, table.Name, target.WorkspaceID)
 			}
 			statement, args, buildErr := insertBuilder.Columns(columns...).Values(values...).Build()
 			if buildErr != nil {

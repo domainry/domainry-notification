@@ -52,11 +52,13 @@ func TestDDDPackageBoundaries(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, required := range []string{
-		"internal/application", "internal/assembly/module", "internal/assembly/saas",
+		"internal/adapter/identitysdk", "internal/adapter/notificationsdk",
+		"internal/application", "internal/application/delivery", "internal/application/inbox", "internal/application/template",
+		"internal/assembly/module", "internal/assembly/saas",
 		"internal/domain/notification/model", "internal/domain/template/model", "internal/domain/template/repository", "internal/domain/template/service",
 		"internal/domain/template/validation", "internal/domain/inbox/model", "internal/domain/inbox/repository", "internal/domain/inbox/service",
 		"internal/domain/inbox/validation", "internal/domain/delivery/model", "internal/domain/delivery/policy", "internal/domain/delivery/repository", "internal/domain/delivery/service",
-		"internal/infrastructure/identity", "internal/infrastructure/persistence", "internal/transport/http",
+		"internal/infrastructure/persistence", "internal/transport/http/saas",
 	} {
 		if info, err := os.Stat(filepath.FromSlash(required)); err != nil || !info.IsDir() {
 			t.Errorf("required DDD package directory %q is missing", required)
@@ -123,10 +125,16 @@ func TestWorkspaceTablesCannotUseSystemBuilders(t *testing.T) {
 func assertAllowedImport(t *testing.T, source, imported string) {
 	t.Helper()
 	const root = "github.com/domainry/domainry-notification/"
-	if !strings.HasPrefix(source, root+"internal/") || !strings.HasPrefix(imported, root) {
+	if !strings.HasPrefix(source, root+"internal/") {
 		return
 	}
 	relativeSource := strings.TrimPrefix(source, root)
+	if strings.HasPrefix(relativeSource, "internal/domain/") && (strings.HasPrefix(imported, "github.com/domainry/domainry-notification-sdk") || strings.HasPrefix(imported, "github.com/domainry/domainry-identity-sdk")) {
+		t.Errorf("domain SDK dependency violation: %s imports %s", source, imported)
+	}
+	if !strings.HasPrefix(imported, root) {
+		return
+	}
 	relativeImport := strings.TrimPrefix(imported, root)
 	forbidden := []string{}
 	switch {

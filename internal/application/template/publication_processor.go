@@ -89,7 +89,7 @@ func (p *PublicationProcessor) Request(ctx context.Context, key, scheduledFor, e
 	}
 	snapshot := cloneTemplate(*record.Draft)
 	snapshot.Key, snapshot.Status = key, "draft"
-	if err := p.manager.validator.ValidateEditable(snapshot); err != nil {
+	if err := p.manager.ValidateEditable(snapshot); err != nil {
 		return PublicationRequest{}, err
 	}
 	now := p.clock.Now().UTC()
@@ -271,7 +271,7 @@ func (p *PublicationProcessor) publishClaimed(ctx context.Context, request Publi
 		}
 		return value, notification.NewError(notification.ErrorConflict, "backend.notification.publication_candidate_changed", nil, map[string]any{"publication_id": request.ID})
 	}
-	published, err := p.manager.publish(ctx, request.TemplateKey, request.DraftUpdatedAt, request.ReviewedBy, true)
+	published, err := p.manager.PublishApproved(ctx, request.TemplateKey, request.DraftUpdatedAt, request.ReviewedBy)
 	if err != nil {
 		if current, ok, getErr := p.store.Get(ctx, request.TemplateKey); getErr == nil && ok && current.Published != nil && PublicationCandidateHash(*current.Published) == request.CandidateHash {
 			return p.finish(ctx, request, PublicationPublished, current.PublishedVersion, "")

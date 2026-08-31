@@ -1,6 +1,3 @@
-// Package base contains the database primitives shared by notification stores.
-// It deliberately has no notification business semantics and does not select a
-// database driver; the assembly layer injects the renderer chosen by the host.
 package base
 
 import (
@@ -10,13 +7,10 @@ import (
 	"strings"
 
 	"github.com/domainry/domainry-notification-sdk/modulehost"
-	builder "github.com/domainry/domainry-orm/query"
+	"github.com/domainry/domainry-orm/query"
 	"github.com/domainry/domainry-orm/sqlhost"
 )
 
-// SQLStore is the single database dependency used by notification persistence.
-// Database-specific behavior is supplied through Renderer by the composition
-// root, so business stores never inspect a driver name.
 type SQLStore struct {
 	Database sqlhost.Database
 	Renderer modulehost.Dialect
@@ -34,23 +28,18 @@ func (s *SQLStore) Columns(columns []string) string {
 	return strings.Join(quoted, ", ")
 }
 
-// Insert builds and executes one portable INSERT statement. Business stores
-// provide only table/column/value semantics; placeholder and identifier rules
-// remain owned by the ORM renderer.
 func (s *SQLStore) Insert(ctx context.Context, executor sqlhost.Executor, table string, columns []string, values ...any) (sql.Result, error) {
-	statement, arguments, err := builder.NewInsertBuilder(s.Renderer, table).Columns(columns...).Values(values...).Build()
+	statement, arguments, err := query.NewInsertBuilder(s.Renderer, table).Columns(columns...).Values(values...).Build()
 	if err != nil {
 		return nil, err
 	}
 	return executor.ExecContext(ctx, statement, arguments...)
 }
 
-// WorkspaceInsert verifies the caller's tenant value and lets the ORM own the
-// immutable workspace_id column injected into the prepared statement.
 func (s *SQLStore) WorkspaceInsert(ctx context.Context, executor sqlhost.Executor, workspaceID, table string, columns []string, values ...any) (sql.Result, error) {
 	workspaceColumn := -1
 	for index, column := range columns {
-		if strings.EqualFold(strings.TrimSpace(column), builder.WorkspaceIDColumn) {
+		if strings.EqualFold(strings.TrimSpace(column), query.WorkspaceIDColumn) {
 			workspaceColumn = index
 			break
 		}
@@ -62,7 +51,7 @@ func (s *SQLStore) WorkspaceInsert(ctx context.Context, executor sqlhost.Executo
 	ownedColumns = append(ownedColumns, columns[workspaceColumn+1:]...)
 	ownedValues := append([]any(nil), values[:workspaceColumn]...)
 	ownedValues = append(ownedValues, values[workspaceColumn+1:]...)
-	statement, arguments, err := builder.NewWorkspaceInsertBuilder(s.Renderer, table, workspaceID).Columns(ownedColumns...).Values(ownedValues...).Build()
+	statement, arguments, err := query.NewWorkspaceInsertBuilder(s.Renderer, table, workspaceID).Columns(ownedColumns...).Values(ownedValues...).Build()
 	if err != nil {
 		return nil, err
 	}

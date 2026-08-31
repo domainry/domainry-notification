@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/domainry/domainry-notification/internal/domain/delivery/service"
+	"github.com/domainry/domainry-notification/internal/application/delivery"
 	notification "github.com/domainry/domainry-notification/internal/domain/notification/model"
 	"github.com/domainry/domainry-notification/internal/domain/template/service"
 )

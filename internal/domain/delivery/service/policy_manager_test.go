@@ -15,6 +15,10 @@ type policyStore struct {
 	reservations []delivery.Reservation
 }
 
+type clock struct{ now time.Time }
+
+func (c clock) Now() time.Time { return c.now }
+
 func (s *policyStore) GetPolicy(context.Context) (delivery.Policy, error) { return s.policy, nil }
 func (s *policyStore) SavePolicy(_ context.Context, value delivery.Policy) (delivery.Policy, error) {
 	s.policy = value

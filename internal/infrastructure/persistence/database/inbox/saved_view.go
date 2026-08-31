@@ -8,7 +8,7 @@ import (
 
 	"github.com/domainry/domainry-notification/internal/domain/inbox/service"
 	notification "github.com/domainry/domainry-notification/internal/domain/notification/model"
-	builder "github.com/domainry/domainry-orm/query"
+	"github.com/domainry/domainry-orm/query"
 )
 
 var _ inbox.SavedViewStore = (*Store)(nil)
@@ -18,11 +18,11 @@ func (s *Store) ListSavedViews(ctx context.Context, workspaceID notification.Wor
 		return nil, fmt.Errorf("notification saved-view owner identity is required")
 	}
 	ctx = s.workspaceScope.Context(ctx, workspaceID)
-	query, args, err := builder.NewWorkspaceSelectBuilder(s.Renderer, "_notification_inbox_saved_views", workspaceID.String()).Columns("payload_json").Where(builder.And(builder.Equal("recipient_user_id", recipientID.String()), builder.Equal("surface", string(surface)))).OrderBy(builder.Ascending("view_key")).Build()
+	queryValue, args, err := query.NewWorkspaceSelectBuilder(s.Renderer, "_notification_inbox_saved_views", workspaceID.String()).Columns("payload_json").Where(query.And(query.Equal("recipient_user_id", recipientID.String()), query.Equal("surface", string(surface)))).OrderBy(query.Ascending("view_key")).Build()
 	if err != nil {
 		return nil, err
 	}
-	rows, err := s.Database.QueryContext(ctx, query, args...)
+	rows, err := s.Database.QueryContext(ctx, queryValue, args...)
 	if err != nil {
 		return nil, fmt.Errorf("list notification inbox saved views: %w", err)
 	}
@@ -52,11 +52,11 @@ func (s *Store) SaveSavedView(ctx context.Context, workspaceID notification.Work
 	if err != nil {
 		return inbox.SavedView{}, fmt.Errorf("encode notification inbox saved view: %w", err)
 	}
-	query, args, err := builder.NewWorkspaceUpdateBuilder(s.Renderer, "_notification_inbox_saved_views", workspaceID.String()).Set("payload_json", string(raw)).Set("updated_at", value.UpdatedAt).Where(builder.And(builder.Equal("recipient_user_id", recipientID.String()), builder.Equal("surface", string(surface)), builder.Equal("view_key", value.Key))).Build()
+	queryValue, args, err := query.NewWorkspaceUpdateBuilder(s.Renderer, "_notification_inbox_saved_views", workspaceID.String()).Set("payload_json", string(raw)).Set("updated_at", value.UpdatedAt).Where(query.And(query.Equal("recipient_user_id", recipientID.String()), query.Equal("surface", string(surface)), query.Equal("view_key", value.Key))).Build()
 	if err != nil {
 		return inbox.SavedView{}, err
 	}
-	result, err := s.Database.ExecContext(ctx, query, args...)
+	result, err := s.Database.ExecContext(ctx, queryValue, args...)
 	if err != nil {
 		return inbox.SavedView{}, fmt.Errorf("update notification inbox saved view: %w", err)
 	}
@@ -80,11 +80,11 @@ func (s *Store) DeleteSavedView(ctx context.Context, workspaceID notification.Wo
 		return false, fmt.Errorf("notification saved-view identity is required")
 	}
 	ctx = s.workspaceScope.Context(ctx, workspaceID)
-	query, args, err := builder.NewWorkspaceDeleteBuilder(s.Renderer, "_notification_inbox_saved_views", workspaceID.String()).Where(builder.And(builder.Equal("recipient_user_id", recipientID.String()), builder.Equal("surface", string(surface)), builder.Equal("view_key", key))).Build()
+	queryValue, args, err := query.NewWorkspaceDeleteBuilder(s.Renderer, "_notification_inbox_saved_views", workspaceID.String()).Where(query.And(query.Equal("recipient_user_id", recipientID.String()), query.Equal("surface", string(surface)), query.Equal("view_key", key))).Build()
 	if err != nil {
 		return false, err
 	}
-	result, err := s.Database.ExecContext(ctx, query, args...)
+	result, err := s.Database.ExecContext(ctx, queryValue, args...)
 	if err != nil {
 		return false, fmt.Errorf("delete notification inbox saved view: %w", err)
 	}

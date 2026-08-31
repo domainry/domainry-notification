@@ -13,6 +13,9 @@ import (
 	notificationsdk "github.com/domainry/domainry-notification-sdk"
 	"github.com/domainry/domainry-notification-sdk/contract"
 	"github.com/domainry/domainry-notification-sdk/modulehost"
+	appdelivery "github.com/domainry/domainry-notification/internal/application/delivery"
+	appinbox "github.com/domainry/domainry-notification/internal/application/inbox"
+	apptemplate "github.com/domainry/domainry-notification/internal/application/template"
 	"github.com/domainry/domainry-notification/internal/domain/delivery/service"
 	"github.com/domainry/domainry-notification/internal/domain/inbox/service"
 	notification "github.com/domainry/domainry-notification/internal/domain/notification/model"
@@ -134,7 +137,7 @@ func (f *Factory) openHosted(ctx context.Context, application notificationsdk.Ap
 		return nil, err
 	}
 	notifier := workNotifierAdapter{host.WorkNotifier()}
-	publicationProcessor, err := template.NewPublicationProcessor(template.PublicationProcessorDependencies{
+	publicationProcessor, err := apptemplate.NewPublicationProcessor(apptemplate.PublicationProcessorDependencies{
 		Store: store, Manager: templateManager, Clock: host.Clock(), WorkerID: host.WorkerID(), WorkNotifier: notifier,
 		AuthorizeResumed: func(ctx context.Context, actor string) (bool, error) {
 			resolution, err := host.Identity().Principals().Resolve(ctx, identitysdk.PrincipalResolutionRequest{
@@ -186,7 +189,7 @@ func (f *Factory) openHosted(ctx context.Context, application notificationsdk.Ap
 	if err != nil {
 		return nil, err
 	}
-	inboxProcessor, err := inbox.NewProcessor(inbox.ProcessorDependencies{Events: store, Clock: host.Clock(), WorkerID: host.WorkerID(), Audiences: audienceAdapter{host.AudienceResolver()}, RecipientLocale: recipientLocaleAdapter{host.RecipientDirectory()}, WorkNotifier: notifier})
+	inboxProcessor, err := appinbox.NewProcessor(appinbox.ProcessorDependencies{Events: store, Clock: host.Clock(), WorkerID: host.WorkerID(), Audiences: audienceAdapter{host.AudienceResolver()}, RecipientLocale: recipientLocaleAdapter{host.RecipientDirectory()}, WorkNotifier: notifier})
 	if err != nil {
 		return nil, err
 	}
@@ -194,7 +197,7 @@ func (f *Factory) openHosted(ctx context.Context, application notificationsdk.Ap
 	if err != nil {
 		return nil, err
 	}
-	deliveryProcessor, err := delivery.NewProcessor(delivery.ProcessorDependencies{Plans: store, Renderer: templateEngine, Dispatcher: deliveryGatewayAdapter{host.DeliveryGateway()}, Policy: policyManager, Clock: host.Clock(), WorkerID: host.WorkerID()})
+	deliveryProcessor, err := appdelivery.NewProcessor(appdelivery.ProcessorDependencies{Plans: store, Renderer: templateEngine, Dispatcher: deliveryGatewayAdapter{host.DeliveryGateway()}, Policy: policyManager, Clock: host.Clock(), WorkerID: host.WorkerID()})
 	if err != nil {
 		return nil, err
 	}

@@ -44,6 +44,21 @@ func (m *Manager) ListVersions(ctx context.Context, key string) ([]Version, erro
 	return m.store.ListVersions(ctx, strings.TrimSpace(key))
 }
 
+// ValidateEditable exposes the domain validation needed by the publication
+// application service without leaking Validator internals.
+func (m *Manager) ValidateEditable(value Template) error {
+	if m == nil || m.validator == nil {
+		return fmt.Errorf("notification template manager is unavailable")
+	}
+	return m.validator.ValidateEditable(value)
+}
+
+// PublishApproved applies an already-authorized publication while allowing the
+// application service's durable publication lock to remain active.
+func (m *Manager) PublishApproved(ctx context.Context, key, expectedUpdatedAt, actor string) (Record, error) {
+	return m.publish(ctx, key, expectedUpdatedAt, actor, true)
+}
+
 // RefreshPublished reconciles this process with durable publication state.
 // RevisionStore avoids full reloads but is never required for correctness.
 func (m *Manager) RefreshPublished(ctx context.Context) error {

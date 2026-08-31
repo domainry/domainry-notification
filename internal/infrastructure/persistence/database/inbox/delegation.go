@@ -7,7 +7,7 @@ import (
 
 	"github.com/domainry/domainry-notification/internal/domain/inbox/service"
 	notification "github.com/domainry/domainry-notification/internal/domain/notification/model"
-	builder "github.com/domainry/domainry-orm/query"
+	"github.com/domainry/domainry-orm/query"
 )
 
 var _ inbox.DelegationStore = (*Store)(nil)
@@ -19,11 +19,11 @@ func (s *Store) ListDelegations(ctx context.Context, workspaceID notification.Wo
 		return nil, fmt.Errorf("notification inbox delegation owner identity is required")
 	}
 	ctx = s.workspaceScope.Context(ctx, workspaceID)
-	query, args, err := builder.NewWorkspaceSelectBuilder(s.Renderer, "_notification_inbox_delegations", workspaceID.String()).Columns(delegationColumns...).Where(builder.And(builder.Equal("owner_user_id", ownerID.String()), builder.Equal("surface", string(surface)))).OrderBy(builder.Ascending("created_at")).Build()
+	queryValue, args, err := query.NewWorkspaceSelectBuilder(s.Renderer, "_notification_inbox_delegations", workspaceID.String()).Columns(delegationColumns...).Where(query.And(query.Equal("owner_user_id", ownerID.String()), query.Equal("surface", string(surface)))).OrderBy(query.Ascending("created_at")).Build()
 	if err != nil {
 		return nil, err
 	}
-	rows, err := s.Database.QueryContext(ctx, query, args...)
+	rows, err := s.Database.QueryContext(ctx, queryValue, args...)
 	if err != nil {
 		return nil, fmt.Errorf("list notification inbox delegations: %w", err)
 	}
@@ -44,11 +44,11 @@ func (s *Store) SaveDelegation(ctx context.Context, value inbox.Delegation) (inb
 		return value, fmt.Errorf("notification inbox delegation identity is required")
 	}
 	ctx = s.workspaceScope.Context(ctx, value.WorkspaceID)
-	query, args, err := builder.NewWorkspaceUpdateBuilder(s.Renderer, "_notification_inbox_delegations", value.WorkspaceID.String()).Set("delegate_user_id", value.DelegateUserID.String()).Set("starts_at", value.StartsAt).Set("ends_at", value.EndsAt).Set("enabled", value.Enabled).Set("updated_at", value.UpdatedAt).Where(builder.And(builder.Equal("owner_user_id", value.OwnerUserID.String()), builder.Equal("id", value.ID))).Build()
+	queryValue, args, err := query.NewWorkspaceUpdateBuilder(s.Renderer, "_notification_inbox_delegations", value.WorkspaceID.String()).Set("delegate_user_id", value.DelegateUserID.String()).Set("starts_at", value.StartsAt).Set("ends_at", value.EndsAt).Set("enabled", value.Enabled).Set("updated_at", value.UpdatedAt).Where(query.And(query.Equal("owner_user_id", value.OwnerUserID.String()), query.Equal("id", value.ID))).Build()
 	if err != nil {
 		return value, err
 	}
-	result, err := s.Database.ExecContext(ctx, query, args...)
+	result, err := s.Database.ExecContext(ctx, queryValue, args...)
 	if err != nil {
 		return value, fmt.Errorf("update notification inbox delegation: %w", err)
 	}
@@ -72,11 +72,11 @@ func (s *Store) DeleteDelegation(ctx context.Context, workspaceID notification.W
 		return false, fmt.Errorf("notification inbox delegation identity is required")
 	}
 	ctx = s.workspaceScope.Context(ctx, workspaceID)
-	query, args, err := builder.NewWorkspaceDeleteBuilder(s.Renderer, "_notification_inbox_delegations", workspaceID.String()).Where(builder.And(builder.Equal("owner_user_id", ownerID.String()), builder.Equal("id", delegationID))).Build()
+	queryValue, args, err := query.NewWorkspaceDeleteBuilder(s.Renderer, "_notification_inbox_delegations", workspaceID.String()).Where(query.And(query.Equal("owner_user_id", ownerID.String()), query.Equal("id", delegationID))).Build()
 	if err != nil {
 		return false, err
 	}
-	result, err := s.Database.ExecContext(ctx, query, args...)
+	result, err := s.Database.ExecContext(ctx, queryValue, args...)
 	if err != nil {
 		return false, fmt.Errorf("delete notification inbox delegation: %w", err)
 	}
@@ -89,12 +89,12 @@ func (s *Store) ListActiveDelegatedOwnerIDs(ctx context.Context, workspaceID not
 		return nil, fmt.Errorf("notification active delegation query identity is required")
 	}
 	ctx = s.workspaceScope.Context(ctx, workspaceID)
-	predicate := builder.And(builder.Equal("delegate_user_id", delegateID.String()), builder.Equal("surface", string(surface)), builder.Equal("enabled", true), builder.Or(builder.Equal("starts_at", ""), builder.LessThanOrEqual("starts_at", now)), builder.Or(builder.Equal("ends_at", ""), builder.GreaterThan("ends_at", now)))
-	query, args, err := builder.NewWorkspaceSelectBuilder(s.Renderer, "_notification_inbox_delegations", workspaceID.String()).Columns("owner_user_id").Distinct().Where(predicate).OrderBy(builder.Ascending("owner_user_id")).Build()
+	predicate := query.And(query.Equal("delegate_user_id", delegateID.String()), query.Equal("surface", string(surface)), query.Equal("enabled", true), query.Or(query.Equal("starts_at", ""), query.LessThanOrEqual("starts_at", now)), query.Or(query.Equal("ends_at", ""), query.GreaterThan("ends_at", now)))
+	queryValue, args, err := query.NewWorkspaceSelectBuilder(s.Renderer, "_notification_inbox_delegations", workspaceID.String()).Columns("owner_user_id").Distinct().Where(predicate).OrderBy(query.Ascending("owner_user_id")).Build()
 	if err != nil {
 		return nil, err
 	}
-	rows, err := s.Database.QueryContext(ctx, query, args...)
+	rows, err := s.Database.QueryContext(ctx, queryValue, args...)
 	if err != nil {
 		return nil, fmt.Errorf("list active notification inbox delegations: %w", err)
 	}

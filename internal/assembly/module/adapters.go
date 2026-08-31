@@ -2,12 +2,14 @@ package module
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"time"
 
 	"github.com/domainry/domainry-notification-sdk/contract"
 	"github.com/domainry/domainry-notification-sdk/modulehost"
+	sdkadapter "github.com/domainry/domainry-notification/internal/adapter/notificationsdk"
+	appinbox "github.com/domainry/domainry-notification/internal/application/inbox"
+	apptemplate "github.com/domainry/domainry-notification/internal/application/template"
 	"github.com/domainry/domainry-notification/internal/domain/delivery/service"
 	"github.com/domainry/domainry-notification/internal/domain/inbox/service"
 	notification "github.com/domainry/domainry-notification/internal/domain/notification/model"
@@ -17,27 +19,11 @@ import (
 )
 
 func convert[To any, From any](value From) (To, error) {
-	var result To
-	encoded, err := json.Marshal(value)
-	if err != nil {
-		return result, err
-	}
-	if err := json.Unmarshal(encoded, &result); err != nil {
-		return result, err
-	}
-	return result, nil
+	return sdkadapter.Convert[To](value)
 }
 
 func convertSlice[To any, From any](values []From) ([]To, error) {
-	result := make([]To, len(values))
-	for index := range values {
-		value, err := convert[To](values[index])
-		if err != nil {
-			return nil, err
-		}
-		result[index] = value
-	}
-	return result, nil
+	return sdkadapter.ConvertSlice[To](values)
 }
 
 type workspaceScopeAdapter struct{ delegate modulehost.WorkspaceScope }
@@ -137,8 +123,8 @@ func (a deliveryGatewayAdapter) Dispatch(ctx context.Context, request delivery.D
 var _ sqlstore.WorkspaceScope = workspaceScopeAdapter{}
 var _ sqlstore.QueueScopeIndex = queueScopeAdapter{}
 var _ inbox.WorkNotifier = workNotifierAdapter{}
-var _ template.PublicationWorkNotifier = workNotifierAdapter{}
+var _ apptemplate.PublicationWorkNotifier = workNotifierAdapter{}
 var _ template.RecipientDirectory = recipientDirectoryAdapter{}
-var _ inbox.RecipientLocaleResolver = recipientLocaleAdapter{}
-var _ inbox.AudienceResolver = audienceAdapter{}
+var _ appinbox.RecipientLocaleResolver = recipientLocaleAdapter{}
+var _ appinbox.AudienceResolver = audienceAdapter{}
 var _ delivery.Dispatcher = deliveryGatewayAdapter{}

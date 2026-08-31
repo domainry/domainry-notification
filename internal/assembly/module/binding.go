@@ -12,6 +12,9 @@ import (
 	notificationsdk "github.com/domainry/domainry-notification-sdk"
 	"github.com/domainry/domainry-notification-sdk/contract"
 	"github.com/domainry/domainry-notification-sdk/modulehost"
+	appdelivery "github.com/domainry/domainry-notification/internal/application/delivery"
+	appinbox "github.com/domainry/domainry-notification/internal/application/inbox"
+	apptemplate "github.com/domainry/domainry-notification/internal/application/template"
 	"github.com/domainry/domainry-notification/internal/domain/delivery/service"
 	"github.com/domainry/domainry-notification/internal/domain/inbox/service"
 	notification "github.com/domainry/domainry-notification/internal/domain/notification/model"
@@ -25,14 +28,14 @@ type binding struct {
 	identity             identitysdk.Binding
 	principals           principalAuthenticator
 	templates            *template.Manager
-	publications         *template.PublicationProcessor
+	publications         *apptemplate.PublicationProcessor
 	engine               *template.Engine
 	publisher            *inbox.Publisher
 	compiler             *inbox.Compiler
 	store                *sqlstore.Store
-	inboxProcessor       *inbox.Processor
+	inboxProcessor       *appinbox.Processor
 	policy               *delivery.PolicyManager
-	deliveryProcessor    *delivery.Processor
+	deliveryProcessor    *appdelivery.Processor
 	mailbox              *inbox.MailboxManager
 	actions              *inbox.ActionResolver
 	catalog              *inbox.Catalog

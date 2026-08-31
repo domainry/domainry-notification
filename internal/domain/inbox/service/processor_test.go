@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	appinbox "github.com/domainry/domainry-notification/internal/application/inbox"
 	"github.com/domainry/domainry-notification/internal/domain/delivery/service"
 	"github.com/domainry/domainry-notification/internal/domain/inbox/service"
 	notification "github.com/domainry/domainry-notification/internal/domain/notification/model"
@@ -68,7 +69,7 @@ func TestProcessorResolvesAudienceAndMaterializesLocalizedItems(t *testing.T) {
 		ChannelPlans: []delivery.Plan{{ID: "plan-1", WorkspaceID: "workspace-1"}},
 		OccurredAt:   "2026-08-24T00:00:00.000000000Z", CreatedAt: "2026-08-24T00:00:00.000000000Z", UpdatedAt: "2026-08-24T00:00:00.000000000Z",
 	}}
-	processor, err := inbox.NewProcessor(inbox.ProcessorDependencies{
+	processor, err := appinbox.NewProcessor(appinbox.ProcessorDependencies{
 		Events: store, Clock: fixedClock{value: time.Date(2026, 8, 24, 1, 0, 0, 0, time.UTC)}, WorkerID: "worker-1",
 		Audiences: audienceResolver{}, RecipientLocale: localeResolver{}, WorkNotifier: wakeups,
 	})

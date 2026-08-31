@@ -8,7 +8,7 @@ import (
 	ormschema "github.com/domainry/domainry-orm/schema"
 
 	ormdialect "github.com/domainry/domainry-orm/dialect"
-	ormbuilder "github.com/domainry/domainry-orm/query"
+	"github.com/domainry/domainry-orm/query"
 )
 
 const LedgerTable = "_schema_migrations"
@@ -46,7 +46,7 @@ func (l Ledger) Ensure(ctx context.Context, executor Executor) error {
 }
 
 func (l Ledger) ValidateApplicationBinding(ctx context.Context, queryer Queryer, namespace string) error {
-	statement, args, err := ormbuilder.NewSelectBuilder(l.renderer, LedgerTable).Columns("namespace").OrderBy(ormbuilder.Ascending("namespace")).Limit(1).Build()
+	statement, args, err := query.NewSelectBuilder(l.renderer, LedgerTable).Columns("namespace").OrderBy(query.Ascending("namespace")).Limit(1).Build()
 	if err != nil {
 		return fmt.Errorf("build Notification SaaS application binding query: %w", err)
 	}
@@ -64,9 +64,9 @@ func (l Ledger) ValidateApplicationBinding(ctx context.Context, queryer Queryer,
 }
 
 func (l Ledger) Checksum(ctx context.Context, queryer Queryer, namespace string, version uint) (string, bool, error) {
-	statement, args, err := ormbuilder.NewSelectBuilder(l.renderer, LedgerTable).Columns("checksum").Where(ormbuilder.And(
-		ormbuilder.Equal("namespace", namespace),
-		ormbuilder.Equal("version", version),
+	statement, args, err := query.NewSelectBuilder(l.renderer, LedgerTable).Columns("checksum").Where(query.And(
+		query.Equal("namespace", namespace),
+		query.Equal("version", version),
 	)).Build()
 	if err != nil {
 		return "", false, fmt.Errorf("build Notification SaaS migration ledger query: %w", err)
@@ -82,7 +82,7 @@ func (l Ledger) Checksum(ctx context.Context, queryer Queryer, namespace string,
 }
 
 func (l Ledger) Record(ctx context.Context, executor Executor, namespace string, version uint, checksum, appliedAt string) error {
-	statement, args, err := ormbuilder.NewInsertBuilder(l.renderer, LedgerTable).Columns("namespace", "version", "checksum", "applied_at").Values(namespace, version, checksum, appliedAt).Build()
+	statement, args, err := query.NewInsertBuilder(l.renderer, LedgerTable).Columns("namespace", "version", "checksum", "applied_at").Values(namespace, version, checksum, appliedAt).Build()
 	if err != nil {
 		return fmt.Errorf("build Notification SaaS migration ledger insert: %w", err)
 	}
