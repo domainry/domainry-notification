@@ -9,7 +9,7 @@ The internal SQL store must never process the same durable work concurrently.
 
 | Plane responsibility | Module entry point | Responsibility retained by Plane |
 | --- | --- | --- |
-| template administration | internal template domain service | HTTP authorization and DTO mapping |
+| template administration | internal template domain service and product HTTP Surface | listener, cross-cutting authentication guard and Surface mounting |
 | scheduled template publication | internal template publication service | worker scheduling and wakeups |
 | event-type and rule catalog | internal inbox catalog service | source modules contribute definitions at startup |
 | producer notification intents | Notification SDK `Publisher` | source transaction and after-commit wakeup |
@@ -55,9 +55,10 @@ Integration aggregates, or Connector SDK/provider packages.
    runtime. Never run old and new processors together.
 6. Switch source producers to the Notification SDK `Publisher` or its transaction-compatible
    event writer. Wake workers only after the source transaction commits.
-7. Remove Plane notification domain models, repositories, validation, and SQL
-   implementations only after imports and compatibility tests prove no caller
-   remains. Keep HTTP and host adapters in Plane.
+7. Remove Plane notification domain models, repositories, validation, SQL and
+   product HTTP handlers only after imports and compatibility tests prove no
+   caller remains. Keep the generic HTTP host/guard plus source-owner adapters
+   and the explicit cross-resource action authorization seam in Plane.
 
 ## Compatibility matrix
 

@@ -1,8 +1,9 @@
 # Architecture
 
-This module owns notification semantics. It does not own the host application's
-identity model, authorization model, worker runtime, HTTP transport, Integration
-Outbox, secrets, or concrete Connector providers.
+This module owns notification semantics and Notification product HTTP handlers.
+It does not own the host application's identity model, authorization model,
+listener/middleware runtime, worker runtime, Integration Outbox, secrets, or
+concrete Connector providers.
 
 ## DDD package structure
 
@@ -17,7 +18,9 @@ and Runtime. Deployment topology is not a domain boundary.
 - `internal/adapter/identitysdk` and `internal/adapter/notificationsdk` isolate
   external SDK and wire-contract conversion;
 - `internal/infrastructure` implements persistence ports;
-- `internal/transport/http/saas` implements the standalone HTTP adapter;
+- `internal/transport/http/module` implements the topology-neutral product HTTP
+  Surface over the SDK Binding;
+- `internal/transport/http/saas` implements the standalone service protocol;
 - `internal/assembly/module` and `internal/assembly/saas` are the two composition
   roots over the same domain implementation;
 - public `module` is the narrow in-process Factory and schema contract facade;
