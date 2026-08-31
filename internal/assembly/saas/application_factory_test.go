@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/domainry/domainry-foundation/modulehttp"
 	identitysdk "github.com/domainry/domainry-identity-sdk"
 	notificationsdk "github.com/domainry/domainry-notification-sdk"
 	"github.com/domainry/domainry-notification-sdk/contract"
@@ -174,9 +175,13 @@ func TestRemotePublicationReconcilesResponseLossWithoutDuplicateIngest(t *testin
 	server := httptest.NewServer(handler)
 	t.Cleanup(server.Close)
 	transport := &loseFirstPublicationResponseTransport{base: http.DefaultTransport}
-	remoteBinding, err := notificationremote.NewFactory(notificationremote.Config{BaseURL: server.URL, ServiceCredential: "service", HTTPClient: &http.Client{Transport: transport}}).Open(t.Context(), application)
+	remoteBinding, err := NewRemoteFactory(notificationremote.NewFactory(notificationremote.Config{BaseURL: server.URL, ServiceCredential: "service", HTTPClient: &http.Client{Transport: transport}})).Open(t.Context(), application)
 	if err != nil {
 		t.Fatal(err)
+	}
+	provider, ok := remoteBinding.(modulehttp.Provider)
+	if !ok || len(provider.HTTPSurfaces()) != 1 || len(provider.HTTPSurfaces()[0].Routes()) != 22 {
+		t.Fatalf("SaaS Notification HTTP surfaces=%v", provider)
 	}
 	intent := contract.NotificationIntent{ID: "event", WorkspaceID: "workspace", SourceEventID: "source", EventType: "report.completed", Surface: "business_workspace", RecipientUserIDs: []string{"user"}, OccurredAt: "2026-08-29T00:00:00Z", SubjectType: "report", SubjectID: "report", SubjectVersion: "one"}
 	event, created, err := remoteBinding.Publisher().PublishIntent(t.Context(), intent)
