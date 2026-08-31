@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/domainry/domainry-foundation/modulehttp"
 	identitysdk "github.com/domainry/domainry-identity-sdk"
@@ -48,6 +49,13 @@ func NewSurface(binding notificationsdk.Binding) (modulehttp.Surface, error) {
 		templateRoute("POST /notifications/templates/{templateKey}/preview", "notification.template.read", "notification.template.test"),
 		templateReadRoute("GET /notifications/templates/{templateKey}/versions"),
 		templateRoute("POST /notifications/templates/{templateKey}/versions/{version}/restore-draft", "notification.template.manage"),
+		templateRoute("GET /notifications/policy", "notification.policy.read", "notification.policy.manage"),
+		templateRoute("PUT /notifications/policy", "notification.policy.manage"),
+		templateRoute("GET /notifications/preferences", "notification.policy.read", "notification.policy.manage"),
+		templateRoute("PUT /notifications/preferences/{recipientKey}", "notification.policy.manage"),
+		templateRoute("GET /notifications/metrics", "integration.audit.view", "notification.policy.read"),
+		templateReadRoute("GET /notifications/governance/catalog"),
+		templateRoute("GET /notifications/governance/inbox-metrics", "integration.audit.view", "notification.policy.read"),
 	}
 	s.mux.HandleFunc("GET /notifications/capabilities", s.capabilities)
 	s.mux.HandleFunc("GET /notifications/templates", s.list)
@@ -64,6 +72,13 @@ func NewSurface(binding notificationsdk.Binding) (modulehttp.Surface, error) {
 	s.mux.HandleFunc("POST /notifications/templates/{templateKey}/preview", s.preview)
 	s.mux.HandleFunc("GET /notifications/templates/{templateKey}/versions", s.listVersions)
 	s.mux.HandleFunc("POST /notifications/templates/{templateKey}/versions/{version}/restore-draft", s.restoreVersion)
+	s.mux.HandleFunc("GET /notifications/policy", s.getPolicy)
+	s.mux.HandleFunc("PUT /notifications/policy", s.savePolicy)
+	s.mux.HandleFunc("GET /notifications/preferences", s.listPreferences)
+	s.mux.HandleFunc("PUT /notifications/preferences/{recipientKey}", s.savePreference)
+	s.mux.HandleFunc("GET /notifications/metrics", s.metrics)
+	s.mux.HandleFunc("GET /notifications/governance/catalog", s.governanceCatalog)
+	s.mux.HandleFunc("GET /notifications/governance/inbox-metrics", s.inboxGovernanceMetrics)
 	return s, nil
 }
 
@@ -369,6 +384,110 @@ func (s *surface) restoreVersion(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	value, err := s.binding.Templates().RestoreVersionDraft(r.Context(), a, r.PathValue("templateKey"), version, input.ExpectedUpdatedAt)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, value)
+}
+
+func metricSince(r *http.Request) string {
+	hours, _ := strconv.Atoi(r.URL.Query().Get("hours"))
+	if hours <= 0 {
+		hours = 24
+	}
+	if hours > 720 {
+		hours = 720
+	}
+	return time.Now().UTC().Add(-time.Duration(hours) * time.Hour).Format(time.RFC3339)
+}
+func (s *surface) getPolicy(w http.ResponseWriter, r *http.Request) {
+	a, ok := withAuthority(w, r)
+	if !ok {
+		return
+	}
+	value, err := s.binding.Delivery().GetPolicy(r.Context(), a)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, value)
+}
+func (s *surface) savePolicy(w http.ResponseWriter, r *http.Request) {
+	a, ok := withAuthority(w, r)
+	if !ok {
+		return
+	}
+	var input contract.NotificationDeliveryPolicy
+	if !decode(w, r, &input) {
+		return
+	}
+	value, err := s.binding.Delivery().SavePolicy(r.Context(), a, input)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, value)
+}
+func (s *surface) listPreferences(w http.ResponseWriter, r *http.Request) {
+	a, ok := withAuthority(w, r)
+	if !ok {
+		return
+	}
+	values, err := s.binding.Delivery().ListRecipientPreferences(r.Context(), a)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"preferences": values, "count": len(values)})
+}
+func (s *surface) savePreference(w http.ResponseWriter, r *http.Request) {
+	a, ok := withAuthority(w, r)
+	if !ok {
+		return
+	}
+	var input contract.NotificationRecipientPreference
+	if !decode(w, r, &input) {
+		return
+	}
+	input.RecipientKey = strings.TrimSpace(r.PathValue("recipientKey"))
+	value, err := s.binding.Delivery().SaveRecipientPreference(r.Context(), a, input)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, value)
+}
+func (s *surface) metrics(w http.ResponseWriter, r *http.Request) {
+	a, ok := withAuthority(w, r)
+	if !ok {
+		return
+	}
+	value, err := s.binding.Delivery().Metrics(r.Context(), a, metricSince(r))
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, value)
+}
+func (s *surface) governanceCatalog(w http.ResponseWriter, r *http.Request) {
+	a, ok := withAuthority(w, r)
+	if !ok {
+		return
+	}
+	value, err := s.binding.Administration().GovernanceCatalog(r.Context(), a)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, value)
+}
+func (s *surface) inboxGovernanceMetrics(w http.ResponseWriter, r *http.Request) {
+	a, ok := withAuthority(w, r)
+	if !ok {
+		return
+	}
+	value, err := s.binding.Administration().InboxGovernanceMetrics(r.Context(), a, metricSince(r))
 	if err != nil {
 		writeError(w, err)
 		return
