@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/domainry/domainry-foundation/modulehttp"
 	identitysdk "github.com/domainry/domainry-identity-sdk"
 	notificationsdk "github.com/domainry/domainry-notification-sdk"
 	"github.com/domainry/domainry-notification-sdk/contract"
@@ -162,6 +163,16 @@ func TestModuleFactoryContractAndBorrowedDatabaseLifecycle(t *testing.T) {
 	}
 	if stats := host.database.Stats(); stats.MaxOpenConnections != 3 {
 		t.Fatalf("Notification Module reinitialized host pool: max open=%d", stats.MaxOpenConnections)
+	}
+	provider, ok := binding.(modulehttp.Provider)
+	if !ok || len(provider.HTTPSurfaces()) != 1 {
+		t.Fatalf("Notification Module HTTP surfaces=%v", provider)
+	}
+	if err := modulehttp.ValidateSurface(provider.HTTPSurfaces()[0]); err != nil {
+		t.Fatal(err)
+	}
+	if routes := provider.HTTPSurfaces()[0].Routes(); len(routes) != 15 {
+		t.Fatalf("Notification template routes=%d", len(routes))
 	}
 }
 

@@ -6,6 +6,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/domainry/domainry-foundation/modulehttp"
 	"github.com/domainry/domainry-foundation/mutation"
 	identitysdk "github.com/domainry/domainry-identity-sdk"
 	identityprincipal "github.com/domainry/domainry-identity-sdk/authorization/principal"
@@ -45,6 +46,7 @@ type binding struct {
 	clock                modulehost.Clock
 	templateCapabilities []contract.NotificationTemplateCapability
 	migrationMu          sync.RWMutex
+	surfaces             []modulehttp.Surface
 }
 
 type principalAuthenticator interface {
@@ -71,6 +73,14 @@ func (b *binding) SystemRetention() notificationsdk.SystemRetention   { return m
 func (b *binding) SystemMigration() notificationsdk.SystemMigration   { return moduleSystemMigration{b} }
 func (b *binding) LocalWorkers() (notificationsdk.LocalWorkers, bool) { return moduleWorkers{b}, true }
 func (b *binding) Close(context.Context) error                        { return nil }
+func (b *binding) SetHTTPSurfaces(surfaces []modulehttp.Surface) {
+	b.surfaces = append([]modulehttp.Surface(nil), surfaces...)
+}
+func (b *binding) HTTPSurfaces() []modulehttp.Surface {
+	return append([]modulehttp.Surface(nil), b.surfaces...)
+}
+
+var _ modulehttp.Provider = (*binding)(nil)
 
 func (b *binding) authenticate(ctx context.Context, authority notificationsdk.UserAuthority) (identitysdk.Principal, error) {
 	if err := authority.Validate(); err != nil {

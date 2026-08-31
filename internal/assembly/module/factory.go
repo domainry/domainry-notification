@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/domainry/domainry-foundation/modulehttp"
 	identitysdk "github.com/domainry/domainry-identity-sdk"
 	identityprincipal "github.com/domainry/domainry-identity-sdk/authorization/principal"
 	notificationsdk "github.com/domainry/domainry-notification-sdk"
@@ -21,6 +22,7 @@ import (
 	notification "github.com/domainry/domainry-notification/internal/domain/notification/model"
 	"github.com/domainry/domainry-notification/internal/domain/template/service"
 	sqlstore "github.com/domainry/domainry-notification/internal/infrastructure/persistence"
+	notificationhttp "github.com/domainry/domainry-notification/internal/transport/http/module"
 )
 
 type Options struct{}
@@ -216,6 +218,13 @@ func (f *Factory) openHosted(ctx context.Context, application notificationsdk.Ap
 	b := &binding{application: application, mode: mode, identity: host.Identity(), principals: principalResolver, templates: templateManager, publications: publicationProcessor, engine: templateEngine, publisher: publisher, compiler: compiler, store: store, inboxProcessor: inboxProcessor, policy: policyManager, deliveryProcessor: deliveryProcessor, mailbox: mailbox, actions: actions, catalog: eventCatalog, eventTypes: eventTypes, rules: rules, metrics: host.DeliveryMetrics(), clock: host.Clock(), templateCapabilities: append([]contract.NotificationTemplateCapability(nil), catalog.TemplateCapabilities...)}
 	if err := b.RefreshPublished(ctx); err != nil {
 		return nil, err
+	}
+	if mode == notificationsdk.DeploymentModeModule {
+		surface, err := notificationhttp.NewSurface(b)
+		if err != nil {
+			return nil, err
+		}
+		b.SetHTTPSurfaces([]modulehttp.Surface{surface})
 	}
 	return b, nil
 }
