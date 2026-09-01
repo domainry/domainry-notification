@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"reflect"
 	"testing"
 	"time"
 
@@ -16,6 +17,7 @@ import (
 	"github.com/domainry/domainry-notification-sdk/contract"
 	"github.com/domainry/domainry-notification-sdk/contracttest"
 	"github.com/domainry/domainry-notification-sdk/modulehost"
+	notificationapplication "github.com/domainry/domainry-notification/internal/application"
 	sqlstore "github.com/domainry/domainry-notification/internal/infrastructure/persistence"
 	ormdialect "github.com/domainry/domainry-orm/dialect"
 	_ "modernc.org/sqlite"
@@ -174,8 +176,35 @@ func TestModuleFactoryContractAndBorrowedDatabaseLifecycle(t *testing.T) {
 	if err := modulehttp.ValidateSurface(provider.HTTPSurfaces()[0]); err != nil {
 		t.Fatal(err)
 	}
-	if routes := provider.HTTPSurfaces()[0].Routes(); len(routes) != 62 {
+	surface := provider.HTTPSurfaces()[0]
+	routes := surface.Routes()
+	if len(routes) != 61 {
 		t.Fatalf("Notification routes=%d", len(routes))
+	}
+	actions, err := notificationapplication.AuthorizationActions()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(actions) != len(routes) {
+		t.Fatalf("Notification Action/route counts=%d/%d", len(actions), len(routes))
+	}
+	for index := range actions {
+		if !reflect.DeepEqual(routes[index].Action, actions[index]) {
+			t.Fatalf("route %d is not an exact Action projection: route=%+v action=%+v", index, routes[index].Action, actions[index])
+		}
+	}
+	openAPI, ok := surface.(modulehttp.OpenAPIProvider)
+	if !ok {
+		t.Fatal("Notification Surface does not project OpenAPI from its Actions")
+	}
+	operations := openAPI.OpenAPIOperations()
+	if len(operations) != len(routes) {
+		t.Fatalf("Notification OpenAPI/route counts=%d/%d", len(operations), len(routes))
+	}
+	for _, route := range routes {
+		if _, found := operations[route.Pattern()]; !found {
+			t.Fatalf("Notification Action route %q has no OpenAPI projection", route.Pattern())
+		}
 	}
 	capabilitycontracttest.VerifyBinding(t, binding)
 	summary, err := binding.CapabilitySummary(t.Context())

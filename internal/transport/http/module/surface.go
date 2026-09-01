@@ -3,7 +3,9 @@ package module
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -12,6 +14,7 @@ import (
 	identitysdk "github.com/domainry/domainry-identity-sdk"
 	notificationsdk "github.com/domainry/domainry-notification-sdk"
 	"github.com/domainry/domainry-notification-sdk/contract"
+	notificationapplication "github.com/domainry/domainry-notification/internal/application"
 )
 
 type surface struct {
@@ -29,53 +32,68 @@ func (s *surface) Routes() []modulehttp.Route {
 }
 
 func (s *surface) OpenAPIOperations() map[string]map[string]any {
-	return notificationOpenAPIOperations(ProductRoutes())
+	return notificationOpenAPIOperations(s.routes)
 }
 
 func NewSurface(binding notificationsdk.Binding) (modulehttp.Surface, error) {
 	if binding == nil || binding.Templates() == nil {
 		return nil, errors.New("Notification template binding is unavailable")
 	}
-	s := &surface{binding: binding, mux: http.NewServeMux()}
-	s.routes = ProductRoutes()
-	s.mux.HandleFunc("GET /notifications/capabilities", s.capabilities)
-	s.mux.HandleFunc("GET /notifications/templates", s.list)
-	s.mux.HandleFunc("GET /notifications/templates/{templateKey}", s.get)
-	s.mux.HandleFunc("GET /notifications/publications", s.listPublications)
-	s.mux.HandleFunc("POST /notifications/publications/{publicationID}/approve", s.approvePublication)
-	s.mux.HandleFunc("POST /notifications/publications/{publicationID}/reject", s.rejectPublication)
-	s.mux.HandleFunc("POST /notifications/publications/{publicationID}/cancel", s.cancelPublication)
-	s.mux.HandleFunc("POST /notifications/templates/preview", s.previewDraft)
-	s.mux.HandleFunc("PUT /notifications/templates/{templateKey}/draft", s.saveDraft)
-	s.mux.HandleFunc("POST /notifications/templates/{templateKey}/publish", s.publishLegacy)
-	s.mux.HandleFunc("POST /notifications/templates/{templateKey}/publication-requests", s.requestPublication)
-	s.mux.HandleFunc("POST /notifications/templates/{templateKey}/disable", s.disable)
-	s.mux.HandleFunc("POST /notifications/templates/{templateKey}/preview", s.preview)
-	s.mux.HandleFunc("GET /notifications/templates/{templateKey}/versions", s.listVersions)
-	s.mux.HandleFunc("POST /notifications/templates/{templateKey}/versions/{version}/restore-draft", s.restoreVersion)
-	s.mux.HandleFunc("GET /notifications/policy", s.getPolicy)
-	s.mux.HandleFunc("PUT /notifications/policy", s.savePolicy)
-	s.mux.HandleFunc("GET /notifications/preferences", s.listPreferences)
-	s.mux.HandleFunc("PUT /notifications/preferences/{recipientKey}", s.savePreference)
-	s.mux.HandleFunc("GET /notifications/metrics", s.metrics)
-	s.mux.HandleFunc("GET /notifications/governance/catalog", s.governanceCatalog)
-	s.mux.HandleFunc("GET /notifications/governance/inbox-metrics", s.inboxGovernanceMetrics)
-	for _, prefix := range []string{"/business", "/portal"} {
-		s.registerInboxRoutes(prefix)
+	routes, err := ProductRoutes()
+	if err != nil {
+		return nil, err
+	}
+	s := &surface{binding: binding, mux: http.NewServeMux(), routes: routes}
+	handlers := s.actionHandlers()
+	for key, handler := range s.inboxActionHandlers("business_inbox") {
+		handlers[key] = handler
+	}
+	for key, handler := range s.inboxActionHandlers("portal_inbox") {
+		handlers[key] = handler
+	}
+	for _, route := range routes {
+		key := strings.TrimSpace(route.Action.Key)
+		handler, found := handlers[key]
+		if !found {
+			return nil, fmt.Errorf("Notification Action %q has no HTTP handler", key)
+		}
+		s.mux.HandleFunc(route.Pattern(), handler)
+		delete(handlers, key)
+	}
+	if len(handlers) != 0 {
+		keys := make([]string, 0, len(handlers))
+		for key := range handlers {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+		return nil, fmt.Errorf("Notification HTTP handlers have no Action manifest entries: %v", keys)
 	}
 	return s, nil
 }
 
-func templateReadRoute(pattern string) modulehttp.Route {
-	return templateRoute(pattern, "notification.template.read")
-}
-
-func templateRoute(pattern string, permissions ...string) modulehttp.Route {
-	return modulehttp.Route{
-		Pattern: pattern, Exposures: []modulehttp.Exposure{modulehttp.ExposureTenantAdmin},
-		Authentication: modulehttp.AuthenticationAuthenticated,
-		AnyPermissions: append([]string{"workspace.admin"}, permissions...),
-		Governance:     notificationRouteGovernance(pattern),
+func (s *surface) actionHandlers() map[string]http.HandlerFunc {
+	return map[string]http.HandlerFunc{
+		notificationapplication.ActionCapabilitiesRead:             s.capabilities,
+		notificationapplication.ActionTemplatesList:                s.list,
+		notificationapplication.ActionTemplatesGet:                 s.get,
+		notificationapplication.ActionPublicationsList:             s.listPublications,
+		notificationapplication.ActionPublicationsApprove:          s.approvePublication,
+		notificationapplication.ActionPublicationsReject:           s.rejectPublication,
+		notificationapplication.ActionPublicationsCancel:           s.cancelPublication,
+		notificationapplication.ActionTemplatesPreviewDraft:        s.previewDraft,
+		notificationapplication.ActionTemplatesDraftSave:           s.saveDraft,
+		notificationapplication.ActionPublicationsRequest:          s.requestPublication,
+		notificationapplication.ActionTemplatesDisable:             s.disable,
+		notificationapplication.ActionTemplatesPreview:             s.preview,
+		notificationapplication.ActionTemplateVersionsList:         s.listVersions,
+		notificationapplication.ActionTemplateVersionsRestoreDraft: s.restoreVersion,
+		notificationapplication.ActionDeliveryPolicyGet:            s.getPolicy,
+		notificationapplication.ActionDeliveryPolicyUpdate:         s.savePolicy,
+		notificationapplication.ActionRecipientPreferencesList:     s.listPreferences,
+		notificationapplication.ActionRecipientPreferencesUpdate:   s.savePreference,
+		notificationapplication.ActionDeliveryMetricsRead:          s.metrics,
+		notificationapplication.ActionGovernanceCatalogRead:        s.governanceCatalog,
+		notificationapplication.ActionGovernanceInboxMetricsRead:   s.inboxGovernanceMetrics,
 	}
 }
 
@@ -290,9 +308,6 @@ func (s *surface) saveDraft(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, value)
-}
-func (*surface) publishLegacy(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusConflict, map[string]string{"code": "backend.notification.publication_request_required", "template_key": r.PathValue("templateKey")})
 }
 func (s *surface) requestPublication(w http.ResponseWriter, r *http.Request) {
 	a, ok := withAuthority(w, r)

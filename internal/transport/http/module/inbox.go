@@ -9,53 +9,34 @@ import (
 	"strings"
 	"time"
 
-	"github.com/domainry/domainry-foundation/modulehttp"
 	notificationsdk "github.com/domainry/domainry-notification-sdk"
 	"github.com/domainry/domainry-notification-sdk/contract"
 )
 
-func inboxRoutes(prefix string) []modulehttp.Route {
-	patterns := []string{
-		"GET " + prefix + "/notifications", "GET " + prefix + "/notifications/facets",
-		"GET " + prefix + "/notifications/unread-count", "GET " + prefix + "/notifications/stream",
-		"GET " + prefix + "/notification-preferences", "PUT " + prefix + "/notification-preferences",
-		"GET " + prefix + "/notifications/saved-views", "PUT " + prefix + "/notifications/saved-views/{viewKey}",
-		"DELETE " + prefix + "/notifications/saved-views/{viewKey}", "GET " + prefix + "/notifications/delegations",
-		"PUT " + prefix + "/notifications/delegations/{delegationID}", "DELETE " + prefix + "/notifications/delegations/{delegationID}",
-		"GET " + prefix + "/notifications/delegated-owners", "GET " + prefix + "/notifications/{notificationID}",
-		"POST " + prefix + "/notifications/{notificationID}/read", "POST " + prefix + "/notifications/{notificationID}/unread",
-		"POST " + prefix + "/notifications/{notificationID}/archive", "POST " + prefix + "/notifications/{notificationID}/restore",
-		"POST " + prefix + "/notifications/{notificationID}/acknowledge", "POST " + prefix + "/notifications/read-all",
+func (s *surface) inboxActionHandlers(surfaceKey string) map[string]http.HandlerFunc {
+	base := "notification." + strings.TrimSpace(surfaceKey)
+	return map[string]http.HandlerFunc{
+		base + ".list":                  s.listInbox,
+		base + ".facets":                s.inboxFacets,
+		base + ".unread_count":          s.inboxUnreadCount,
+		base + ".stream":                s.streamInbox,
+		base + ".preference.get":        s.getInboxPreference,
+		base + ".preference.update":     s.saveInboxPreference,
+		base + ".saved_views.list":      s.listSavedViews,
+		base + ".saved_views.save":      s.saveSavedView,
+		base + ".saved_views.delete":    s.deleteSavedView,
+		base + ".delegations.list":      s.listDelegations,
+		base + ".delegations.save":      s.saveDelegation,
+		base + ".delegations.delete":    s.deleteDelegation,
+		base + ".delegated_owners.list": s.listDelegatedOwners,
+		base + ".item.get":              s.getInbox,
+		base + ".item.mark_read":        func(w http.ResponseWriter, r *http.Request) { s.setInboxRead(w, r, true) },
+		base + ".item.mark_unread":      func(w http.ResponseWriter, r *http.Request) { s.setInboxRead(w, r, false) },
+		base + ".item.archive":          func(w http.ResponseWriter, r *http.Request) { s.setInboxArchived(w, r, true) },
+		base + ".item.restore":          func(w http.ResponseWriter, r *http.Request) { s.setInboxArchived(w, r, false) },
+		base + ".item.acknowledge":      s.acknowledgeInbox,
+		base + ".mark_all_read":         s.markAllInboxRead,
 	}
-	routes := make([]modulehttp.Route, 0, len(patterns))
-	for _, pattern := range patterns {
-		routes = append(routes, modulehttp.Route{Pattern: pattern, Exposures: []modulehttp.Exposure{modulehttp.ExposurePublic}, Authentication: modulehttp.AuthenticationAuthenticated, PrincipalOnly: true, Governance: notificationRouteGovernance(pattern)})
-	}
-	return routes
-}
-
-func (s *surface) registerInboxRoutes(prefix string) {
-	m := s.mux
-	m.HandleFunc("GET "+prefix+"/notifications", s.listInbox)
-	m.HandleFunc("GET "+prefix+"/notifications/facets", s.inboxFacets)
-	m.HandleFunc("GET "+prefix+"/notifications/unread-count", s.inboxUnreadCount)
-	m.HandleFunc("GET "+prefix+"/notifications/stream", s.streamInbox)
-	m.HandleFunc("GET "+prefix+"/notification-preferences", s.getInboxPreference)
-	m.HandleFunc("PUT "+prefix+"/notification-preferences", s.saveInboxPreference)
-	m.HandleFunc("GET "+prefix+"/notifications/saved-views", s.listSavedViews)
-	m.HandleFunc("PUT "+prefix+"/notifications/saved-views/{viewKey}", s.saveSavedView)
-	m.HandleFunc("DELETE "+prefix+"/notifications/saved-views/{viewKey}", s.deleteSavedView)
-	m.HandleFunc("GET "+prefix+"/notifications/delegations", s.listDelegations)
-	m.HandleFunc("PUT "+prefix+"/notifications/delegations/{delegationID}", s.saveDelegation)
-	m.HandleFunc("DELETE "+prefix+"/notifications/delegations/{delegationID}", s.deleteDelegation)
-	m.HandleFunc("GET "+prefix+"/notifications/delegated-owners", s.listDelegatedOwners)
-	m.HandleFunc("GET "+prefix+"/notifications/{notificationID}", s.getInbox)
-	m.HandleFunc("POST "+prefix+"/notifications/{notificationID}/read", func(w http.ResponseWriter, r *http.Request) { s.setInboxRead(w, r, true) })
-	m.HandleFunc("POST "+prefix+"/notifications/{notificationID}/unread", func(w http.ResponseWriter, r *http.Request) { s.setInboxRead(w, r, false) })
-	m.HandleFunc("POST "+prefix+"/notifications/{notificationID}/archive", func(w http.ResponseWriter, r *http.Request) { s.setInboxArchived(w, r, true) })
-	m.HandleFunc("POST "+prefix+"/notifications/{notificationID}/restore", func(w http.ResponseWriter, r *http.Request) { s.setInboxArchived(w, r, false) })
-	m.HandleFunc("POST "+prefix+"/notifications/{notificationID}/acknowledge", s.acknowledgeInbox)
-	m.HandleFunc("POST "+prefix+"/notifications/read-all", s.markAllInboxRead)
 }
 
 func inboxSurface(r *http.Request) string {

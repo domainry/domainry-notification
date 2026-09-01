@@ -22,12 +22,13 @@ func (f *identityFactoryStub) Open(_ context.Context, application identitysdk.Ap
 
 type identityBindingStub struct {
 	modulecapability.Binding
-	descriptor identitysdk.Descriptor
-	catalog    *catalogStub
-	tokens     identitysdk.TokenVerifier
-	authorize  identitysdk.Authorization
-	services   identitysdk.ApplicationServiceAuthentication
-	closed     bool
+	descriptor   identitysdk.Descriptor
+	applications *applicationRegistryStub
+	permissions  identitysdk.PermissionRegistry
+	tokens       identitysdk.TokenVerifier
+	authorize    identitysdk.Authorization
+	services     identitysdk.ApplicationServiceAuthentication
+	closed       bool
 }
 
 func (b *identityBindingStub) Descriptor() identitysdk.Descriptor       { return b.descriptor }
@@ -47,9 +48,12 @@ func (b *identityBindingStub) Authorization() identitysdk.Authorization {
 func (*identityBindingStub) Principals() identitysdk.PrincipalResolver {
 	return principalResolverStub{}
 }
-func (*identityBindingStub) Directory() identitysdk.Directory           { return directoryStub{} }
-func (b *identityBindingStub) Catalog() identitysdk.CatalogClient       { return b.catalog }
-func (*identityBindingStub) Credentials() identitysdk.CredentialManager { return nil }
+func (*identityBindingStub) Directory() identitysdk.Directory { return directoryStub{} }
+func (b *identityBindingStub) Applications() identitysdk.ApplicationRegistry {
+	return b.applications
+}
+func (b *identityBindingStub) Permissions() identitysdk.PermissionRegistry { return b.permissions }
+func (*identityBindingStub) Credentials() identitysdk.CredentialManager    { return nil }
 func (b *identityBindingStub) ApplicationServices() identitysdk.ApplicationServiceAuthentication {
 	if b.services == nil {
 		return applicationServicesStub{}
@@ -109,28 +113,98 @@ func (directoryStub) ListWorkforce(context.Context, identitysdk.DirectoryQuery) 
 	return nil, nil
 }
 
-type catalogStub struct {
-	validated identitysdk.AuthorizationCatalog
-	published identitysdk.AuthorizationCatalog
-	err       error
+type applicationRegistryStub struct {
+	registered identitysdk.ApplicationRegistration
+	err        error
 }
 
-func (c *catalogStub) Validate(_ context.Context, value identitysdk.AuthorizationCatalog) error {
-	c.validated = value
-	return c.err
-}
-func (c *catalogStub) Publish(_ context.Context, value identitysdk.AuthorizationCatalog) (identitysdk.CatalogReceipt, error) {
-	c.published = value
-	return identitysdk.CatalogReceipt{}, c.err
-}
-func (*catalogStub) CurrentRevision(context.Context, identitysdk.ApplicationRef) (identitysdk.CatalogReceipt, error) {
-	return identitysdk.CatalogReceipt{}, nil
+func (stub *applicationRegistryStub) Register(_ context.Context, value identitysdk.ApplicationRegistration) (identitysdk.ApplicationRegistrationReceipt, error) {
+	stub.registered = value
+	return identitysdk.ApplicationRegistrationReceipt{Application: value.Application, RedirectURLs: value.RedirectURLs, Status: "active"}, stub.err
 }
 
-func TestOpenRequiresSaaSAndPublishesScopedCatalog(t *testing.T) {
+type permissionRegistryStub struct {
+	reconciled                 identitysdk.PermissionReconcileRequest
+	err                        error
+	mutate                     func(*identitysdk.PermissionReconcileReceipt)
+	snapshot                   identitysdk.PermissionSourceSnapshot
+	snapshotErr                error
+	loseFirstReconcileResponse bool
+	reconcileCalls             int
+}
+
+func (stub *permissionRegistryStub) CurrentSourceSnapshot(_ context.Context, request identitysdk.PermissionSourceSnapshotRequest) (identitysdk.PermissionSourceSnapshot, error) {
+	snapshot := stub.snapshot
+	if snapshot.WorkspaceID == "" {
+		snapshot.WorkspaceID = request.Application.WorkspaceID
+	}
+	if snapshot.SourceOwner == "" {
+		snapshot.SourceOwner = request.SourceOwner
+	}
+	return snapshot, stub.snapshotErr
+}
+
+func (stub *permissionRegistryStub) Reconcile(_ context.Context, value identitysdk.PermissionReconcileRequest) (identitysdk.PermissionReconcileReceipt, error) {
+	stub.reconciled = value
+	stub.reconcileCalls++
+	if stub.loseFirstReconcileResponse {
+		stub.loseFirstReconcileResponse = false
+		stub.snapshot = identitysdk.PermissionSourceSnapshot{
+			WorkspaceID: value.Application.WorkspaceID, SourceOwner: value.SourceOwner,
+			SnapshotHash: value.SnapshotHash, Definitions: append([]identitysdk.PermissionDefinition(nil), value.Definitions...),
+		}
+		return identitysdk.PermissionReconcileReceipt{}, errors.New("response lost after Identity committed")
+	}
+	receipt := identitysdk.PermissionReconcileReceipt{
+		WorkspaceID: value.Application.WorkspaceID, SourceOwner: value.SourceOwner,
+		PreviousSnapshotHash: value.PreviousSnapshotHash, SnapshotHash: value.SnapshotHash,
+		DefinitionCount: len(value.Definitions), Inserted: len(value.Definitions),
+	}
+	if stub.mutate != nil {
+		stub.mutate(&receipt)
+	}
+	return receipt, stub.err
+}
+
+func TestOpenRetriesLostReconcileResponseFromAuthoritativeSnapshot(t *testing.T) {
 	application := identitysdk.ApplicationRef{TenantID: "tenant-a", WorkspaceID: "workspace-a", ApplicationKey: "domainry-notification"}
-	catalog := &catalogStub{}
-	binding := &identityBindingStub{descriptor: identitysdk.Descriptor{ProtocolVersion: identitysdk.CurrentProtocolVersion, BundleVersion: identitysdk.CurrentPolicyBundleVersion, CatalogVersion: identitysdk.CatalogVersionV1, Mode: identitysdk.DeploymentModeSaaS, Issuer: "https://identity.example", Audience: string(application.ApplicationKey)}, catalog: catalog}
+	permissions := &permissionRegistryStub{loseFirstReconcileResponse: true}
+	binding := &identityBindingStub{
+		descriptor:   identitysdk.Descriptor{ProtocolVersion: identitysdk.CurrentProtocolVersion, BundleVersion: identitysdk.CurrentPolicyBundleVersion, AuthorizationVersion: identitysdk.AuthorizationContractVersionV1, Mode: identitysdk.DeploymentModeSaaS, Issuer: "https://identity.example", Audience: string(application.ApplicationKey)},
+		applications: &applicationRegistryStub{}, permissions: permissions,
+	}
+	factory := &identityFactoryStub{binding: binding}
+	if _, err := OpenIdentity(t.Context(), IdentityOptions{Factory: factory, Application: application}); err == nil {
+		t.Fatal("lost first reconcile response did not fail startup")
+	}
+	committedHash := permissions.snapshot.SnapshotHash
+	if committedHash == "" {
+		t.Fatal("Identity-side committed snapshot was not recorded by the test boundary")
+	}
+	binding.closed = false
+	opened, err := OpenIdentity(t.Context(), IdentityOptions{Factory: factory, Application: application})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if opened != binding || permissions.reconcileCalls != 2 || permissions.reconciled.PreviousSnapshotHash != committedHash || permissions.reconciled.SnapshotHash != committedHash {
+		t.Fatalf("response-loss retry calls=%d request=%+v committed=%q", permissions.reconcileCalls, permissions.reconciled, committedHash)
+	}
+}
+
+func TestOpenRequiresSaaSAndRegistersScopedApplicationPermissions(t *testing.T) {
+	application := identitysdk.ApplicationRef{TenantID: "tenant-a", WorkspaceID: "workspace-a", ApplicationKey: "domainry-notification"}
+	previousDefinitions := []identitysdk.PermissionDefinition{{
+		PermissionKey: "notification.templates.list", ResourceKey: "notification.templates", ActionKey: "list",
+		Label: "List notification templates", Category: "Notification", SourceKind: "module_surface",
+	}}
+	previousHash, err := identitysdk.PermissionSnapshotHash("module:notification", previousDefinitions)
+	if err != nil {
+		t.Fatal(err)
+	}
+	applications, permissions := &applicationRegistryStub{}, &permissionRegistryStub{snapshot: identitysdk.PermissionSourceSnapshot{
+		WorkspaceID: application.WorkspaceID, SourceOwner: "module:notification", SnapshotHash: previousHash, Definitions: previousDefinitions,
+	}}
+	binding := &identityBindingStub{descriptor: identitysdk.Descriptor{ProtocolVersion: identitysdk.CurrentProtocolVersion, BundleVersion: identitysdk.CurrentPolicyBundleVersion, AuthorizationVersion: identitysdk.AuthorizationContractVersionV1, Mode: identitysdk.DeploymentModeSaaS, Issuer: "https://identity.example", Audience: string(application.ApplicationKey)}, applications: applications, permissions: permissions}
 	factory := &identityFactoryStub{binding: binding}
 	opened, err := OpenIdentity(t.Context(), IdentityOptions{Factory: factory, Application: application})
 	if err != nil {
@@ -139,13 +213,19 @@ func TestOpenRequiresSaaSAndPublishesScopedCatalog(t *testing.T) {
 	if opened != binding || !sameApplication(factory.opened, application) {
 		t.Fatalf("opened=%v application=%+v", opened, factory.opened)
 	}
-	if !sameApplication(catalog.validated.Application, application) || !sameApplication(catalog.published.Application, application) || len(catalog.published.Resources) != 10 || len(catalog.published.Actions) == 0 {
-		t.Fatalf("catalog was not published with exact scope: %+v", catalog.published)
+	if !sameApplication(applications.registered.Application, application) || !sameApplication(permissions.reconciled.Application, application) || len(permissions.reconciled.Definitions) == 0 {
+		t.Fatalf("application/permissions were not reconciled with exact scope: application=%+v permissions=%+v", applications.registered, permissions.reconciled)
 	}
-	for _, action := range catalog.published.Actions {
-		if !action.ServiceCallable {
-			t.Fatalf("remote route action is not service-callable: %+v", action)
+	for _, definition := range permissions.reconciled.Definitions {
+		if definition.PermissionKey != definition.ResourceKey+"."+definition.ActionKey {
+			t.Fatalf("permission is not exact: %+v", definition)
 		}
+	}
+	if permissions.reconciled.SourceOwner != "module:notification" || permissions.reconciled.SnapshotHash == "" {
+		t.Fatalf("permission snapshot owner/hash=%q/%q", permissions.reconciled.SourceOwner, permissions.reconciled.SnapshotHash)
+	}
+	if permissions.reconciled.PreviousSnapshotHash != previousHash {
+		t.Fatalf("permission reconcile previous hash=%q want=%q", permissions.reconciled.PreviousSnapshotHash, previousHash)
 	}
 }
 
@@ -153,12 +233,18 @@ func sameApplication(left, right identitysdk.ApplicationRef) bool {
 	return left.TenantID == right.TenantID && left.WorkspaceID == right.WorkspaceID && left.ApplicationKey == right.ApplicationKey
 }
 
-func TestOpenFailsClosedForModuleAndCatalogFailure(t *testing.T) {
+func TestOpenFailsClosedForModuleAndRegistrationFailure(t *testing.T) {
 	application := identitysdk.ApplicationRef{TenantID: "tenant-a", WorkspaceID: "workspace-a", ApplicationKey: "domainry-notification"}
 	for name, binding := range map[string]*identityBindingStub{
-		"module":       {descriptor: identitysdk.Descriptor{ProtocolVersion: identitysdk.CurrentProtocolVersion, BundleVersion: identitysdk.CurrentPolicyBundleVersion, CatalogVersion: identitysdk.CatalogVersionV1, Mode: identitysdk.DeploymentModeModule, Issuer: "issuer", Audience: string(application.ApplicationKey)}, catalog: &catalogStub{}},
-		"capabilities": {descriptor: identitysdk.Descriptor{ProtocolVersion: identitysdk.CurrentProtocolVersion, BundleVersion: identitysdk.CurrentPolicyBundleVersion, CatalogVersion: identitysdk.CatalogVersionV1, Mode: identitysdk.DeploymentModeSaaS, Issuer: "issuer", Audience: string(application.ApplicationKey)}},
-		"catalog":      {descriptor: identitysdk.Descriptor{ProtocolVersion: identitysdk.CurrentProtocolVersion, BundleVersion: identitysdk.CurrentPolicyBundleVersion, CatalogVersion: identitysdk.CatalogVersionV1, Mode: identitysdk.DeploymentModeSaaS, Issuer: "issuer", Audience: string(application.ApplicationKey)}, catalog: &catalogStub{err: errors.New("identity unavailable")}},
+		"module":           {descriptor: identitysdk.Descriptor{ProtocolVersion: identitysdk.CurrentProtocolVersion, BundleVersion: identitysdk.CurrentPolicyBundleVersion, AuthorizationVersion: identitysdk.AuthorizationContractVersionV1, Mode: identitysdk.DeploymentModeModule, Issuer: "issuer", Audience: string(application.ApplicationKey)}, applications: &applicationRegistryStub{}, permissions: &permissionRegistryStub{}},
+		"capabilities":     {descriptor: identitysdk.Descriptor{ProtocolVersion: identitysdk.CurrentProtocolVersion, BundleVersion: identitysdk.CurrentPolicyBundleVersion, AuthorizationVersion: identitysdk.AuthorizationContractVersionV1, Mode: identitysdk.DeploymentModeSaaS, Issuer: "issuer", Audience: string(application.ApplicationKey)}},
+		"registration":     {descriptor: identitysdk.Descriptor{ProtocolVersion: identitysdk.CurrentProtocolVersion, BundleVersion: identitysdk.CurrentPolicyBundleVersion, AuthorizationVersion: identitysdk.AuthorizationContractVersionV1, Mode: identitysdk.DeploymentModeSaaS, Issuer: "issuer", Audience: string(application.ApplicationKey)}, applications: &applicationRegistryStub{err: errors.New("identity unavailable")}, permissions: &permissionRegistryStub{}},
+		"permissions":      {descriptor: identitysdk.Descriptor{ProtocolVersion: identitysdk.CurrentProtocolVersion, BundleVersion: identitysdk.CurrentPolicyBundleVersion, AuthorizationVersion: identitysdk.AuthorizationContractVersionV1, Mode: identitysdk.DeploymentModeSaaS, Issuer: "issuer", Audience: string(application.ApplicationKey)}, applications: &applicationRegistryStub{}, permissions: &permissionRegistryStub{err: errors.New("identity unavailable")}},
+		"snapshot":         {descriptor: identitysdk.Descriptor{ProtocolVersion: identitysdk.CurrentProtocolVersion, BundleVersion: identitysdk.CurrentPolicyBundleVersion, AuthorizationVersion: identitysdk.AuthorizationContractVersionV1, Mode: identitysdk.DeploymentModeSaaS, Issuer: "issuer", Audience: string(application.ApplicationKey)}, applications: &applicationRegistryStub{}, permissions: &permissionRegistryStub{snapshotErr: errors.New("identity unavailable")}},
+		"snapshot receipt": {descriptor: identitysdk.Descriptor{ProtocolVersion: identitysdk.CurrentProtocolVersion, BundleVersion: identitysdk.CurrentPolicyBundleVersion, AuthorizationVersion: identitysdk.AuthorizationContractVersionV1, Mode: identitysdk.DeploymentModeSaaS, Issuer: "issuer", Audience: string(application.ApplicationKey)}, applications: &applicationRegistryStub{}, permissions: &permissionRegistryStub{snapshot: identitysdk.PermissionSourceSnapshot{WorkspaceID: application.WorkspaceID, SourceOwner: "module:other"}}},
+		"receipt": {descriptor: identitysdk.Descriptor{ProtocolVersion: identitysdk.CurrentProtocolVersion, BundleVersion: identitysdk.CurrentPolicyBundleVersion, AuthorizationVersion: identitysdk.AuthorizationContractVersionV1, Mode: identitysdk.DeploymentModeSaaS, Issuer: "issuer", Audience: string(application.ApplicationKey)}, applications: &applicationRegistryStub{}, permissions: &permissionRegistryStub{mutate: func(receipt *identitysdk.PermissionReconcileReceipt) {
+			receipt.SourceOwner = "module:other"
+		}}},
 	} {
 		t.Run(name, func(t *testing.T) {
 			if _, err := OpenIdentity(t.Context(), IdentityOptions{Factory: &identityFactoryStub{binding: binding}, Application: application}); err == nil {

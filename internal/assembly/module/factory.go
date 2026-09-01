@@ -15,6 +15,7 @@ import (
 	"github.com/domainry/domainry-notification-sdk/contract"
 	"github.com/domainry/domainry-notification-sdk/modulehost"
 	notificationcapability "github.com/domainry/domainry-notification/capability"
+	notificationapplication "github.com/domainry/domainry-notification/internal/application"
 	appdelivery "github.com/domainry/domainry-notification/internal/application/delivery"
 	appinbox "github.com/domainry/domainry-notification/internal/application/inbox"
 	apptemplate "github.com/domainry/domainry-notification/internal/application/template"
@@ -152,7 +153,7 @@ func (f *Factory) openHosted(ctx context.Context, application notificationsdk.Ap
 			}
 			principal := resolution.Principal
 			principal.AccessBundle = &resolution.AccessBundle
-			return principal.Known && principal.WorkspaceID == application.WorkspaceID && principal.UserID == strings.TrimSpace(actor) && (principal.HasPermission("notification_publication.approve") || principal.HasPermission("workspace.admin")), nil
+			return principal.Known && principal.WorkspaceID == application.WorkspaceID && principal.UserID == strings.TrimSpace(actor) && principal.HasPermission(notificationapplication.ActionPublicationsApprove), nil
 		},
 	})
 	if err != nil {

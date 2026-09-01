@@ -49,10 +49,6 @@ func NewHandler(authenticator notificationhttp.ServiceAuthentication, bindings n
 	return notificationhttp.NewHandler(authenticator, bindings)
 }
 
-func notificationIdentityCatalog(application identitysdk.ApplicationRef) identitysdk.AuthorizationCatalog {
-	return notificationidentity.Catalog(application)
-}
-
 type applicationFactoryCloser interface {
 	Close(context.Context) error
 }

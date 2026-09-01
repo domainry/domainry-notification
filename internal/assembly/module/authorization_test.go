@@ -8,6 +8,7 @@ import (
 	identitysdk "github.com/domainry/domainry-identity-sdk"
 	notificationsdk "github.com/domainry/domainry-notification-sdk"
 	"github.com/domainry/domainry-notification-sdk/contract"
+	notificationapplication "github.com/domainry/domainry-notification/internal/application"
 )
 
 type principalAuthenticatorStub struct {
@@ -54,27 +55,26 @@ func TestAuthorizeFailsClosedWithoutRequiredPermission(t *testing.T) {
 			identitysdk.FunctionGrant{Resource: "notification_inbox", Action: "read", Effect: identitysdk.EffectAllow},
 		)},
 	}
-	_, err := b.authorize(context.Background(), notificationsdk.UserAuthority{AccessToken: "secret"}, "notification_inbox", "update", true)
+	_, err := b.authorizeAction(context.Background(), notificationsdk.UserAuthority{AccessToken: "secret"}, notificationapplication.ActionTemplatesDraftSave, identitysdk.DataActionWrite, true)
 	assertNotificationAuthorizationError(t, err, 403, "notification.permission_denied", false)
 	if len(capture.requests) != 0 {
 		t.Fatalf("reauthorization must not run after cached permission denial: %#v", capture.requests)
 	}
 }
 
-func TestAuthorizePreservesWorkspaceAdministratorOverride(t *testing.T) {
+func TestAuthorizeDoesNotExpandAnotherExactPermission(t *testing.T) {
 	capture := &authorizationCapture{decision: identitysdk.AccessDecision{Allowed: true}}
 	b := &binding{
 		application: notificationsdk.ApplicationRef{TenantID: "tenant-1", WorkspaceID: "workspace-1", ApplicationKey: "app-1"},
 		identity:    authorizationBindingStub{authorization: capture},
 		principals: principalAuthenticatorStub{principal: authorizedPrincipal("workspace-1",
-			identitysdk.FunctionGrant{Resource: "workspace", Action: "admin", Effect: identitysdk.EffectAllow},
+			identitysdk.FunctionGrant{Resource: "identity.roles", Action: "list", Effect: identitysdk.EffectAllow},
 		)},
 	}
-	if _, err := b.authorize(context.Background(), notificationsdk.UserAuthority{AccessToken: "secret"}, "notification_inbox", "update", true); err != nil {
-		t.Fatal(err)
-	}
-	if len(capture.requests) != 1 || capture.requests[0].Access.ObjectKey != "workspace" || capture.requests[0].Access.Action != "admin" || capture.requests[0].Facts["id"] != "workspace-1" || len(capture.requests[0].Facts) != 1 {
-		t.Fatalf("unexpected administrator reauthorization: %#v", capture.requests)
+	_, err := b.authorizeAction(context.Background(), notificationsdk.UserAuthority{AccessToken: "secret"}, notificationapplication.ActionTemplatesDraftSave, identitysdk.DataActionWrite, true)
+	assertNotificationAuthorizationError(t, err, 403, "notification.permission_denied", false)
+	if len(capture.requests) != 0 {
+		t.Fatalf("another exact Permission reached reauthorization as an alias: %#v", capture.requests)
 	}
 }
 
@@ -84,10 +84,10 @@ func TestAuthorizeReauthorizesMutationWithExactApplicationFacts(t *testing.T) {
 		application: notificationsdk.ApplicationRef{TenantID: "tenant-1", WorkspaceID: "workspace-1", ApplicationKey: "app-1"},
 		identity:    authorizationBindingStub{authorization: capture},
 		principals: principalAuthenticatorStub{principal: authorizedPrincipal("workspace-1",
-			identitysdk.FunctionGrant{Resource: "notification_template", Action: "draft", Effect: identitysdk.EffectAllow},
+			identitysdk.FunctionGrant{Resource: "notification.templates.draft", Action: "save", Effect: identitysdk.EffectAllow},
 		)},
 	}
-	principal, err := b.authorize(context.Background(), notificationsdk.UserAuthority{AccessToken: "secret"}, "notification_template", "draft", true)
+	principal, err := b.authorizeAction(context.Background(), notificationsdk.UserAuthority{AccessToken: "secret"}, notificationapplication.ActionTemplatesDraftSave, identitysdk.DataActionWrite, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -95,7 +95,7 @@ func TestAuthorizeReauthorizesMutationWithExactApplicationFacts(t *testing.T) {
 		t.Fatalf("unexpected reauthorization result: principal=%#v requests=%#v", principal, capture.requests)
 	}
 	request := capture.requests[0]
-	if request.Identity.AccessToken != "secret" || request.Access.ObjectKey != "notification_template" || request.Access.Action != "draft" {
+	if request.Identity.AccessToken != "secret" || request.Access.ObjectKey != "notification.templates.draft" || request.Access.Action != "save" || request.Access.DataAction != identitysdk.DataActionWrite {
 		t.Fatalf("unexpected decision request: %#v", request)
 	}
 	if request.Facts["tenant_id"] != "tenant-1" || request.Facts["workspace_id"] != "workspace-1" || request.Facts["application_key"] != "app-1" {
@@ -122,34 +122,34 @@ func TestAuthorizeFailsClosedWhenCurrentIdentityDeniesOrIsUnavailable(t *testing
 				application: notificationsdk.ApplicationRef{TenantID: "tenant-1", WorkspaceID: "workspace-1", ApplicationKey: "app-1"},
 				identity:    authorizationBindingStub{authorization: capture},
 				principals: principalAuthenticatorStub{principal: authorizedPrincipal("workspace-1",
-					identitysdk.FunctionGrant{Resource: "notification_publication", Action: "approve", Effect: identitysdk.EffectAllow},
+					identitysdk.FunctionGrant{Resource: "notification.publications", Action: "approve", Effect: identitysdk.EffectAllow},
 				)},
 			}
-			_, err := b.authorize(context.Background(), notificationsdk.UserAuthority{AccessToken: "secret"}, "notification_publication", "approve", true)
+			_, err := b.authorizeAction(context.Background(), notificationsdk.UserAuthority{AccessToken: "secret"}, notificationapplication.ActionPublicationsApprove, identitysdk.DataActionWrite, true)
 			assertNotificationAuthorizationError(t, err, test.status, test.code, test.retryable)
 		})
 	}
 }
 
-func TestInboxScopeRequiresAdditionalTeamAndDelegationPermissions(t *testing.T) {
+func TestInboxScopeUsesAuthenticatedRelationshipFactsWithoutRolePermission(t *testing.T) {
 	b := &binding{
 		application: notificationsdk.ApplicationRef{TenantID: "tenant-1", WorkspaceID: "workspace-1", ApplicationKey: "app-1"},
-		principals: principalAuthenticatorStub{principal: authorizedPrincipal("workspace-1",
-			identitysdk.FunctionGrant{Resource: "notification_inbox", Action: "read", Effect: identitysdk.EffectAllow},
-		)},
+		principals:  principalAuthenticatorStub{principal: authorizedPrincipal("workspace-1")},
 	}
 	authority := notificationsdk.UserAuthority{AccessToken: "secret", Surface: "business_workspace"}
 	tests := []struct {
 		name  string
 		query contract.NotificationInboxQuery
 	}{
-		{name: "team mailbox", query: contract.NotificationInboxQuery{Scope: contract.NotificationInboxScopeMine, TeamMemberID: "user-2"}},
-		{name: "delegated mailbox", query: contract.NotificationInboxQuery{Scope: contract.NotificationInboxScopeDelegated}},
+		{name: "own mailbox", query: contract.NotificationInboxQuery{Scope: contract.NotificationInboxScopeMine}},
+		{name: "team mailbox relation", query: contract.NotificationInboxQuery{Scope: contract.NotificationInboxScopeTeam, TeamMemberID: "user-2"}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			_, _, err := (moduleInbox{b: b}).scope(context.Background(), authority, test.query, "read", false)
-			assertNotificationAuthorizationError(t, err, 403, "notification.permission_denied", false)
+			principal, query, err := (moduleInbox{b: b}).scope(context.Background(), authority, test.query)
+			if err != nil || principal.UserID != "user-1" || query.ViewerUserID != "user-1" {
+				t.Fatalf("principal=%#v query=%#v error=%v", principal, query, err)
+			}
 		})
 	}
 }

@@ -6,8 +6,10 @@ import (
 	"strings"
 	"time"
 
+	identitysdk "github.com/domainry/domainry-identity-sdk"
 	notificationsdk "github.com/domainry/domainry-notification-sdk"
 	"github.com/domainry/domainry-notification-sdk/contract"
+	notificationapplication "github.com/domainry/domainry-notification/internal/application"
 	"github.com/domainry/domainry-notification/internal/domain/delivery/service"
 	"github.com/domainry/domainry-notification/internal/domain/inbox/service"
 	notification "github.com/domainry/domainry-notification/internal/domain/notification/model"
@@ -218,7 +220,7 @@ func (s moduleSystemTemplates) ListPublished(ctx context.Context) ([]contract.No
 }
 
 func (s moduleTemplates) Capabilities(ctx context.Context, a notificationsdk.UserAuthority) ([]contract.NotificationTemplateCapability, error) {
-	if _, err := s.actor(ctx, a, "notification_template", "read", false); err != nil {
+	if _, err := s.actor(ctx, a, notificationapplication.ActionCapabilitiesRead, identitysdk.DataActionRead, false); err != nil {
 		return nil, err
 	}
 	result := make([]contract.NotificationTemplateCapability, len(s.b.templateCapabilities))
@@ -226,12 +228,12 @@ func (s moduleTemplates) Capabilities(ctx context.Context, a notificationsdk.Use
 	return result, nil
 }
 
-func (s moduleTemplates) actor(ctx context.Context, a notificationsdk.UserAuthority, resource, action string, reauthorize bool) (string, error) {
-	p, err := s.b.authorize(ctx, a, resource, action, reauthorize)
+func (s moduleTemplates) actor(ctx context.Context, a notificationsdk.UserAuthority, actionKey string, dataAction identitysdk.DataAction, reauthorize bool) (string, error) {
+	p, err := s.b.authorizeAction(ctx, a, actionKey, dataAction, reauthorize)
 	return p.UserID, err
 }
 func (s moduleTemplates) List(ctx context.Context, a notificationsdk.UserAuthority) ([]contract.NotificationTemplateRecord, error) {
-	if _, err := s.actor(ctx, a, "notification_template", "read", false); err != nil {
+	if _, err := s.actor(ctx, a, notificationapplication.ActionTemplatesList, identitysdk.DataActionRead, false); err != nil {
 		return nil, err
 	}
 	values, err := s.b.templates.List(ctx)
@@ -241,7 +243,7 @@ func (s moduleTemplates) List(ctx context.Context, a notificationsdk.UserAuthori
 	return convertSlice[contract.NotificationTemplateRecord](values)
 }
 func (s moduleTemplates) Get(ctx context.Context, a notificationsdk.UserAuthority, key string) (contract.NotificationTemplateRecord, bool, error) {
-	if _, err := s.actor(ctx, a, "notification_template", "read", false); err != nil {
+	if _, err := s.actor(ctx, a, notificationapplication.ActionTemplatesGet, identitysdk.DataActionRead, false); err != nil {
 		return contract.NotificationTemplateRecord{}, false, err
 	}
 	value, found, err := s.b.templates.Get(ctx, key)
@@ -252,7 +254,7 @@ func (s moduleTemplates) Get(ctx context.Context, a notificationsdk.UserAuthorit
 	return result, found, err
 }
 func (s moduleTemplates) ListVersions(ctx context.Context, a notificationsdk.UserAuthority, key string) ([]contract.NotificationTemplateVersion, error) {
-	if _, err := s.actor(ctx, a, "notification_template", "read", false); err != nil {
+	if _, err := s.actor(ctx, a, notificationapplication.ActionTemplateVersionsList, identitysdk.DataActionRead, false); err != nil {
 		return nil, err
 	}
 	values, err := s.b.templates.ListVersions(ctx, key)
@@ -267,7 +269,7 @@ func (s moduleTemplates) SaveDraft(ctx context.Context, a notificationsdk.UserAu
 		return contract.NotificationTemplateRecord{}, err
 	}
 	defer release()
-	actor, err := s.actor(ctx, a, "notification_template", "draft", true)
+	actor, err := s.actor(ctx, a, notificationapplication.ActionTemplatesDraftSave, identitysdk.DataActionWrite, true)
 	if err != nil {
 		return contract.NotificationTemplateRecord{}, err
 	}
@@ -287,7 +289,7 @@ func (s moduleTemplates) RestoreVersionDraft(ctx context.Context, a notification
 		return contract.NotificationTemplateRecord{}, err
 	}
 	defer release()
-	actor, err := s.actor(ctx, a, "notification_template", "draft", true)
+	actor, err := s.actor(ctx, a, notificationapplication.ActionTemplateVersionsRestoreDraft, identitysdk.DataActionWrite, true)
 	if err != nil {
 		return contract.NotificationTemplateRecord{}, err
 	}
@@ -303,7 +305,7 @@ func (s moduleTemplates) Disable(ctx context.Context, a notificationsdk.UserAuth
 		return contract.NotificationTemplateRecord{}, err
 	}
 	defer release()
-	actor, err := s.actor(ctx, a, "notification_template", "disable", true)
+	actor, err := s.actor(ctx, a, notificationapplication.ActionTemplatesDisable, identitysdk.DataActionWrite, true)
 	if err != nil {
 		return contract.NotificationTemplateRecord{}, err
 	}
@@ -314,7 +316,7 @@ func (s moduleTemplates) Disable(ctx context.Context, a notificationsdk.UserAuth
 	return convert[contract.NotificationTemplateRecord](value)
 }
 func (s moduleTemplates) Preview(ctx context.Context, a notificationsdk.UserAuthority, key, locale string, recipients []string, variables map[string]any) (contract.RenderedNotification, error) {
-	p, err := s.b.authorize(ctx, a, "notification_template", "preview", false)
+	p, err := s.b.authorizeAction(ctx, a, notificationapplication.ActionTemplatesPreview, identitysdk.DataActionRead, false)
 	if err != nil {
 		return contract.RenderedNotification{}, err
 	}
@@ -329,7 +331,7 @@ func (s moduleTemplates) Preview(ctx context.Context, a notificationsdk.UserAuth
 	return convert[contract.RenderedNotification](value)
 }
 func (s moduleTemplates) PreviewTemplate(ctx context.Context, a notificationsdk.UserAuthority, v contract.NotificationTemplate, locale string, recipients []string, variables map[string]any) (contract.RenderedNotification, error) {
-	p, err := s.b.authorize(ctx, a, "notification_template", "preview", false)
+	p, err := s.b.authorizeAction(ctx, a, notificationapplication.ActionTemplatesPreviewDraft, identitysdk.DataActionRead, false)
 	if err != nil {
 		return contract.RenderedNotification{}, err
 	}
@@ -348,7 +350,7 @@ func (s moduleTemplates) PreviewTemplate(ctx context.Context, a notificationsdk.
 	return convert[contract.RenderedNotification](value)
 }
 func (s moduleTemplates) ListPublicationRequests(ctx context.Context, a notificationsdk.UserAuthority, key string) ([]contract.NotificationPublicationRequest, error) {
-	if _, err := s.actor(ctx, a, "notification_publication", "read", false); err != nil {
+	if _, err := s.actor(ctx, a, notificationapplication.ActionPublicationsList, identitysdk.DataActionRead, false); err != nil {
 		return nil, err
 	}
 	values, err := s.b.publications.List(ctx, key)
@@ -363,7 +365,7 @@ func (s moduleTemplates) RequestPublication(ctx context.Context, a notifications
 		return contract.NotificationPublicationRequest{}, err
 	}
 	defer release()
-	actor, err := s.actor(ctx, a, "notification_publication", "request", true)
+	actor, err := s.actor(ctx, a, notificationapplication.ActionPublicationsRequest, identitysdk.DataActionWrite, true)
 	if err != nil {
 		return contract.NotificationPublicationRequest{}, err
 	}
@@ -379,7 +381,7 @@ func (s moduleTemplates) ApprovePublication(ctx context.Context, a notifications
 		return contract.NotificationPublicationRequest{}, err
 	}
 	defer release()
-	actor, err := s.actor(ctx, a, "notification_publication", "approve", true)
+	actor, err := s.actor(ctx, a, notificationapplication.ActionPublicationsApprove, identitysdk.DataActionWrite, true)
 	if err != nil {
 		return contract.NotificationPublicationRequest{}, err
 	}
@@ -395,7 +397,7 @@ func (s moduleTemplates) RejectPublication(ctx context.Context, a notificationsd
 		return contract.NotificationPublicationRequest{}, err
 	}
 	defer release()
-	actor, err := s.actor(ctx, a, "notification_publication", "reject", true)
+	actor, err := s.actor(ctx, a, notificationapplication.ActionPublicationsReject, identitysdk.DataActionWrite, true)
 	if err != nil {
 		return contract.NotificationPublicationRequest{}, err
 	}
@@ -411,7 +413,7 @@ func (s moduleTemplates) CancelPublication(ctx context.Context, a notificationsd
 		return contract.NotificationPublicationRequest{}, err
 	}
 	defer release()
-	actor, err := s.actor(ctx, a, "notification_publication", "cancel", true)
+	actor, err := s.actor(ctx, a, notificationapplication.ActionPublicationsCancel, identitysdk.DataActionWrite, true)
 	if err != nil {
 		return contract.NotificationPublicationRequest{}, err
 	}
@@ -425,7 +427,7 @@ func (s moduleTemplates) CancelPublication(ctx context.Context, a notificationsd
 type moduleDelivery struct{ b *binding }
 
 func (s moduleDelivery) GetPolicy(ctx context.Context, a notificationsdk.UserAuthority) (contract.NotificationDeliveryPolicy, error) {
-	if _, err := s.b.authorize(ctx, a, "notification_delivery_policy", "read", false); err != nil {
+	if _, err := s.b.authorizeAction(ctx, a, notificationapplication.ActionDeliveryPolicyGet, identitysdk.DataActionRead, false); err != nil {
 		return contract.NotificationDeliveryPolicy{}, err
 	}
 	value, err := s.b.policy.GetPolicy(ctx)
@@ -440,7 +442,7 @@ func (s moduleDelivery) SavePolicy(ctx context.Context, a notificationsdk.UserAu
 		return contract.NotificationDeliveryPolicy{}, err
 	}
 	defer release()
-	p, err := s.b.authorize(ctx, a, "notification_delivery_policy", "update", true)
+	p, err := s.b.authorizeAction(ctx, a, notificationapplication.ActionDeliveryPolicyUpdate, identitysdk.DataActionWrite, true)
 	if err != nil {
 		return contract.NotificationDeliveryPolicy{}, err
 	}
@@ -455,7 +457,7 @@ func (s moduleDelivery) SavePolicy(ctx context.Context, a notificationsdk.UserAu
 	return convert[contract.NotificationDeliveryPolicy](value)
 }
 func (s moduleDelivery) ListRecipientPreferences(ctx context.Context, a notificationsdk.UserAuthority) ([]contract.NotificationRecipientPreference, error) {
-	p, err := s.b.authorize(ctx, a, "notification_preference", "read", false)
+	p, err := s.b.authorizeAction(ctx, a, notificationapplication.ActionRecipientPreferencesList, identitysdk.DataActionRead, false)
 	if err != nil {
 		return nil, err
 	}
@@ -471,7 +473,7 @@ func (s moduleDelivery) SaveRecipientPreference(ctx context.Context, a notificat
 		return contract.NotificationRecipientPreference{}, err
 	}
 	defer release()
-	p, err := s.b.authorize(ctx, a, "notification_preference", "update", true)
+	p, err := s.b.authorizeAction(ctx, a, notificationapplication.ActionRecipientPreferencesUpdate, identitysdk.DataActionWrite, true)
 	if err != nil {
 		return contract.NotificationRecipientPreference{}, err
 	}
@@ -489,7 +491,7 @@ func (s moduleDelivery) SaveRecipientPreference(ctx context.Context, a notificat
 	return convert[contract.NotificationRecipientPreference](stored)
 }
 func (s moduleDelivery) Metrics(ctx context.Context, a notificationsdk.UserAuthority, since string) (contract.NotificationDeliveryMetrics, error) {
-	p, err := s.b.authorize(ctx, a, "notification_governance", "read", false)
+	p, err := s.b.authorizeAction(ctx, a, notificationapplication.ActionDeliveryMetricsRead, identitysdk.DataActionRead, false)
 	if err != nil {
 		return contract.NotificationDeliveryMetrics{}, err
 	}
@@ -502,13 +504,13 @@ func (s moduleDelivery) Metrics(ctx context.Context, a notificationsdk.UserAutho
 type moduleAdministration struct{ b *binding }
 
 func (s moduleAdministration) GovernanceCatalog(ctx context.Context, a notificationsdk.UserAuthority) (contract.NotificationGovernanceCatalog, error) {
-	if _, err := s.b.authorize(ctx, a, "notification_governance", "read", false); err != nil {
+	if _, err := s.b.authorizeAction(ctx, a, notificationapplication.ActionGovernanceCatalogRead, identitysdk.DataActionRead, false); err != nil {
 		return contract.NotificationGovernanceCatalog{}, err
 	}
 	return convert[contract.NotificationGovernanceCatalog](inbox.GovernanceCatalog{EventTypes: s.b.eventTypes, Rules: s.b.rules})
 }
 func (s moduleAdministration) InboxGovernanceMetrics(ctx context.Context, a notificationsdk.UserAuthority, since string) (contract.NotificationInboxGovernanceMetrics, error) {
-	p, err := s.b.authorize(ctx, a, "notification_governance", "read", false)
+	p, err := s.b.authorizeAction(ctx, a, notificationapplication.ActionGovernanceInboxMetricsRead, identitysdk.DataActionRead, false)
 	if err != nil {
 		return contract.NotificationInboxGovernanceMetrics{}, err
 	}

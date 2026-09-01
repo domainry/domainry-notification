@@ -4,8 +4,10 @@ import (
 	"context"
 	"fmt"
 
+	actioncontract "github.com/domainry/domainry-foundation/action"
 	"github.com/domainry/domainry-foundation/modulehttp"
 	notificationsdk "github.com/domainry/domainry-notification-sdk"
+	notificationapplication "github.com/domainry/domainry-notification/internal/application"
 	notificationhttp "github.com/domainry/domainry-notification/internal/transport/http/module"
 )
 
@@ -76,6 +78,9 @@ func (b *bindingWithHTTPSurface) SystemMigration() notificationsdk.SystemMigrati
 func (b *bindingWithHTTPSurface) HTTPSurfaces() []modulehttp.Surface {
 	return append([]modulehttp.Surface(nil), b.surfaces...)
 }
+func (b *bindingWithHTTPSurface) AuthorizationActions() ([]actioncontract.ActionDefinition, error) {
+	return notificationapplication.AuthorizationActions()
+}
 
 var _ notificationsdk.Factory = (*RemoteFactory)(nil)
 var _ notificationsdk.SystemTemplateBinding = (*bindingWithHTTPSurface)(nil)
@@ -83,3 +88,4 @@ var _ notificationsdk.SystemSubjectBinding = (*bindingWithHTTPSurface)(nil)
 var _ notificationsdk.SystemRetentionBinding = (*bindingWithHTTPSurface)(nil)
 var _ notificationsdk.SystemMigrationBinding = (*bindingWithHTTPSurface)(nil)
 var _ modulehttp.Provider = (*bindingWithHTTPSurface)(nil)
+var _ actioncontract.Provider = (*bindingWithHTTPSurface)(nil)

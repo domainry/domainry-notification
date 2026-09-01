@@ -10,74 +10,45 @@ import (
 	"time"
 	"unicode"
 
+	actioncontract "github.com/domainry/domainry-foundation/action"
 	"github.com/domainry/domainry-foundation/modulecapability"
 	"github.com/domainry/domainry-foundation/modulehttp"
 	notificationsdk "github.com/domainry/domainry-notification-sdk"
 	"github.com/domainry/domainry-notification-sdk/contract"
+	notificationapplication "github.com/domainry/domainry-notification/internal/application"
 )
 
 // ProductRoutes is the source-owned Notification product HTTP manifest. Both
 // the executable Module Surface and the model-facing capability disclosure are
 // projections of this exact list. SaaS composition mounts the same Surface, so
 // switching topology cannot change the product endpoint contract.
-func ProductRoutes() []modulehttp.Route {
-	routes := []modulehttp.Route{
-		templateReadRoute("GET /notifications/capabilities"),
-		templateReadRoute("GET /notifications/templates"),
-		templateReadRoute("GET /notifications/templates/{templateKey}"),
-		templateReadRoute("GET /notifications/publications"),
-		templateRoute("POST /notifications/publications/{publicationID}/approve", "notification.template.approve"),
-		templateRoute("POST /notifications/publications/{publicationID}/reject", "notification.template.approve"),
-		templateRoute("POST /notifications/publications/{publicationID}/cancel", "notification.template.publish", "notification.template.approve"),
-		templateRoute("POST /notifications/templates/preview", "notification.template.manage", "notification.template.test"),
-		templateRoute("PUT /notifications/templates/{templateKey}/draft", "notification.template.manage"),
-		templateRoute("POST /notifications/templates/{templateKey}/publish", "notification.template.approve"),
-		templateRoute("POST /notifications/templates/{templateKey}/publication-requests", "notification.template.publish"),
-		templateRoute("POST /notifications/templates/{templateKey}/disable", "notification.template.publish"),
-		templateRoute("POST /notifications/templates/{templateKey}/preview", "notification.template.read", "notification.template.test"),
-		templateReadRoute("GET /notifications/templates/{templateKey}/versions"),
-		templateRoute("POST /notifications/templates/{templateKey}/versions/{version}/restore-draft", "notification.template.manage"),
-		templateRoute("GET /notifications/policy", "notification.policy.read", "notification.policy.manage"),
-		templateRoute("PUT /notifications/policy", "notification.policy.manage"),
-		templateRoute("GET /notifications/preferences", "notification.policy.read", "notification.policy.manage"),
-		templateRoute("PUT /notifications/preferences/{recipientKey}", "notification.policy.manage"),
-		templateRoute("GET /notifications/metrics", "integration.audit.view", "notification.policy.read"),
-		templateReadRoute("GET /notifications/governance/catalog"),
-		templateRoute("GET /notifications/governance/inbox-metrics", "integration.audit.view", "notification.policy.read"),
+func ProductRoutes() ([]modulehttp.Route, error) {
+	actions, err := notificationapplication.AuthorizationActions()
+	if err != nil {
+		return nil, err
 	}
-	for _, prefix := range []string{"/business", "/portal"} {
-		routes = append(routes, inboxRoutes(prefix)...)
+	routes := make([]modulehttp.Route, 0, len(actions))
+	for _, action := range actions {
+		route, routeErr := modulehttp.RouteFromAction(action)
+		if routeErr != nil {
+			return nil, routeErr
+		}
+		routes = append(routes, route)
 	}
-	return routes
-}
-
-func notificationRouteGovernance(pattern string) *modulehttp.Governance {
-	method, path, _ := strings.Cut(strings.TrimSpace(pattern), " ")
-	read := method == http.MethodGet || strings.Contains(path, "/preview") || strings.HasSuffix(path, "/publish")
-	if read {
-		return &modulehttp.Governance{EffectClass: modulehttp.EffectRead, HighRiskPolicy: modulehttp.HighRiskNone, IdempotencyDecision: "not_applicable", AuditClass: "notification_owner_read"}
-	}
-	idempotency := "optimistic_only"
-	if method == http.MethodPut || method == http.MethodDelete || strings.Contains(path, "/notifications/") || strings.HasSuffix(path, "/read-all") {
-		idempotency = "natural_key"
-	}
-	return &modulehttp.Governance{EffectClass: modulehttp.EffectWrite, HighRiskPolicy: modulehttp.HighRiskNone, IdempotencyDecision: idempotency, AuditClass: "notification_owner_mutation"}
+	return routes, nil
 }
 
 // NewCapabilityBinding builds the immutable disclosure envelope. The supplied
 // validator remains in the owning module assembly because it needs the exact
 // provider catalog opened for this application.
 func NewCapabilityBinding(templateCapabilities []contract.NotificationTemplateCapability, validator modulecapability.Validator) (*modulecapability.StaticBinding, error) {
-	routes := ProductRoutes()
+	routes, err := ProductRoutes()
+	if err != nil {
+		return nil, err
+	}
 	byCategory := map[string][]modulehttp.Route{}
 	for _, route := range routes {
-		// This endpoint is an intentional compatibility tombstone that always
-		// returns 409. It is mounted for old callers but is not a usable model
-		// capability; publication-requests is the source-owned replacement.
-		if route.Pattern == "POST /notifications/templates/{templateKey}/publish" {
-			continue
-		}
-		key := notificationCapabilityCategory(route.Pattern)
+		key := notificationCapabilityCategory(route.Pattern())
 		byCategory[key] = append(byCategory[key], route)
 	}
 	categoryKeys := make([]string, 0, len(byCategory))
@@ -88,12 +59,13 @@ func NewCapabilityBinding(templateCapabilities []contract.NotificationTemplateCa
 	documents := make([]modulecapability.CategoryDocument, 0, len(categoryKeys))
 	for _, key := range categoryKeys {
 		categoryRoutes := byCategory[key]
-		sort.Slice(categoryRoutes, func(i, j int) bool { return categoryRoutes[i].Pattern < categoryRoutes[j].Pattern })
+		sort.Slice(categoryRoutes, func(i, j int) bool { return categoryRoutes[i].Pattern() < categoryRoutes[j].Pattern() })
 		paths := map[string]map[string]json.RawMessage{}
 		for _, route := range categoryRoutes {
-			method, path, found := strings.Cut(route.Pattern, " ")
+			pattern := route.Pattern()
+			method, path, found := strings.Cut(pattern, " ")
 			if !found {
-				return nil, fmt.Errorf("Notification capability route %q is invalid", route.Pattern)
+				return nil, fmt.Errorf("Notification capability route %q is invalid", pattern)
 			}
 			if paths[path] == nil {
 				paths[path] = map[string]json.RawMessage{}
@@ -220,7 +192,8 @@ func notificationCategoryMetadata(key string) (string, string, []string, []strin
 func notificationOpenAPIOperations(routes []modulehttp.Route) map[string]map[string]any {
 	result := make(map[string]map[string]any, len(routes))
 	for _, route := range routes {
-		_, _, found := strings.Cut(route.Pattern, " ")
+		pattern := route.Pattern()
+		_, _, found := strings.Cut(pattern, " ")
 		if !found {
 			continue
 		}
@@ -232,34 +205,29 @@ func notificationOpenAPIOperations(routes []modulehttp.Route) map[string]map[str
 		if json.Unmarshal(operation, &value) != nil {
 			continue
 		}
-		result[route.Pattern] = value
+		result[pattern] = value
 	}
 	return result
 }
 
 func notificationOpenAPIOperation(route modulehttp.Route) (json.RawMessage, error) {
-	method, path, found := strings.Cut(strings.TrimSpace(route.Pattern), " ")
+	pattern := route.Pattern()
+	method, path, found := strings.Cut(pattern, " ")
 	if !found {
-		return nil, fmt.Errorf("Notification route %q is invalid", route.Pattern)
+		return nil, fmt.Errorf("Notification route %q is invalid", pattern)
 	}
 	method = strings.ToLower(method)
-	governance := route.Governance
-	if governance == nil {
-		return nil, fmt.Errorf("Notification route %q has no governance", route.Pattern)
+	authorization := modulecapability.Authorization{Strategy: route.Action.Authorization.Strategy, PolicyKey: route.Action.Authorization.PolicyKey, Audiences: append([]string(nil), route.Action.Authorization.Audiences...), WorkspaceScope: "authenticated_workspace_principal"}
+	if route.Action.Permission != nil {
+		authorization.Permission = route.Action.Permission.Key
 	}
-	authorization := modulecapability.Authorization{Mode: modulecapability.AuthorizationPrincipal, WorkspaceScope: "authenticated_workspace_principal"}
-	if len(route.AnyPermissions) != 0 {
-		authorization.Mode = modulecapability.AuthorizationFixed
-		authorization.AnyOf = append([]string(nil), route.AnyPermissions...)
-		sort.Strings(authorization.AnyOf)
-	} else if strings.TrimSpace(route.Permission) != "" {
-		authorization.Mode = modulecapability.AuthorizationFixed
-		authorization.AllOf = []string{strings.TrimSpace(route.Permission)}
+	if route.Action.Authorization.Strategy != actioncontract.AuthorizationExactRolePermission && route.Action.Authorization.Strategy != actioncontract.AuthorizationAuthenticatedPrincipal {
+		return nil, fmt.Errorf("Notification route %q has unsupported capability authorization strategy %q", pattern, route.Action.Authorization.Strategy)
 	}
 	extension := modulecapability.OperationExtension{
 		Owner: "notification", Authorization: authorization,
-		Effect:      modulecapability.EffectClass(governance.EffectClass),
-		Idempotency: modulecapability.Idempotency{Mode: governance.IdempotencyDecision},
+		Effect:      modulecapability.EffectClass(route.Action.EffectClass),
+		Idempotency: modulecapability.Idempotency{Mode: route.Action.IdempotencyDecision},
 	}
 	if strings.HasSuffix(path, "/notifications/stream") {
 		extension.Transport = &modulecapability.Transport{Mode: "sse", ResumeSemantics: "Last-Event-ID or cursor; each signal requires a durable Inbox refetch", DeliveryOrdering: "latest state cursor"}
@@ -285,8 +253,6 @@ func notificationOpenAPIOperation(route modulehttp.Route) (json.RawMessage, erro
 	}
 	if method == strings.ToLower(http.MethodDelete) {
 		responses["204"] = map[string]any{"description": "Notification resource removed"}
-	} else if strings.HasSuffix(path, "/templates/{templateKey}/publish") {
-		responses["409"] = map[string]any{"description": "Direct publication is disabled; create a publication request"}
 	} else {
 		status := "200"
 		if strings.HasSuffix(path, "/publication-requests") {
@@ -345,9 +311,6 @@ func notificationOperationDescription(method, path string) string {
 	if strings.HasSuffix(path, "/notifications/stream") {
 		return "Resume the authenticated principal's Inbox synchronization stream and refetch durable state after each signal."
 	}
-	if strings.HasSuffix(path, "/templates/{templateKey}/publish") {
-		return "Compatibility tombstone. Direct publication is rejected; use the publication request and review flow."
-	}
 	return "Notification-owned " + strings.ToLower(notificationOperationTag(path)) + " operation."
 }
 
@@ -397,7 +360,7 @@ func notificationRequestSchema(method, path string) map[string]any {
 		return nil
 	}
 	switch {
-	case strings.HasSuffix(path, "/notifications/read-all"), strings.HasSuffix(path, "/read"), strings.HasSuffix(path, "/unread"), strings.HasSuffix(path, "/archive"), strings.HasSuffix(path, "/restore"), strings.HasSuffix(path, "/acknowledge"), strings.HasSuffix(path, "/approve"), strings.HasSuffix(path, "/cancel"), strings.HasSuffix(path, "/publish"):
+	case strings.HasSuffix(path, "/notifications/read-all"), strings.HasSuffix(path, "/read"), strings.HasSuffix(path, "/unread"), strings.HasSuffix(path, "/archive"), strings.HasSuffix(path, "/restore"), strings.HasSuffix(path, "/acknowledge"), strings.HasSuffix(path, "/approve"), strings.HasSuffix(path, "/cancel"):
 		return nil
 	case strings.HasSuffix(path, "/notification-preferences"):
 		return openAPISchemaFor(reflect.TypeOf(contract.NotificationRecipientPreference{}), map[reflect.Type]bool{})

@@ -12,6 +12,7 @@ import (
 
 	identitysdk "github.com/domainry/domainry-identity-sdk"
 	identityremote "github.com/domainry/domainry-identity-sdk/remote"
+	notificationapplication "github.com/domainry/domainry-notification/internal/application"
 )
 
 type Options struct {
@@ -55,7 +56,7 @@ func Open(ctx context.Context, options Options) (identitysdk.Binding, error) {
 		_ = binding.Close(ctx)
 		return nil, fmt.Errorf("Notification SaaS requires Identity SaaS, got %q", descriptor.Mode)
 	}
-	if descriptor.ProtocolVersion != identitysdk.CurrentProtocolVersion || descriptor.BundleVersion != identitysdk.CurrentPolicyBundleVersion || descriptor.CatalogVersion != identitysdk.CatalogVersionV1 {
+	if descriptor.ProtocolVersion != identitysdk.CurrentProtocolVersion || descriptor.BundleVersion != identitysdk.CurrentPolicyBundleVersion || descriptor.AuthorizationVersion != identitysdk.AuthorizationContractVersionV1 {
 		_ = binding.Close(ctx)
 		return nil, fmt.Errorf("Notification SaaS Identity protocol is incompatible")
 	}
@@ -63,18 +64,47 @@ func Open(ctx context.Context, options Options) (identitysdk.Binding, error) {
 		_ = binding.Close(ctx)
 		return nil, fmt.Errorf("Notification SaaS Identity issuer/audience scope is invalid")
 	}
-	if nilIdentityCapability(binding.Tokens()) || nilIdentityCapability(binding.Authorization()) || nilIdentityCapability(binding.Principals()) || nilIdentityCapability(binding.Directory()) || nilIdentityCapability(binding.Catalog()) {
+	if nilIdentityCapability(binding.Tokens()) || nilIdentityCapability(binding.Authorization()) || nilIdentityCapability(binding.Principals()) || nilIdentityCapability(binding.Directory()) || nilIdentityCapability(binding.Applications()) || nilIdentityCapability(binding.Permissions()) {
 		_ = binding.Close(ctx)
 		return nil, fmt.Errorf("Notification SaaS Identity capabilities are incomplete")
 	}
-	catalog := Catalog(application)
-	if err := binding.Catalog().Validate(ctx, catalog); err != nil {
+	if _, err := binding.Applications().Register(ctx, identitysdk.ApplicationRegistration{Application: application}); err != nil {
 		_ = binding.Close(ctx)
-		return nil, fmt.Errorf("validate Notification Identity catalog: %w", err)
+		return nil, fmt.Errorf("register Notification Identity application: %w", err)
 	}
-	if _, err := binding.Catalog().Publish(ctx, catalog); err != nil {
+	definitions, err := PermissionDefinitions()
+	if err != nil {
 		_ = binding.Close(ctx)
-		return nil, fmt.Errorf("publish Notification Identity catalog: %w", err)
+		return nil, fmt.Errorf("build Notification Identity permissions: %w", err)
+	}
+	reader, ok := binding.Permissions().(identitysdk.PermissionSnapshotReader)
+	if !ok {
+		_ = binding.Close(ctx)
+		return nil, fmt.Errorf("Notification SaaS Identity permission snapshot reader is unavailable")
+	}
+	snapshotRequest := identitysdk.PermissionSourceSnapshotRequest{Application: application, SourceOwner: notificationapplication.NotificationAuthorizationOwner}
+	snapshot, err := reader.CurrentSourceSnapshot(ctx, snapshotRequest)
+	if err != nil {
+		_ = binding.Close(ctx)
+		return nil, fmt.Errorf("read Notification Identity permission snapshot: %w", err)
+	}
+	if err := snapshot.ValidateFor(snapshotRequest); err != nil {
+		_ = binding.Close(ctx)
+		return nil, fmt.Errorf("validate Notification Identity permission snapshot: %w", err)
+	}
+	request, err := identitysdk.NewPermissionReconcileRequest(application, notificationapplication.NotificationAuthorizationOwner, snapshot.SnapshotHash, definitions)
+	if err != nil {
+		_ = binding.Close(ctx)
+		return nil, fmt.Errorf("build Notification Identity permission snapshot: %w", err)
+	}
+	receipt, err := binding.Permissions().Reconcile(ctx, request)
+	if err != nil {
+		_ = binding.Close(ctx)
+		return nil, fmt.Errorf("reconcile Notification Identity permissions: %w", err)
+	}
+	if err := receipt.ValidateFor(request); err != nil {
+		_ = binding.Close(ctx)
+		return nil, fmt.Errorf("validate Notification Identity permission receipt: %w", err)
 	}
 	return binding, nil
 }
@@ -92,34 +122,21 @@ func nilIdentityCapability(value any) bool {
 	}
 }
 
-func Catalog(application identitysdk.ApplicationRef) identitysdk.AuthorizationCatalog {
-	applicationFacts := []string{"tenant_id", "workspace_id", "application_key"}
-	resources := []identitysdk.ResourceDefinition{
-		{Key: "notification_service", SupportedFacts: applicationFacts},
-		{Key: "notification_event", SupportedFacts: applicationFacts}, {Key: "notification_inbox", SupportedFacts: applicationFacts}, {Key: "notification_template", SupportedFacts: applicationFacts},
-		{Key: "notification_publication", SupportedFacts: applicationFacts}, {Key: "notification_delivery_policy", SupportedFacts: applicationFacts},
-		{Key: "notification_preference", SupportedFacts: applicationFacts}, {Key: "notification_team_mailbox", SupportedFacts: applicationFacts},
-		{Key: "notification_delegation", SupportedFacts: applicationFacts}, {Key: "notification_governance", SupportedFacts: applicationFacts},
+func PermissionDefinitions() ([]identitysdk.PermissionDefinition, error) {
+	actions, err := notificationapplication.AuthorizationActions()
+	if err != nil {
+		return nil, err
 	}
-	actions := []identitysdk.ActionDefinition{}
-	for _, entry := range []struct {
-		resource string
-		actions  []string
-	}{
-		{"notification_service", []string{"discover"}},
-		{"notification_event", []string{"publish"}},
-		{"notification_inbox", []string{"read", "update", "act"}},
-		{"notification_template", []string{"read", "draft", "preview", "disable"}},
-		{"notification_publication", []string{"read", "request", "approve", "reject", "cancel"}},
-		{"notification_delivery_policy", []string{"read", "update"}},
-		{"notification_preference", []string{"read", "update"}},
-		{"notification_team_mailbox", []string{"read"}},
-		{"notification_delegation", []string{"read", "update", "delete"}},
-		{"notification_governance", []string{"read", "export", "erase", "retention", "migrate"}},
-	} {
-		for _, action := range entry.actions {
-			actions = append(actions, identitysdk.ActionDefinition{Resource: identitysdk.ResourceType(entry.resource), Action: identitysdk.Action(action), ServiceCallable: true})
+	definitions := make([]identitysdk.PermissionDefinition, 0, len(actions))
+	for _, action := range actions {
+		if action.Permission == nil {
+			continue
 		}
+		permission := action.Permission
+		definitions = append(definitions, identitysdk.PermissionDefinition{
+			PermissionKey: permission.Key, ResourceKey: permission.ResourceKey, ActionKey: permission.ActionKey,
+			Label: permission.Label, Description: permission.Description, Category: permission.Category, SourceKind: action.SourceKind,
+		})
 	}
-	return identitysdk.AuthorizationCatalog{ContractVersion: identitysdk.CatalogVersionV1, Application: application, Resources: resources, Actions: actions}
+	return definitions, nil
 }

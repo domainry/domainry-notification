@@ -7,8 +7,10 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"testing"
 
+	actioncontract "github.com/domainry/domainry-foundation/action"
 	capabilitycontracttest "github.com/domainry/domainry-foundation/modulecapability/contracttest"
 	"github.com/domainry/domainry-foundation/modulehttp"
 	identitysdk "github.com/domainry/domainry-identity-sdk"
@@ -17,6 +19,7 @@ import (
 	"github.com/domainry/domainry-notification-sdk/deliverygateway"
 	"github.com/domainry/domainry-notification-sdk/modulehost"
 	notificationremote "github.com/domainry/domainry-notification-sdk/remote"
+	notificationapplication "github.com/domainry/domainry-notification/internal/application"
 	sqlstore "github.com/domainry/domainry-notification/internal/infrastructure/persistence"
 
 	_ "modernc.org/sqlite"
@@ -186,8 +189,28 @@ func TestRemotePublicationReconcilesResponseLossWithoutDuplicateIngest(t *testin
 	}
 	capabilitycontracttest.VerifyBinding(t, remoteBinding)
 	provider, ok := remoteBinding.(modulehttp.Provider)
-	if !ok || len(provider.HTTPSurfaces()) != 1 || len(provider.HTTPSurfaces()[0].Routes()) != 62 {
+	if !ok || len(provider.HTTPSurfaces()) != 1 || len(provider.HTTPSurfaces()[0].Routes()) != 61 {
 		t.Fatalf("SaaS Notification HTTP surfaces=%v", provider)
+	}
+	actionProvider, ok := remoteBinding.(actioncontract.Provider)
+	if !ok {
+		t.Fatal("SaaS Notification binding does not expose its canonical Action manifest")
+	}
+	providedActions, err := actionProvider.AuthorizationActions()
+	if err != nil {
+		t.Fatal(err)
+	}
+	canonicalActions, err := notificationapplication.AuthorizationActions()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(providedActions, canonicalActions) {
+		t.Fatal("SaaS Notification binding drifted from the source-owned Action manifest")
+	}
+	for index, route := range provider.HTTPSurfaces()[0].Routes() {
+		if !reflect.DeepEqual(route.Action, canonicalActions[index]) {
+			t.Fatalf("SaaS route %d drifted from the source-owned Action manifest", index)
+		}
 	}
 	intent := contract.NotificationIntent{ID: "event", WorkspaceID: "workspace", SourceEventID: "source", EventType: "report.completed", Surface: "business_workspace", RecipientUserIDs: []string{"user"}, OccurredAt: "2026-08-29T00:00:00Z", SubjectType: "report", SubjectID: "report", SubjectVersion: "one"}
 	event, created, err := remoteBinding.Publisher().PublishIntent(t.Context(), intent)
