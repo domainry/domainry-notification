@@ -236,6 +236,31 @@ func (v *Validator) ValidateSavedView(value SavedView) (SavedView, error) {
 	return value, nil
 }
 
+// ValidateDelegation owns the pure delegation rules shared by durable Inbox
+// writes and capability-candidate validation. It requires no store, clock, or
+// authorization context and therefore remains safe for Plane composition.
+func (v *Validator) ValidateDelegation(value Delegation) (Delegation, error) {
+	value.WorkspaceID = notification.WorkspaceID(strings.TrimSpace(value.WorkspaceID.String()))
+	value.OwnerUserID = notification.UserID(strings.TrimSpace(value.OwnerUserID.String()))
+	value.DelegateUserID = notification.UserID(strings.TrimSpace(value.DelegateUserID.String()))
+	value.Surface = notification.Surface(strings.TrimSpace(string(value.Surface)))
+	if value.WorkspaceID == "" || value.OwnerUserID == "" || value.DelegateUserID == "" || value.DelegateUserID == value.OwnerUserID || !v.SupportsSurface(value.Surface) {
+		return value, invalid("backend.notification.inbox_delegation_invalid")
+	}
+	var starts, ends time.Time
+	var err error
+	if value.StartsAt, starts, err = normalizeDelegationTime("starts_at", value.StartsAt); err != nil {
+		return value, err
+	}
+	if value.EndsAt, ends, err = normalizeDelegationTime("ends_at", value.EndsAt); err != nil {
+		return value, err
+	}
+	if !starts.IsZero() && !ends.IsZero() && !ends.After(starts) {
+		return value, invalid("backend.notification.inbox_delegation_time_invalid", "field", "ends_at")
+	}
+	return value, nil
+}
+
 func validateAction(action ActionRef) (ActionRef, error) {
 	key, kind, label := strings.TrimSpace(action.Key), strings.TrimSpace(action.Kind), strings.TrimSpace(action.Label)
 	resourceType, resourceID := strings.TrimSpace(action.ResourceType), strings.TrimSpace(action.ResourceID)
@@ -303,6 +328,17 @@ func normalizeQueryTime(field, value string) (string, error) {
 		return "", invalid("backend.notification.inbox_query_time_invalid", "field", field)
 	}
 	return notification.Timestamp(parsed), nil
+}
+
+func normalizeDelegationTime(field, value string) (string, time.Time, error) {
+	if strings.TrimSpace(value) == "" {
+		return "", time.Time{}, nil
+	}
+	parsed, err := time.Parse(time.RFC3339Nano, value)
+	if err != nil {
+		return value, time.Time{}, invalid("backend.notification.inbox_delegation_time_invalid", "field", field)
+	}
+	return notification.Timestamp(parsed), parsed, nil
 }
 
 func firstSurface(configuration *Configuration) notification.Surface {

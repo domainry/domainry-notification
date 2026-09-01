@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	capabilitycontracttest "github.com/domainry/domainry-foundation/modulecapability/contracttest"
 	"github.com/domainry/domainry-foundation/modulehttp"
 	identitysdk "github.com/domainry/domainry-identity-sdk"
 	notificationsdk "github.com/domainry/domainry-notification-sdk"
@@ -168,6 +169,10 @@ func TestRemotePublicationReconcilesResponseLossWithoutDuplicateIngest(t *testin
 	if err != nil {
 		t.Fatal(err)
 	}
+	capabilitySummary, err := local.CapabilitySummary(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
 	handler, err := NewHandler(&serviceAuthenticationStub{}, &bindingResolverStub{binding: local})
 	if err != nil {
 		t.Fatal(err)
@@ -175,10 +180,11 @@ func TestRemotePublicationReconcilesResponseLossWithoutDuplicateIngest(t *testin
 	server := httptest.NewServer(handler)
 	t.Cleanup(server.Close)
 	transport := &loseFirstPublicationResponseTransport{base: http.DefaultTransport}
-	remoteBinding, err := NewRemoteFactory(notificationremote.NewFactory(notificationremote.Config{BaseURL: server.URL, ServiceCredential: "service", HTTPClient: &http.Client{Transport: transport}})).Open(t.Context(), application)
+	remoteBinding, err := NewRemoteFactory(notificationremote.NewFactory(notificationremote.Config{BaseURL: server.URL, ServiceCredential: "service", CapabilityContractSHA256: capabilitySummary.Identity.ContractSHA256, HTTPClient: &http.Client{Transport: transport}})).Open(t.Context(), application)
 	if err != nil {
 		t.Fatal(err)
 	}
+	capabilitycontracttest.VerifyBinding(t, remoteBinding)
 	provider, ok := remoteBinding.(modulehttp.Provider)
 	if !ok || len(provider.HTTPSurfaces()) != 1 || len(provider.HTTPSurfaces()[0].Routes()) != 62 {
 		t.Fatalf("SaaS Notification HTTP surfaces=%v", provider)

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/domainry/domainry-foundation/modulecapability"
 	identitysdk "github.com/domainry/domainry-identity-sdk"
 )
 
@@ -20,6 +21,7 @@ func (f *identityFactoryStub) Open(_ context.Context, application identitysdk.Ap
 }
 
 type identityBindingStub struct {
+	modulecapability.Binding
 	descriptor identitysdk.Descriptor
 	catalog    *catalogStub
 	tokens     identitysdk.TokenVerifier

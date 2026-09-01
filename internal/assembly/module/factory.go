@@ -14,6 +14,7 @@ import (
 	notificationsdk "github.com/domainry/domainry-notification-sdk"
 	"github.com/domainry/domainry-notification-sdk/contract"
 	"github.com/domainry/domainry-notification-sdk/modulehost"
+	notificationcapability "github.com/domainry/domainry-notification/capability"
 	appdelivery "github.com/domainry/domainry-notification/internal/application/delivery"
 	appinbox "github.com/domainry/domainry-notification/internal/application/inbox"
 	apptemplate "github.com/domainry/domainry-notification/internal/application/template"
@@ -216,6 +217,10 @@ func (f *Factory) openHosted(ctx context.Context, application notificationsdk.Ap
 		return nil, err
 	}
 	b := &binding{application: application, mode: mode, identity: host.Identity(), principals: principalResolver, templates: templateManager, publications: publicationProcessor, engine: templateEngine, publisher: publisher, compiler: compiler, store: store, inboxProcessor: inboxProcessor, policy: policyManager, deliveryProcessor: deliveryProcessor, mailbox: mailbox, actions: actions, catalog: eventCatalog, eventTypes: eventTypes, rules: rules, metrics: host.DeliveryMetrics(), clock: host.Clock(), templateCapabilities: append([]contract.NotificationTemplateCapability(nil), catalog.TemplateCapabilities...)}
+	b.capabilities, err = notificationcapability.Open(notificationcapability.Inputs{})
+	if err != nil {
+		return nil, fmt.Errorf("build Notification capability disclosure: %w", err)
+	}
 	if err := b.RefreshPublished(ctx); err != nil {
 		return nil, err
 	}

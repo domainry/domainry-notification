@@ -28,38 +28,16 @@ func (s *surface) Routes() []modulehttp.Route {
 	return append([]modulehttp.Route(nil), s.routes...)
 }
 
+func (s *surface) OpenAPIOperations() map[string]map[string]any {
+	return notificationOpenAPIOperations(ProductRoutes())
+}
+
 func NewSurface(binding notificationsdk.Binding) (modulehttp.Surface, error) {
 	if binding == nil || binding.Templates() == nil {
 		return nil, errors.New("Notification template binding is unavailable")
 	}
 	s := &surface{binding: binding, mux: http.NewServeMux()}
-	s.routes = []modulehttp.Route{
-		templateReadRoute("GET /notifications/capabilities"),
-		templateReadRoute("GET /notifications/templates"),
-		templateReadRoute("GET /notifications/templates/{templateKey}"),
-		templateReadRoute("GET /notifications/publications"),
-		templateRoute("POST /notifications/publications/{publicationID}/approve", "notification.template.approve"),
-		templateRoute("POST /notifications/publications/{publicationID}/reject", "notification.template.approve"),
-		templateRoute("POST /notifications/publications/{publicationID}/cancel", "notification.template.publish", "notification.template.approve"),
-		templateRoute("POST /notifications/templates/preview", "notification.template.manage", "notification.template.test"),
-		templateRoute("PUT /notifications/templates/{templateKey}/draft", "notification.template.manage"),
-		templateRoute("POST /notifications/templates/{templateKey}/publish", "notification.template.approve"),
-		templateRoute("POST /notifications/templates/{templateKey}/publication-requests", "notification.template.publish"),
-		templateRoute("POST /notifications/templates/{templateKey}/disable", "notification.template.publish"),
-		templateRoute("POST /notifications/templates/{templateKey}/preview", "notification.template.read", "notification.template.test"),
-		templateReadRoute("GET /notifications/templates/{templateKey}/versions"),
-		templateRoute("POST /notifications/templates/{templateKey}/versions/{version}/restore-draft", "notification.template.manage"),
-		templateRoute("GET /notifications/policy", "notification.policy.read", "notification.policy.manage"),
-		templateRoute("PUT /notifications/policy", "notification.policy.manage"),
-		templateRoute("GET /notifications/preferences", "notification.policy.read", "notification.policy.manage"),
-		templateRoute("PUT /notifications/preferences/{recipientKey}", "notification.policy.manage"),
-		templateRoute("GET /notifications/metrics", "integration.audit.view", "notification.policy.read"),
-		templateReadRoute("GET /notifications/governance/catalog"),
-		templateRoute("GET /notifications/governance/inbox-metrics", "integration.audit.view", "notification.policy.read"),
-	}
-	for _, prefix := range []string{"/business", "/portal"} {
-		s.routes = append(s.routes, inboxRoutes(prefix)...)
-	}
+	s.routes = ProductRoutes()
 	s.mux.HandleFunc("GET /notifications/capabilities", s.capabilities)
 	s.mux.HandleFunc("GET /notifications/templates", s.list)
 	s.mux.HandleFunc("GET /notifications/templates/{templateKey}", s.get)
@@ -97,6 +75,7 @@ func templateRoute(pattern string, permissions ...string) modulehttp.Route {
 		Pattern: pattern, Exposures: []modulehttp.Exposure{modulehttp.ExposureTenantAdmin},
 		Authentication: modulehttp.AuthenticationAuthenticated,
 		AnyPermissions: append([]string{"workspace.admin"}, permissions...),
+		Governance:     notificationRouteGovernance(pattern),
 	}
 }
 

@@ -29,7 +29,7 @@ func inboxRoutes(prefix string) []modulehttp.Route {
 	}
 	routes := make([]modulehttp.Route, 0, len(patterns))
 	for _, pattern := range patterns {
-		routes = append(routes, modulehttp.Route{Pattern: pattern, Exposures: []modulehttp.Exposure{modulehttp.ExposurePublic}, Authentication: modulehttp.AuthenticationAuthenticated, PrincipalOnly: true})
+		routes = append(routes, modulehttp.Route{Pattern: pattern, Exposures: []modulehttp.Exposure{modulehttp.ExposurePublic}, Authentication: modulehttp.AuthenticationAuthenticated, PrincipalOnly: true, Governance: notificationRouteGovernance(pattern)})
 	}
 	return routes
 }

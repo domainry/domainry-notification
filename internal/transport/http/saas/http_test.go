@@ -6,9 +6,11 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
+	capabilitycontracttest "github.com/domainry/domainry-foundation/modulecapability/contracttest"
 	notificationsdk "github.com/domainry/domainry-notification-sdk"
 	"github.com/domainry/domainry-notification-sdk/contract"
 	"github.com/domainry/domainry-notification-sdk/contracttest"
@@ -23,7 +25,7 @@ func TestRemoteFactoryPassesDeploymentNeutralContractSuite(t *testing.T) {
 	httpServer := httptest.NewServer(handler)
 	t.Cleanup(httpServer.Close)
 	contracttest.Run(t, func(testing.TB) (notificationsdk.Factory, notificationsdk.ApplicationRef) {
-		return notificationremote.NewFactory(notificationremote.Config{BaseURL: httpServer.URL, ServiceCredential: "service-token", HTTPClient: httpServer.Client()}), notificationsdk.ApplicationRef{TenantID: "tenant", WorkspaceID: "workspace", ApplicationKey: "runtime"}
+		return notificationremote.NewFactory(notificationremote.Config{BaseURL: httpServer.URL, ServiceCredential: "service-token", CapabilityContractSHA256: testCapabilitySHA256(t), HTTPClient: httpServer.Client()}), notificationsdk.ApplicationRef{TenantID: "tenant", WorkspaceID: "workspace", ApplicationKey: "runtime"}
 	})
 }
 
@@ -41,11 +43,15 @@ func TestRemoteFactoryAndPublisherUseServerWireContract(t *testing.T) {
 	}
 	httpServer := httptest.NewServer(handler)
 	t.Cleanup(httpServer.Close)
-	factory := notificationremote.NewFactory(notificationremote.Config{BaseURL: httpServer.URL, ServiceCredential: "service-token", HTTPClient: httpServer.Client()})
+	factory := notificationremote.NewFactory(notificationremote.Config{BaseURL: httpServer.URL, ServiceCredential: "service-token", CapabilityContractSHA256: testCapabilitySHA256(t), HTTPClient: httpServer.Client()})
 	application := notificationsdk.ApplicationRef{TenantID: "tenant-a", WorkspaceID: "workspace-a", ApplicationKey: "runtime-a"}
 	binding, err := factory.Open(t.Context(), application)
 	if err != nil {
 		t.Fatal(err)
+	}
+	capabilitycontracttest.VerifyBinding(t, binding)
+	if _, err := notificationremote.NewFactory(notificationremote.Config{BaseURL: httpServer.URL, ServiceCredential: "service-token", CapabilityContractSHA256: strings.Repeat("0", 64), HTTPClient: httpServer.Client()}).Open(t.Context(), application); err == nil {
+		t.Fatal("Notification Remote accepted a stale capability digest")
 	}
 	intent := contract.NotificationIntent{ID: "request-a", WorkspaceID: "workspace-a", SourceEventID: "record-a:created", EventType: "record.created", Surface: "business_workspace", RecipientUserIDs: []string{"user-a"}, OccurredAt: "2026-08-28T00:00:00Z"}
 	event, created, err := binding.Publisher().PublishIntent(t.Context(), intent)

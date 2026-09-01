@@ -9,6 +9,7 @@ type Mailbox = inboxmodel.Mailbox
 type Event = inboxmodel.Event
 type Query = inboxmodel.Query
 type SavedView = inboxmodel.SavedView
+type Delegation = inboxmodel.Delegation
 type ActionRef = inboxmodel.ActionRef
 type EventType = inboxmodel.EventType
 type Rule = inboxmodel.Rule

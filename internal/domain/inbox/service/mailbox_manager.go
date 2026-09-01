@@ -5,7 +5,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"strings"
-	"time"
 
 	notification "github.com/domainry/domainry-notification/internal/domain/notification/model"
 )
@@ -172,6 +171,16 @@ func (m *MailboxManager) SaveSavedView(ctx context.Context, workspaceID notifica
 	return m.savedViews.SaveSavedView(ctx, workspaceID, userID, surface, validated)
 }
 
+// ValidateSavedView exposes the same pure owner validation used by SaveSavedView
+// without requiring authorization context or writing durable state.
+func (m *MailboxManager) ValidateSavedView(value SavedView) error {
+	if m == nil || m.validator == nil {
+		return unavailable("backend.notification.inbox_validator_unavailable", nil)
+	}
+	_, err := m.validator.ValidateSavedView(value)
+	return err
+}
+
 func (m *MailboxManager) DeleteSavedView(ctx context.Context, workspaceID notification.WorkspaceID, userID notification.UserID, surface notification.Surface, key string) error {
 	workspaceID, userID, surface, err := m.validateMailboxOwner(workspaceID, userID, surface)
 	if err != nil {
@@ -205,27 +214,12 @@ func (m *MailboxManager) SaveDelegation(ctx context.Context, value Delegation) (
 	if m.delegations == nil {
 		return value, unavailable("backend.notification.inbox_delegations_unavailable", nil)
 	}
-	workspaceID, ownerID, surface, err := m.validateMailboxOwner(value.WorkspaceID, value.OwnerUserID, value.Surface)
-	if err != nil {
+	var err error
+	if value, err = m.validateDelegation(value); err != nil {
 		return value, err
-	}
-	delegateID := notification.UserID(strings.TrimSpace(value.DelegateUserID.String()))
-	if delegateID == "" || delegateID == ownerID {
-		return value, invalid("backend.notification.inbox_delegation_invalid")
-	}
-	value.WorkspaceID, value.OwnerUserID, value.DelegateUserID, value.Surface = workspaceID, ownerID, delegateID, surface
-	var starts, ends time.Time
-	if value.StartsAt, starts, err = normalizeDelegationTime("starts_at", value.StartsAt); err != nil {
-		return value, err
-	}
-	if value.EndsAt, ends, err = normalizeDelegationTime("ends_at", value.EndsAt); err != nil {
-		return value, err
-	}
-	if !starts.IsZero() && !ends.IsZero() && !ends.After(starts) {
-		return value, invalid("backend.notification.inbox_delegation_time_invalid", "field", "ends_at")
 	}
 	if strings.TrimSpace(value.ID) == "" {
-		value.ID = stableID(workspaceID.String(), ownerID.String(), delegateID.String(), string(surface))
+		value.ID = stableID(value.WorkspaceID.String(), value.OwnerUserID.String(), value.DelegateUserID.String(), string(value.Surface))
 	}
 	now := notification.Timestamp(m.clock.Now().UTC())
 	if value.CreatedAt == "" {
@@ -233,6 +227,23 @@ func (m *MailboxManager) SaveDelegation(ctx context.Context, value Delegation) (
 	}
 	value.UpdatedAt = now
 	return m.delegations.SaveDelegation(ctx, value)
+}
+
+// ValidateDelegation exposes the same pure owner validation used by
+// SaveDelegation without generating IDs, timestamps, or writing state.
+func (m *MailboxManager) ValidateDelegation(value Delegation) error {
+	if m == nil || m.validator == nil {
+		return unavailable("backend.notification.inbox_validator_unavailable", nil)
+	}
+	_, err := m.validator.ValidateDelegation(value)
+	return err
+}
+
+func (m *MailboxManager) validateDelegation(value Delegation) (Delegation, error) {
+	if m == nil || m.validator == nil {
+		return value, unavailable("backend.notification.inbox_validator_unavailable", nil)
+	}
+	return m.validator.ValidateDelegation(value)
 }
 
 func (m *MailboxManager) DeleteDelegation(ctx context.Context, workspaceID notification.WorkspaceID, ownerID notification.UserID, id string) error {
@@ -308,15 +319,4 @@ func decodeCursor(value string) (string, string, error) {
 		return "", "", invalid("backend.notification.inbox_cursor_invalid")
 	}
 	return parts[0], parts[1], nil
-}
-
-func normalizeDelegationTime(field, value string) (string, time.Time, error) {
-	if strings.TrimSpace(value) == "" {
-		return "", time.Time{}, nil
-	}
-	parsed, err := time.Parse(time.RFC3339Nano, value)
-	if err != nil {
-		return value, time.Time{}, invalid("backend.notification.inbox_delegation_time_invalid", "field", field)
-	}
-	return notification.Timestamp(parsed), parsed, nil
 }

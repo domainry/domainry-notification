@@ -3,10 +3,13 @@ package module
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"testing"
 	"time"
 
+	"github.com/domainry/domainry-foundation/modulecapability"
+	capabilitycontracttest "github.com/domainry/domainry-foundation/modulecapability/contracttest"
 	"github.com/domainry/domainry-foundation/modulehttp"
 	identitysdk "github.com/domainry/domainry-identity-sdk"
 	notificationsdk "github.com/domainry/domainry-notification-sdk"
@@ -174,6 +177,33 @@ func TestModuleFactoryContractAndBorrowedDatabaseLifecycle(t *testing.T) {
 	if routes := provider.HTTPSurfaces()[0].Routes(); len(routes) != 62 {
 		t.Fatalf("Notification routes=%d", len(routes))
 	}
+	capabilitycontracttest.VerifyBinding(t, binding)
+	summary, err := binding.CapabilitySummary(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantCounts := map[string]int{
+		"notification.business_inbox":      20,
+		"notification.consumer_inbox":      20,
+		"notification.delivery_governance": 7,
+		"notification.templates":           14,
+	}
+	for _, category := range summary.Categories {
+		if category.OperationCount != wantCounts[category.Key] {
+			t.Fatalf("Notification category %q operations=%d want=%d", category.Key, category.OperationCount, wantCounts[category.Key])
+		}
+		delete(wantCounts, category.Key)
+	}
+	if len(wantCounts) != 0 {
+		t.Fatalf("Notification categories are missing: %+v", wantCounts)
+	}
+	invalidTemplate, _ := json.Marshal(contract.NotificationTemplate{Key: "Invalid Key", Status: "draft"})
+	validation := modulecapability.ValidationRequest{ContractVersion: modulecapability.ValidationContractVersion, ModuleKey: "notification", CategoryKey: "notification.templates", ContractSHA256: summary.Identity.ContractSHA256, Kind: "notification.template", Candidate: modulecapability.AuthoringFragment{Collection: "notification_templates", Key: "invalid", Value: invalidTemplate}}
+	result, err := binding.ValidateCapabilityCandidate(t.Context(), validation)
+	if err != nil || len(result.Diagnostics) == 0 || result.Diagnostics[0].Owner != "notification" {
+		t.Fatalf("Notification owner validation result=%+v err=%v", result, err)
+	}
+	capabilitycontracttest.VerifyModuleRemoteParity(t, binding, capabilitycontracttest.ValidationCase{Name: "invalid template", Request: validation})
 }
 
 func TestModuleSystemTemplatesSynchronizeThroughOwnedStore(t *testing.T) {

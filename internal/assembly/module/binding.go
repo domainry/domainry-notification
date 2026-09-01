@@ -6,6 +6,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/domainry/domainry-foundation/modulecapability"
 	"github.com/domainry/domainry-foundation/modulehttp"
 	"github.com/domainry/domainry-foundation/mutation"
 	identitysdk "github.com/domainry/domainry-identity-sdk"
@@ -45,6 +46,7 @@ type binding struct {
 	metrics              modulehost.DeliveryMetrics
 	clock                modulehost.Clock
 	templateCapabilities []contract.NotificationTemplateCapability
+	capabilities         modulecapability.Binding
 	migrationMu          sync.RWMutex
 	surfaces             []modulehttp.Surface
 }
@@ -61,6 +63,24 @@ func (b *binding) Descriptor() notificationsdk.Descriptor {
 		capabilities = append(capabilities, "local_workers")
 	}
 	return notificationsdk.Descriptor{ProtocolVersion: notificationsdk.CurrentProtocolVersion, Mode: b.mode, Audience: b.application.ApplicationKey, Capabilities: capabilities}
+}
+func (b *binding) CapabilitySummary(ctx context.Context) (modulecapability.ModuleSummary, error) {
+	if b.capabilities == nil {
+		return modulecapability.ModuleSummary{}, fmt.Errorf("Notification capability binding is unavailable")
+	}
+	return b.capabilities.CapabilitySummary(ctx)
+}
+func (b *binding) CapabilityCategory(ctx context.Context, key string) (modulecapability.CategoryDocument, error) {
+	if b.capabilities == nil {
+		return modulecapability.CategoryDocument{}, fmt.Errorf("Notification capability binding is unavailable")
+	}
+	return b.capabilities.CapabilityCategory(ctx, key)
+}
+func (b *binding) ValidateCapabilityCandidate(ctx context.Context, request modulecapability.ValidationRequest) (modulecapability.ValidationResult, error) {
+	if b.capabilities == nil {
+		return modulecapability.ValidationResult{}, fmt.Errorf("Notification capability binding is unavailable")
+	}
+	return b.capabilities.ValidateCapabilityCandidate(ctx, request)
 }
 func (b *binding) Publisher() notificationsdk.Publisher               { return modulePublisher{b} }
 func (b *binding) Inbox() notificationsdk.Inbox                       { return moduleInbox{b} }

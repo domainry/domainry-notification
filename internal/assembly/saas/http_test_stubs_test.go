@@ -3,6 +3,7 @@ package saas
 import (
 	"context"
 
+	"github.com/domainry/domainry-foundation/modulecapability"
 	notificationsdk "github.com/domainry/domainry-notification-sdk"
 	"github.com/domainry/domainry-notification-sdk/contract"
 )
@@ -20,6 +21,7 @@ func (r *bindingResolverStub) Resolve(context.Context, notificationsdk.Applicati
 }
 
 type httpBindingStub struct {
+	modulecapability.Binding
 	publisher *httpPublisherStub
 	closed    int
 }
