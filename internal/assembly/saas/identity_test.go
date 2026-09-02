@@ -97,8 +97,8 @@ type directoryStub struct{}
 func (directoryStub) FindUser(context.Context, identitysdk.UserLookup) (identitysdk.User, bool, error) {
 	return identitysdk.User{}, false, nil
 }
-func (directoryStub) FindDepartment(context.Context, identitysdk.DepartmentLookup) (identitysdk.Department, bool, error) {
-	return identitysdk.Department{}, false, nil
+func (directoryStub) FindOrganizationUnit(context.Context, identitysdk.OrganizationUnitLookup) (identitysdk.OrganizationUnit, bool, error) {
+	return identitysdk.OrganizationUnit{}, false, nil
 }
 func (directoryStub) ListUsers(context.Context, identitysdk.DirectoryQuery) ([]identitysdk.User, error) {
 	return nil, nil
@@ -107,9 +107,6 @@ func (directoryStub) ListRoles(context.Context, identitysdk.DirectoryQuery) ([]i
 	return nil, nil
 }
 func (directoryStub) ListUserRoleAssignments(context.Context, identitysdk.UserRoleAssignmentQuery) ([]identitysdk.UserRoleAssignment, error) {
-	return nil, nil
-}
-func (directoryStub) ListWorkforce(context.Context, identitysdk.DirectoryQuery) ([]identitysdk.WorkforceEntry, error) {
 	return nil, nil
 }
 
@@ -194,7 +191,7 @@ func TestOpenRetriesLostReconcileResponseFromAuthoritativeSnapshot(t *testing.T)
 func TestOpenRequiresSaaSAndRegistersScopedApplicationPermissions(t *testing.T) {
 	application := identitysdk.ApplicationRef{TenantID: "tenant-a", WorkspaceID: "workspace-a", ApplicationKey: "domainry-notification"}
 	previousDefinitions := []identitysdk.PermissionDefinition{{
-		PermissionKey: "notification.templates.list", ResourceKey: "notification.templates", ActionKey: "list",
+		PermissionKey: "notification.templates.list", ResourceKey: "notification.templates", OperationKey: "list",
 		Label: "List notification templates", Category: "Notification", SourceKind: "module_surface",
 	}}
 	previousHash, err := identitysdk.PermissionSnapshotHash("module:notification", previousDefinitions)
@@ -217,7 +214,7 @@ func TestOpenRequiresSaaSAndRegistersScopedApplicationPermissions(t *testing.T) 
 		t.Fatalf("application/permissions were not reconciled with exact scope: application=%+v permissions=%+v", applications.registered, permissions.reconciled)
 	}
 	for _, definition := range permissions.reconciled.Definitions {
-		if definition.PermissionKey != definition.ResourceKey+"."+definition.ActionKey {
+		if definition.PermissionKey != definition.ResourceKey+"."+definition.OperationKey {
 			t.Fatalf("permission is not exact: %+v", definition)
 		}
 	}

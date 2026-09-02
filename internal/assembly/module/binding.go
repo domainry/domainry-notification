@@ -161,9 +161,11 @@ func inboxQuery(value contract.NotificationInboxQuery, principal identitysdk.Pri
 	query.WorkspaceID = notification.WorkspaceID(principal.WorkspaceID)
 	query.ViewerUserID = notification.UserID(principal.UserID)
 	query.Surface = notification.Surface(strings.TrimSpace(surface))
-	query.ReportingUserIDs = make([]notification.UserID, len(principal.ReportingUserIDs))
-	for i := range principal.ReportingUserIDs {
-		query.ReportingUserIDs[i] = notification.UserID(principal.ReportingUserIDs[i])
+	query.ReportingUserIDs = make([]notification.UserID, 0, len(principal.ReportingScopeUserIDs))
+	for _, userID := range principal.ReportingScopeUserIDs {
+		if userID = strings.TrimSpace(userID); userID != "" {
+			query.ReportingUserIDs = append(query.ReportingUserIDs, notification.UserID(userID))
+		}
 	}
 	if value.TeamMemberID != "" {
 		query.RecipientUserID = notification.UserID(value.TeamMemberID)

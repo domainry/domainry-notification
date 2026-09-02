@@ -134,7 +134,7 @@ func PermissionDefinitions() ([]identitysdk.PermissionDefinition, error) {
 		}
 		permission := action.Permission
 		definitions = append(definitions, identitysdk.PermissionDefinition{
-			PermissionKey: permission.Key, ResourceKey: permission.ResourceKey, ActionKey: permission.ActionKey,
+			PermissionKey: permission.Key, ResourceKey: permission.ResourceKey, OperationKey: permission.OperationKey,
 			Label: permission.Label, Description: permission.Description, Category: permission.Category, SourceKind: action.SourceKind,
 		})
 	}

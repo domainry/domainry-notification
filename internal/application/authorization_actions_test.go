@@ -32,7 +32,7 @@ func TestAuthorizationActionsFreezeAsSingleExactManifest(t *testing.T) {
 		}
 		if definition.Permission != nil {
 			permission := definition.Permission
-			if permission.Key != definition.Key || permission.Key != permission.ResourceKey+"."+permission.ActionKey {
+			if permission.Key != definition.Key || permission.Key != permission.ResourceKey+"."+permission.OperationKey {
 				t.Fatalf("non-exact Permission: Action=%#v Permission=%#v", definition, permission)
 			}
 			if strings.Contains(permission.Key, "*") {

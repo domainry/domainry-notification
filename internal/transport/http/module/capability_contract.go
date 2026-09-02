@@ -179,7 +179,7 @@ func notificationCapabilityCategory(pattern string) string {
 func notificationCategoryMetadata(key string) (string, string, []string, []string) {
 	switch key {
 	case "notification.business_inbox":
-		return "Business notification Inbox", "Read and manage the authenticated workforce principal's durable Business Workspace notification Inbox.", []string{}, []string{"identity_principal_before_business_inbox_access"}
+		return "Business notification Inbox", "Read and manage the authenticated user's durable Business Workspace notification Inbox.", []string{}, []string{"identity_principal_before_business_inbox_access"}
 	case "notification.consumer_inbox":
 		return "Consumer notification Inbox", "Read and manage the authenticated consumer principal's durable Portal notification Inbox.", []string{}, []string{"identity_principal_before_consumer_inbox_access"}
 	case "notification.delivery_governance":

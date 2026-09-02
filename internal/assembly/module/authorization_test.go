@@ -9,6 +9,8 @@ import (
 	notificationsdk "github.com/domainry/domainry-notification-sdk"
 	"github.com/domainry/domainry-notification-sdk/contract"
 	notificationapplication "github.com/domainry/domainry-notification/internal/application"
+	inbox "github.com/domainry/domainry-notification/internal/domain/inbox/service"
+	notification "github.com/domainry/domainry-notification/internal/domain/notification/model"
 )
 
 type principalAuthenticatorStub struct {
@@ -132,9 +134,11 @@ func TestAuthorizeFailsClosedWhenCurrentIdentityDeniesOrIsUnavailable(t *testing
 }
 
 func TestInboxScopeUsesAuthenticatedRelationshipFactsWithoutRolePermission(t *testing.T) {
+	principal := authorizedPrincipal("workspace-1")
+	principal.ReportingScopeUserIDs = []string{"user-2", "user-3"}
 	b := &binding{
 		application: notificationsdk.ApplicationRef{TenantID: "tenant-1", WorkspaceID: "workspace-1", ApplicationKey: "app-1"},
-		principals:  principalAuthenticatorStub{principal: authorizedPrincipal("workspace-1")},
+		principals:  principalAuthenticatorStub{principal: principal},
 	}
 	authority := notificationsdk.UserAuthority{AccessToken: "secret", Surface: "business_workspace"}
 	tests := []struct {
@@ -150,7 +154,30 @@ func TestInboxScopeUsesAuthenticatedRelationshipFactsWithoutRolePermission(t *te
 			if err != nil || principal.UserID != "user-1" || query.ViewerUserID != "user-1" {
 				t.Fatalf("principal=%#v query=%#v error=%v", principal, query, err)
 			}
+			if test.query.Scope == contract.NotificationInboxScopeTeam && (len(query.ReportingUserIDs) != 2 || query.ReportingUserIDs[0] != "user-2" || query.ReportingUserIDs[1] != "user-3") {
+				t.Fatalf("team relationship facts were not derived from the authenticated principal: %#v", query.ReportingUserIDs)
+			}
 		})
+	}
+}
+
+func TestInboxTeamScopeRejectsUserOutsideAuthenticatedReportingFacts(t *testing.T) {
+	principal := authorizedPrincipal("workspace-1")
+	principal.ReportingScopeUserIDs = []string{"user-2"}
+	query, err := inboxQuery(contract.NotificationInboxQuery{Scope: contract.NotificationInboxScopeTeam, TeamMemberID: "outsider"}, principal, "business_workspace")
+	if err != nil {
+		t.Fatal(err)
+	}
+	configuration, err := inbox.NewConfiguration([]notification.Surface{"business_workspace"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	validator, err := inbox.NewValidator(configuration)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := validator.ValidateQuery(query); err == nil {
+		t.Fatal("team mailbox must reject a recipient outside authenticated reporting facts")
 	}
 }
 

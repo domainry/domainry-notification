@@ -115,7 +115,7 @@ func notificationHTTPAction(spec notificationHTTPActionSpec, permission bool, ca
 	if permission {
 		definition.Authorization = actioncontract.Authorization{Strategy: actioncontract.AuthorizationExactRolePermission}
 		definition.Permission = &actioncontract.PermissionDefinition{
-			Key: spec.Key, Owner: NotificationAuthorizationOwner, ResourceKey: resourceKey, ActionKey: operationKey,
+			Key: spec.Key, Owner: NotificationAuthorizationOwner, ResourceKey: resourceKey, OperationKey: operationKey,
 			Label: spec.Label, Category: capabilityLabel, LifecycleStatus: actioncontract.LifecycleActive,
 		}
 	} else {
