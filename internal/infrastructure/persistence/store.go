@@ -2,7 +2,9 @@ package persistence
 
 import (
 	"context"
+	"time"
 
+	identitysdk "github.com/domainry/domainry-identity-sdk"
 	"github.com/domainry/domainry-notification-sdk/modulehost"
 	notification "github.com/domainry/domainry-notification/internal/domain/notification/model"
 	"github.com/domainry/domainry-notification/internal/infrastructure/persistence/base"
@@ -35,6 +37,7 @@ type Config struct {
 	WorkspaceScope WorkspaceScope
 	QueueScopes    QueueScopeIndex
 	Clock          notification.Clock
+	WorkspaceID    notification.WorkspaceID
 }
 
 type Store struct {
@@ -47,24 +50,29 @@ type Store struct {
 }
 
 func New(config Config) (*Store, error) {
-	if config.Database == nil || config.Dialect == nil || config.WorkspaceScope == nil || config.QueueScopes == nil || config.Clock == nil {
+	if config.Database == nil || config.Dialect == nil || config.WorkspaceScope == nil || config.QueueScopes == nil || config.Clock == nil || config.WorkspaceID == "" {
 		return nil, ErrIncompleteConfig
 	}
 	sqlStore := base.NewSQLStore(config.Database, config.Dialect)
 	return &Store{
 		inboxPersistence: &inboxPersistence{inboxstore.New(inboxstore.Config{
-			SQLStore: sqlStore, WorkspaceScope: config.WorkspaceScope, Clock: config.Clock,
+			SQLStore: sqlStore, WorkspaceScope: config.WorkspaceScope, Clock: config.Clock, WorkspaceID: config.WorkspaceID,
 		})},
 		deliveryPersistence: &deliveryPersistence{deliverystore.New(deliverystore.Config{
-			SQLStore: sqlStore, WorkspaceScope: config.WorkspaceScope, QueueScopes: config.QueueScopes,
+			SQLStore: sqlStore, WorkspaceScope: config.WorkspaceScope, QueueScopes: config.QueueScopes, WorkspaceID: config.WorkspaceID,
 		})},
 		eventPersistence: &eventPersistence{eventstore.New(eventstore.Config{
 			SQLStore: sqlStore, WorkspaceScope: config.WorkspaceScope, QueueScopes: config.QueueScopes,
 		})},
-		templatePersistence:    &templatePersistence{templatestore.New(templatestore.Config{SQLStore: sqlStore, Clock: config.Clock})},
+		templatePersistence:    &templatePersistence{templatestore.New(templatestore.Config{SQLStore: sqlStore, Clock: config.Clock, WorkspaceID: config.WorkspaceID})},
 		lifecyclePersistence:   &lifecyclePersistence{lifecyclestore.New(lifecyclestore.Config{SQLStore: sqlStore})},
 		portabilityPersistence: &portabilityPersistence{portabilitystore.New(portabilitystore.Config{SQLStore: sqlStore, WorkspaceScope: config.WorkspaceScope})},
 	}, nil
+}
+
+func ValidateExactPermission(principal identitysdk.Principal, permissionKey string, workspaceID notification.WorkspaceID, now time.Time) error {
+	_, err := base.NewExactPermission(principal, permissionKey, workspaceID.String(), now)
+	return err
 }
 
 // deliveryPersistence gives the composed delivery store a distinct embedding

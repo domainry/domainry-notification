@@ -20,8 +20,12 @@ func (s *Store) ListItems(ctx context.Context, queryValue inbox.Query) ([]inbox.
 	if err != nil {
 		return nil, false, err
 	}
+	if err := s.requireWorkspace(queryValue.WorkspaceID); err != nil {
+		return nil, false, err
+	}
 	ctx = s.workspaceScope.Context(ctx, queryValue.WorkspaceID)
-	statement, args, err := query.NewWorkspaceSelectBuilder(s.Renderer, "_notification_inbox_items", queryValue.WorkspaceID.String()).Columns(inboxItemReadColumns...).Where(mailboxPredicate(queryValue, true)).OrderBy(query.Descending("updated_at"), query.Descending("id")).Limit(queryValue.Limit + 1).Build()
+	predicate := mailboxPredicate(queryValue, true)
+	statement, args, err := query.NewWorkspaceSelectBuilder(s.Renderer, "_notification_inbox_items", queryValue.WorkspaceID.String()).Columns(inboxItemReadColumns...).Where(predicate).OrderBy(query.Descending("updated_at"), query.Descending("id")).Limit(queryValue.Limit + 1).Build()
 	if err != nil {
 		return nil, false, err
 	}
@@ -53,6 +57,9 @@ func (s *Store) GetItem(ctx context.Context, queryValue inbox.Query, itemID stri
 	if err != nil {
 		return inbox.Item{}, false, err
 	}
+	if err := s.requireWorkspace(queryValue.WorkspaceID); err != nil {
+		return inbox.Item{}, false, err
+	}
 	itemID = strings.TrimSpace(itemID)
 	if itemID == "" {
 		return inbox.Item{}, false, fmt.Errorf("notification inbox item id is required")
@@ -64,6 +71,9 @@ func (s *Store) GetItem(ctx context.Context, queryValue inbox.Query, itemID stri
 func (s *Store) CountFacets(ctx context.Context, queryValue inbox.Query) (inbox.Facets, error) {
 	queryValue, err := normalizeMailboxStoreQuery(queryValue)
 	if err != nil {
+		return inbox.Facets{}, err
+	}
+	if err := s.requireWorkspace(queryValue.WorkspaceID); err != nil {
 		return inbox.Facets{}, err
 	}
 	ctx = s.workspaceScope.Context(ctx, queryValue.WorkspaceID)
@@ -117,7 +127,8 @@ func (s *Store) mailboxFacetRows(ctx context.Context, workspaceID string, predic
 }
 
 func (s *Store) getInboxItem(ctx context.Context, queryer sqlhost.Queryer, queryValue inbox.Query, itemID string) (inbox.Item, bool, error) {
-	statement, args, err := query.NewWorkspaceSelectBuilder(s.Renderer, "_notification_inbox_items", queryValue.WorkspaceID.String()).Columns(inboxItemReadColumns...).Where(query.And(mailboxAccessPredicate(queryValue), query.Equal("id", itemID))).Build()
+	predicate := query.And(mailboxAccessPredicate(queryValue), query.Equal("id", itemID))
+	statement, args, err := query.NewWorkspaceSelectBuilder(s.Renderer, "_notification_inbox_items", queryValue.WorkspaceID.String()).Columns(inboxItemReadColumns...).Where(predicate).Build()
 	if err != nil {
 		return inbox.Item{}, false, err
 	}

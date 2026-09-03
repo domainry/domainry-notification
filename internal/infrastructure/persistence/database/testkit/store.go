@@ -50,7 +50,7 @@ func OpenMigrated(t *testing.T) (*sql.DB, *sqlstore.Store) {
 		}
 	}
 	dialect, _ := ormdialect.ParseRenderer("sqlite", "", "")
-	store, err := sqlstore.New(sqlstore.Config{Database: database, Dialect: dialect, WorkspaceScope: scope{}, QueueScopes: &queueScopes{}, Clock: clock{value: time.Date(2026, 8, 24, 2, 0, 0, 0, time.UTC)}})
+	store, err := sqlstore.New(sqlstore.Config{Database: database, Dialect: dialect, WorkspaceScope: scope{}, QueueScopes: &queueScopes{}, Clock: clock{value: time.Date(2026, 8, 24, 2, 0, 0, 0, time.UTC)}, WorkspaceID: "workspace-1"})
 	if err != nil {
 		t.Fatal(err)
 	}

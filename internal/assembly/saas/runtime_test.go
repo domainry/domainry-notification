@@ -58,7 +58,7 @@ func (f *applicationFactoryStub) OpenSaaS(_ context.Context, application notific
 
 func TestRuntimeOwnsOneBindingPerExactApplicationAndClosesIdentity(t *testing.T) {
 	identityApplication := identitysdk.ApplicationRef{TenantID: "tenant-service", WorkspaceID: "workspace-service", ApplicationKey: "domainry-notification"}
-	identity := &identityBindingStub{descriptor: identitysdk.Descriptor{ProtocolVersion: identitysdk.CurrentProtocolVersion, BundleVersion: identitysdk.CurrentPolicyBundleVersion, AuthorizationVersion: identitysdk.AuthorizationContractVersionV1, Mode: identitysdk.DeploymentModeSaaS, Issuer: "https://identity.example", Audience: string(identityApplication.ApplicationKey)}, applications: &applicationRegistryStub{}, permissions: &permissionRegistryStub{}}
+	identity := &identityBindingStub{descriptor: identitysdk.Descriptor{ProtocolVersion: identitysdk.CurrentProtocolVersion, BundleVersion: identitysdk.CurrentPolicyBundleVersion, AuthorizationVersion: identitysdk.CurrentAuthorizationContractVersion, Mode: identitysdk.DeploymentModeSaaS, Issuer: "https://identity.example", Audience: string(identityApplication.ApplicationKey)}, applications: &applicationRegistryStub{}, permissions: &permissionRegistryStub{}}
 	factory := &applicationFactoryStub{}
 	runtime, err := Open(t.Context(), Options{Identity: IdentityOptions{Factory: &identityFactoryStub{binding: identity}, Application: identityApplication}, Applications: factory})
 	if err != nil {
@@ -93,7 +93,7 @@ func TestRuntimeOwnsOneBindingPerExactApplicationAndClosesIdentity(t *testing.T)
 
 func TestRuntimeOwnsSaaSWorkerLifecycleAndReadiness(t *testing.T) {
 	identityApplication := identitysdk.ApplicationRef{TenantID: "tenant-service", WorkspaceID: "workspace-service", ApplicationKey: "domainry-notification"}
-	identity := &identityBindingStub{descriptor: identitysdk.Descriptor{ProtocolVersion: identitysdk.CurrentProtocolVersion, BundleVersion: identitysdk.CurrentPolicyBundleVersion, AuthorizationVersion: identitysdk.AuthorizationContractVersionV1, Mode: identitysdk.DeploymentModeSaaS, Issuer: "https://identity.example", Audience: string(identityApplication.ApplicationKey)}, applications: &applicationRegistryStub{}, permissions: &permissionRegistryStub{}}
+	identity := &identityBindingStub{descriptor: identitysdk.Descriptor{ProtocolVersion: identitysdk.CurrentProtocolVersion, BundleVersion: identitysdk.CurrentPolicyBundleVersion, AuthorizationVersion: identitysdk.CurrentAuthorizationContractVersion, Mode: identitysdk.DeploymentModeSaaS, Issuer: "https://identity.example", Audience: string(identityApplication.ApplicationKey)}, applications: &applicationRegistryStub{}, permissions: &permissionRegistryStub{}}
 	workers := &localWorkersStub{due: make(chan struct{})}
 	runtime, err := Open(t.Context(), Options{
 		Identity:     IdentityOptions{Factory: &identityFactoryStub{binding: identity}, Application: identityApplication},

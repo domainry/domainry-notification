@@ -156,12 +156,12 @@ func (s *Store) activeMigrationLeases(ctx context.Context, workspaceID string) (
 		}
 		total += count
 	}
-	queryValue, args, err := query.NewSelectBuilder(s.Renderer, "_notification_template_publication_requests").Projections(query.Project(query.CountAll())).Where(query.NotEqual("lease_owner", "")).Build()
+	queryValue, args, err := query.NewWorkspaceSelectBuilder(s.Renderer, "_notification_template_publication_requests", workspaceID).Projections(query.Project(query.CountAll())).Where(query.NotEqual("lease_owner", "")).Build()
 	if err != nil {
 		return 0, err
 	}
 	var count int
-	if err := s.Database.QueryRowContext(ctx, queryValue, args...).Scan(&count); err != nil {
+	if err := s.Database.QueryRowContext(s.workspaceScope.Context(ctx, notification.WorkspaceID(workspaceID)), queryValue, args...).Scan(&count); err != nil {
 		return 0, fmt.Errorf("count notification publication migration leases: %w", err)
 	}
 	return total + count, nil

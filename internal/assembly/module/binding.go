@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"time"
 
 	actioncontract "github.com/domainry/domainry-foundation/action"
 	"github.com/domainry/domainry-foundation/modulecapability"
@@ -123,7 +124,7 @@ func (b *binding) authenticate(ctx context.Context, authority notificationsdk.Us
 	return principal, nil
 }
 
-func (b *binding) authorizeAction(ctx context.Context, authority notificationsdk.UserAuthority, actionKey string, dataAction identitysdk.DataAction, reauthorize bool) (identitysdk.Principal, error) {
+func (b *binding) authorizeAction(ctx context.Context, authority notificationsdk.UserAuthority, actionKey string, reauthorize bool) (identitysdk.Principal, error) {
 	principal, err := b.authenticate(ctx, authority)
 	if err != nil {
 		return principal, err
@@ -133,6 +134,16 @@ func (b *binding) authorizeAction(ctx context.Context, authority notificationsdk
 	if separator <= 0 || separator == len(actionKey)-1 || !principal.HasPermission(actionKey) {
 		return identitysdk.Principal{}, &notificationsdk.Error{StatusCode: 403, Code: "notification.permission_denied"}
 	}
+	// The repository boundary validates the same exact key and rejects every
+	// canonical data scope except `all`. Workspace builders remain responsible
+	// for tenant isolation.
+	now := time.Now().UTC()
+	if b.clock != nil {
+		now = b.clock.Now().UTC()
+	}
+	if err := sqlstore.ValidateExactPermission(principal, actionKey, notification.WorkspaceID(b.application.WorkspaceID), now); err != nil {
+		return identitysdk.Principal{}, &notificationsdk.Error{StatusCode: 403, Code: "notification.permission_denied", Cause: err}
+	}
 	if !reauthorize {
 		return principal, nil
 	}
@@ -141,7 +152,7 @@ func (b *binding) authorizeAction(ctx context.Context, authority notificationsdk
 	}
 	decision, err := b.identity.Authorization().Reauthorize(ctx, identitysdk.DecisionRequest{
 		Identity: identitysdk.RequestIdentity{Principal: principal, AccessToken: authority.AccessToken},
-		Access:   identitysdk.AccessRequest{ObjectKey: actionKey[:separator], Action: actionKey[separator+1:], DataAction: dataAction},
+		Access:   identitysdk.AccessRequest{ObjectKey: actionKey[:separator], Action: actionKey[separator+1:]},
 		Facts:    facts,
 	})
 	if err != nil {
@@ -227,11 +238,37 @@ func (s modulePublisher) PublishIntent(ctx context.Context, value contract.Notif
 
 type moduleInbox struct{ b *binding }
 
-func (s moduleInbox) scope(ctx context.Context, a notificationsdk.UserAuthority, q contract.NotificationInboxQuery) (identitysdk.Principal, inbox.Query, error) {
+func (s moduleInbox) actionKey(ctx context.Context, a notificationsdk.UserAuthority, operation string) (string, error) {
+	surfaceKey := ""
+	switch strings.TrimSpace(a.Surface) {
+	case "business_workspace":
+		surfaceKey = "business_inbox"
+	case "consumer_portal":
+		surfaceKey = "portal_inbox"
+	default:
+		return "", &notificationsdk.Error{StatusCode: 400, Code: "notification.surface_required"}
+	}
+	prefix := "notification." + surfaceKey + "."
+	requested := prefix + strings.TrimSpace(operation)
+	if exact := strings.TrimSpace(notificationapplication.ExactAction(ctx)); exact == requested {
+		return exact, nil
+	} else if operation == "list" && exact == prefix+"stream" {
+		return exact, nil
+	} else if operation == "facets" && (exact == prefix+"stream" || exact == prefix+"unread_count") {
+		return exact, nil
+	}
+	return requested, nil
+}
+
+func (s moduleInbox) scopeForAction(ctx context.Context, a notificationsdk.UserAuthority, q contract.NotificationInboxQuery, operation string, reauthorize bool) (identitysdk.Principal, inbox.Query, error) {
 	if err := requireSurface(a); err != nil {
 		return identitysdk.Principal{}, inbox.Query{}, err
 	}
-	principal, err := s.b.authenticate(ctx, a)
+	actionKey, err := s.actionKey(ctx, a, operation)
+	if err != nil {
+		return identitysdk.Principal{}, inbox.Query{}, err
+	}
+	principal, err := s.b.authorizeAction(ctx, a, actionKey, reauthorize)
 	if err != nil {
 		return principal, inbox.Query{}, err
 	}
@@ -248,8 +285,20 @@ func (s moduleInbox) scope(ctx context.Context, a notificationsdk.UserAuthority,
 	}
 	return principal, query, nil
 }
+
+func (s moduleInbox) scope(ctx context.Context, a notificationsdk.UserAuthority, q contract.NotificationInboxQuery) (identitysdk.Principal, inbox.Query, error) {
+	return s.scopeForAction(ctx, a, q, "list", false)
+}
+
+func (s moduleInbox) principalForAction(ctx context.Context, a notificationsdk.UserAuthority, operation string, reauthorize bool) (identitysdk.Principal, error) {
+	key, err := s.actionKey(ctx, a, operation)
+	if err != nil {
+		return identitysdk.Principal{}, err
+	}
+	return s.b.authorizeAction(ctx, a, key, reauthorize)
+}
 func (s moduleInbox) List(ctx context.Context, a notificationsdk.UserAuthority, q contract.NotificationInboxQuery, cursor string) (contract.NotificationInboxPage, error) {
-	_, query, err := s.scope(ctx, a, q)
+	_, query, err := s.scopeForAction(ctx, a, q, "list", false)
 	if err != nil {
 		return contract.NotificationInboxPage{}, err
 	}
@@ -260,7 +309,7 @@ func (s moduleInbox) List(ctx context.Context, a notificationsdk.UserAuthority, 
 	return convert[contract.NotificationInboxPage](value)
 }
 func (s moduleInbox) Get(ctx context.Context, a notificationsdk.UserAuthority, id string, q contract.NotificationInboxQuery) (contract.NotificationInboxItem, error) {
-	_, query, err := s.scope(ctx, a, q)
+	_, query, err := s.scopeForAction(ctx, a, q, "item.get", false)
 	if err != nil {
 		return contract.NotificationInboxItem{}, err
 	}
@@ -271,7 +320,7 @@ func (s moduleInbox) Get(ctx context.Context, a notificationsdk.UserAuthority, i
 	return convert[contract.NotificationInboxItem](value)
 }
 func (s moduleInbox) Facets(ctx context.Context, a notificationsdk.UserAuthority, q contract.NotificationInboxQuery) (contract.NotificationInboxFacets, error) {
-	_, query, err := s.scope(ctx, a, q)
+	_, query, err := s.scopeForAction(ctx, a, q, "facets", false)
 	if err != nil {
 		return contract.NotificationInboxFacets{}, err
 	}
@@ -281,8 +330,8 @@ func (s moduleInbox) Facets(ctx context.Context, a notificationsdk.UserAuthority
 	}
 	return convert[contract.NotificationInboxFacets](value)
 }
-func (s moduleInbox) mine(ctx context.Context, a notificationsdk.UserAuthority) (identitysdk.Principal, inbox.Query, error) {
-	return s.scope(ctx, a, contract.NotificationInboxQuery{Scope: contract.NotificationInboxScopeMine})
+func (s moduleInbox) mine(ctx context.Context, a notificationsdk.UserAuthority, operation string, reauthorize bool) (identitysdk.Principal, inbox.Query, error) {
+	return s.scopeForAction(ctx, a, contract.NotificationInboxQuery{Scope: contract.NotificationInboxScopeMine}, operation, reauthorize)
 }
 func (s moduleInbox) SetRead(ctx context.Context, a notificationsdk.UserAuthority, id string, v bool) (contract.NotificationInboxItem, error) {
 	release, err := s.b.beginMigrationSensitiveWrite(ctx)
@@ -290,7 +339,11 @@ func (s moduleInbox) SetRead(ctx context.Context, a notificationsdk.UserAuthorit
 		return contract.NotificationInboxItem{}, err
 	}
 	defer release()
-	_, q, err := s.mine(ctx, a)
+	operation := "item.mark_unread"
+	if v {
+		operation = "item.mark_read"
+	}
+	_, q, err := s.mine(ctx, a, operation, true)
 	if err != nil {
 		return contract.NotificationInboxItem{}, err
 	}
@@ -306,7 +359,11 @@ func (s moduleInbox) SetArchived(ctx context.Context, a notificationsdk.UserAuth
 		return contract.NotificationInboxItem{}, err
 	}
 	defer release()
-	_, q, err := s.mine(ctx, a)
+	operation := "item.restore"
+	if v {
+		operation = "item.archive"
+	}
+	_, q, err := s.mine(ctx, a, operation, true)
 	if err != nil {
 		return contract.NotificationInboxItem{}, err
 	}
@@ -322,7 +379,7 @@ func (s moduleInbox) AcknowledgeAlert(ctx context.Context, a notificationsdk.Use
 		return contract.NotificationInboxItem{}, err
 	}
 	defer release()
-	p, q, err := s.mine(ctx, a)
+	p, q, err := s.mine(ctx, a, "item.acknowledge", true)
 	if err != nil {
 		return contract.NotificationInboxItem{}, err
 	}
@@ -338,14 +395,14 @@ func (s moduleInbox) MarkAllRead(ctx context.Context, a notificationsdk.UserAuth
 		return 0, err
 	}
 	defer release()
-	_, q, err := s.scope(ctx, a, qv)
+	_, q, err := s.scopeForAction(ctx, a, qv, "mark_all_read", true)
 	if err != nil {
 		return 0, err
 	}
 	return s.b.mailbox.MarkAllRead(ctx, q)
 }
 func (s moduleInbox) ResolveAction(ctx context.Context, a notificationsdk.UserAuthority, id, key string, qv contract.NotificationInboxQuery) (contract.NotificationInboxResolvedAction, error) {
-	_, q, err := s.scope(ctx, a, qv)
+	_, q, err := s.scopeForAction(ctx, a, qv, "item.get", false)
 	if err != nil {
 		return contract.NotificationInboxResolvedAction{}, err
 	}
@@ -356,7 +413,8 @@ func (s moduleInbox) ResolveAction(ctx context.Context, a notificationsdk.UserAu
 	return convert[contract.NotificationInboxResolvedAction](value)
 }
 func (s moduleInbox) ListDelegations(ctx context.Context, a notificationsdk.UserAuthority, surface string) ([]contract.NotificationInboxDelegation, error) {
-	p, err := s.b.authenticate(ctx, a)
+	a.Surface = strings.TrimSpace(surface)
+	p, err := s.principalForAction(ctx, a, "delegations.list", false)
 	if err != nil {
 		return nil, err
 	}
@@ -372,7 +430,7 @@ func (s moduleInbox) SaveDelegation(ctx context.Context, a notificationsdk.UserA
 		return contract.NotificationInboxDelegation{}, err
 	}
 	defer release()
-	p, err := s.b.authenticate(ctx, a)
+	p, err := s.principalForAction(ctx, a, "delegations.save", true)
 	if err != nil {
 		return contract.NotificationInboxDelegation{}, err
 	}
@@ -394,14 +452,15 @@ func (s moduleInbox) DeleteDelegation(ctx context.Context, a notificationsdk.Use
 		return err
 	}
 	defer release()
-	p, err := s.b.authenticate(ctx, a)
+	p, err := s.principalForAction(ctx, a, "delegations.delete", true)
 	if err != nil {
 		return err
 	}
 	return s.b.mailbox.DeleteDelegation(ctx, notification.WorkspaceID(p.WorkspaceID), notification.UserID(p.UserID), id)
 }
 func (s moduleInbox) ListDelegatedOwnerIDs(ctx context.Context, a notificationsdk.UserAuthority, surface string) ([]string, error) {
-	p, err := s.b.authenticate(ctx, a)
+	a.Surface = strings.TrimSpace(surface)
+	p, err := s.principalForAction(ctx, a, "delegated_owners.list", false)
 	if err != nil {
 		return nil, err
 	}
@@ -416,7 +475,8 @@ func (s moduleInbox) ListDelegatedOwnerIDs(ctx context.Context, a notificationsd
 	return result, nil
 }
 func (s moduleInbox) ListSavedViews(ctx context.Context, a notificationsdk.UserAuthority, surface string) ([]contract.NotificationInboxSavedView, error) {
-	p, err := s.b.authenticate(ctx, a)
+	a.Surface = strings.TrimSpace(surface)
+	p, err := s.principalForAction(ctx, a, "saved_views.list", false)
 	if err != nil {
 		return nil, err
 	}
@@ -432,7 +492,7 @@ func (s moduleInbox) SaveSavedView(ctx context.Context, a notificationsdk.UserAu
 		return contract.NotificationInboxSavedView{}, err
 	}
 	defer release()
-	p, err := s.b.authenticate(ctx, a)
+	p, err := s.principalForAction(ctx, a, "saved_views.save", true)
 	if err != nil {
 		return contract.NotificationInboxSavedView{}, err
 	}
@@ -452,14 +512,15 @@ func (s moduleInbox) DeleteSavedView(ctx context.Context, a notificationsdk.User
 		return err
 	}
 	defer release()
-	p, err := s.b.authenticate(ctx, a)
+	p, err := s.principalForAction(ctx, a, "saved_views.delete", true)
 	if err != nil {
 		return err
 	}
 	return s.b.mailbox.DeleteSavedView(ctx, notification.WorkspaceID(p.WorkspaceID), notification.UserID(p.UserID), notification.Surface(a.Surface), key)
 }
 func (s moduleInbox) GetPreference(ctx context.Context, a notificationsdk.UserAuthority, surface string) (contract.NotificationRecipientPreference, error) {
-	p, err := s.b.authenticate(ctx, a)
+	a.Surface = strings.TrimSpace(surface)
+	p, err := s.principalForAction(ctx, a, "preference.get", false)
 	if err != nil {
 		return contract.NotificationRecipientPreference{}, err
 	}
@@ -478,7 +539,8 @@ func (s moduleInbox) SavePreference(ctx context.Context, a notificationsdk.UserA
 		return contract.NotificationRecipientPreference{}, err
 	}
 	defer release()
-	p, err := s.b.authenticate(ctx, a)
+	a.Surface = strings.TrimSpace(surface)
+	p, err := s.principalForAction(ctx, a, "preference.update", true)
 	if err != nil {
 		return contract.NotificationRecipientPreference{}, err
 	}

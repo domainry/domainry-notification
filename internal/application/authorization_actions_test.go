@@ -23,25 +23,22 @@ func TestAuthorizationActionsFreezeAsSingleExactManifest(t *testing.T) {
 		t.Fatal(err)
 	}
 	permissions := registry.PermissionDefinitions()
-	if len(permissions) != 21 {
+	if len(permissions) != 61 {
 		t.Fatalf("Permission count=%d", len(permissions))
 	}
 	for _, definition := range registry.Definitions() {
 		if definition.Owner != NotificationAuthorizationOwner || definition.HTTP == nil {
 			t.Fatalf("incomplete owner/binding: %#v", definition)
 		}
-		if definition.Permission != nil {
-			permission := definition.Permission
-			if permission.Key != definition.Key || permission.Key != permission.ResourceKey+"."+permission.OperationKey {
-				t.Fatalf("non-exact Permission: Action=%#v Permission=%#v", definition, permission)
-			}
-			if strings.Contains(permission.Key, "*") {
-				t.Fatalf("broad or alias Permission: %#v", permission)
-			}
-			continue
+		if definition.Permission == nil {
+			t.Fatalf("Permission-free user Action: %#v", definition)
 		}
-		if definition.Authorization.Strategy != actioncontract.AuthorizationAuthenticatedPrincipal || !strings.Contains(definition.CapabilityKey, "inbox") {
-			t.Fatalf("unexpected Permission-free Action: %#v", definition)
+		permission := definition.Permission
+		if permission.Key != definition.Key || permission.Key != permission.ResourceKey+"."+permission.OperationKey {
+			t.Fatalf("non-exact Permission: Action=%#v Permission=%#v", definition, permission)
+		}
+		if strings.Contains(permission.Key, "*") {
+			t.Fatalf("broad or alias Permission: %#v", permission)
 		}
 	}
 	if _, found := registry.ResolveHTTP("POST", "/notifications/templates/{templateKey}/publish"); found {

@@ -20,12 +20,14 @@ type Config struct {
 	SQLStore       *base.SQLStore
 	WorkspaceScope WorkspaceScope
 	QueueScopes    QueueScopeIndex
+	WorkspaceID    notification.WorkspaceID
 }
 
 type Store struct {
 	*base.SQLStore
 	workspaceScope WorkspaceScope
 	queueScopes    QueueScopeIndex
+	workspaceID    notification.WorkspaceID
 }
 
 var (
@@ -38,11 +40,18 @@ var channelPlanColumns = []string{
 }
 
 func New(config Config) *Store {
-	return &Store{SQLStore: config.SQLStore, workspaceScope: config.WorkspaceScope, queueScopes: config.QueueScopes}
+	return &Store{SQLStore: config.SQLStore, workspaceScope: config.WorkspaceScope, queueScopes: config.QueueScopes, workspaceID: config.WorkspaceID}
 }
 
 type scanner interface{ Scan(...any) error }
 
 func (s *Store) columns(columns []string) string { return s.Columns(columns) }
+
+func (s *Store) requireWorkspace(workspaceID notification.WorkspaceID) error {
+	if workspaceID == "" || workspaceID != s.workspaceID {
+		return base.ErrExactPermissionDenied
+	}
+	return nil
+}
 
 func workspaceScanLimit(limit int) int { return min(256, max(32, limit*2)) }

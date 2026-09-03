@@ -57,7 +57,8 @@ func migratedStore(t *testing.T) (*sql.DB, *sqlstore.Store) {
 	dialect, _ := ormdialect.ParseRenderer("sqlite", "", "")
 	store, err := sqlstore.New(sqlstore.Config{
 		Database: database, Dialect: dialect, WorkspaceScope: passthroughScope{}, QueueScopes: &queueScopes{},
-		Clock: storeClock{value: time.Date(2026, 8, 24, 2, 0, 0, 0, time.UTC)},
+		Clock:       storeClock{value: time.Date(2026, 8, 24, 2, 0, 0, 0, time.UTC)},
+		WorkspaceID: "workspace-1",
 	})
 	if err != nil {
 		t.Fatal(err)

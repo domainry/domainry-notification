@@ -6,16 +6,18 @@ import (
 )
 
 type Config struct {
-	SQLStore *base.SQLStore
-	Clock    notification.Clock
+	SQLStore    *base.SQLStore
+	Clock       notification.Clock
+	WorkspaceID notification.WorkspaceID
 }
 type Store struct {
 	*base.SQLStore
-	clock notification.Clock
+	clock       notification.Clock
+	workspaceID notification.WorkspaceID
 }
 
 func New(config Config) *Store {
-	return &Store{SQLStore: config.SQLStore, clock: config.Clock}
+	return &Store{SQLStore: config.SQLStore, clock: config.Clock, workspaceID: config.WorkspaceID}
 }
 
 type scanner interface{ Scan(...any) error }

@@ -67,11 +67,14 @@ transaction or worker packages.
 
 ## Schema tenancy
 
-The module owns fourteen tables, but they do not share one tenancy model.
-Template records, template versions, publication requests, publication locks,
-and the default delivery policy are system-scoped configuration. Events,
-failures, channel plans, recipient preferences, delivery reservations, inbox
-items, alert groups, delegations, and saved views are workspace-scoped data.
+All notification-owned durable tables are workspace scoped. Template records,
+versions, publication requests, publication locks, and the default delivery
+policy are user-reachable workspace resources. Notification accepts only an
+exact same-key Identity `data_scope=all`, which deliberately adds no row-level
+data predicate; every durable access still uses the bound workspace predicate.
+Events, failures, channel plans, recipient preferences, delivery reservations,
+inbox items, alert groups, delegations, saved views, retention archives, and
+migration controls use the same workspace boundary.
 
 `module.SchemaOwnership` is the public authoritative machine-readable inventory;
 its implementation delegates to the internal SQL adapter.

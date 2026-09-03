@@ -2,12 +2,16 @@ package inboxstore
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
 
+	"github.com/domainry/domainry-foundation/mutation"
 	"github.com/domainry/domainry-notification/internal/domain/inbox/service"
 	notification "github.com/domainry/domainry-notification/internal/domain/notification/model"
 	"github.com/domainry/domainry-orm/query"
+	"github.com/domainry/domainry-orm/sqlhost"
 )
 
 var _ inbox.DelegationStore = (*Store)(nil)
@@ -18,8 +22,12 @@ func (s *Store) ListDelegations(ctx context.Context, workspaceID notification.Wo
 	if workspaceID == "" || ownerID == "" || surface == "" {
 		return nil, fmt.Errorf("notification inbox delegation owner identity is required")
 	}
+	if err := s.requireWorkspace(workspaceID); err != nil {
+		return nil, err
+	}
 	ctx = s.workspaceScope.Context(ctx, workspaceID)
-	queryValue, args, err := query.NewWorkspaceSelectBuilder(s.Renderer, "_notification_inbox_delegations", workspaceID.String()).Columns(delegationColumns...).Where(query.And(query.Equal("owner_user_id", ownerID.String()), query.Equal("surface", string(surface)))).OrderBy(query.Ascending("created_at")).Build()
+	predicate := query.And(query.Equal("owner_user_id", ownerID.String()), query.Equal("surface", string(surface)))
+	queryValue, args, err := query.NewWorkspaceSelectBuilder(s.Renderer, "_notification_inbox_delegations", workspaceID.String()).Columns(delegationColumns...).Where(predicate).OrderBy(query.Ascending("created_at")).Build()
 	if err != nil {
 		return nil, err
 	}
@@ -43,12 +51,33 @@ func (s *Store) SaveDelegation(ctx context.Context, value inbox.Delegation) (inb
 	if value.ID == "" || value.WorkspaceID == "" || value.OwnerUserID == "" || value.DelegateUserID == "" || value.Surface == "" {
 		return value, fmt.Errorf("notification inbox delegation identity is required")
 	}
+	if err := s.requireWorkspace(value.WorkspaceID); err != nil {
+		return value, err
+	}
 	ctx = s.workspaceScope.Context(ctx, value.WorkspaceID)
-	queryValue, args, err := query.NewWorkspaceUpdateBuilder(s.Renderer, "_notification_inbox_delegations", value.WorkspaceID.String()).Set("delegate_user_id", value.DelegateUserID.String()).Set("starts_at", value.StartsAt).Set("ends_at", value.EndsAt).Set("enabled", value.Enabled).Set("updated_at", value.UpdatedAt).Where(query.And(query.Equal("owner_user_id", value.OwnerUserID.String()), query.Equal("id", value.ID))).Build()
+	tx, err := s.Database.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelSerializable})
 	if err != nil {
 		return value, err
 	}
-	result, err := s.Database.ExecContext(ctx, queryValue, args...)
+	defer tx.Rollback()
+	exists, err := s.delegationExists(ctx, tx, value.WorkspaceID, value.OwnerUserID, value.ID)
+	if err != nil {
+		return value, err
+	}
+	if !exists {
+		_, err = s.WorkspaceInsert(ctx, tx, value.WorkspaceID.String(), "_notification_inbox_delegations", delegationColumns, value.ID, value.WorkspaceID.String(),
+			value.OwnerUserID.String(), value.DelegateUserID.String(), string(value.Surface), value.StartsAt, value.EndsAt, value.Enabled, value.CreatedAt, value.UpdatedAt)
+		if err != nil {
+			return value, fmt.Errorf("insert notification inbox delegation: %w", err)
+		}
+		return value, tx.Commit()
+	}
+	predicate := query.And(query.Equal("owner_user_id", value.OwnerUserID.String()), query.Equal("id", value.ID))
+	queryValue, args, err := query.NewWorkspaceUpdateBuilder(s.Renderer, "_notification_inbox_delegations", value.WorkspaceID.String()).Set("delegate_user_id", value.DelegateUserID.String()).Set("starts_at", value.StartsAt).Set("ends_at", value.EndsAt).Set("enabled", value.Enabled).Set("updated_at", value.UpdatedAt).Where(predicate).Build()
+	if err != nil {
+		return value, err
+	}
+	result, err := tx.ExecContext(ctx, queryValue, args...)
 	if err != nil {
 		return value, fmt.Errorf("update notification inbox delegation: %w", err)
 	}
@@ -56,14 +85,10 @@ func (s *Store) SaveDelegation(ctx context.Context, value inbox.Delegation) (inb
 	if err != nil {
 		return value, err
 	}
-	if count == 0 {
-		_, err = s.WorkspaceInsert(ctx, s.Database, value.WorkspaceID.String(), "_notification_inbox_delegations", delegationColumns, value.ID, value.WorkspaceID.String(),
-			value.OwnerUserID.String(), value.DelegateUserID.String(), string(value.Surface), value.StartsAt, value.EndsAt, value.Enabled, value.CreatedAt, value.UpdatedAt)
-		if err != nil {
-			return value, fmt.Errorf("insert notification inbox delegation: %w", err)
-		}
+	if count != 1 {
+		return value, mutation.MutationConflict("notification_inbox_delegation", value.ID, mutation.MutationConflictOptimistic, nil)
 	}
-	return value, nil
+	return value, tx.Commit()
 }
 
 func (s *Store) DeleteDelegation(ctx context.Context, workspaceID notification.WorkspaceID, ownerID notification.UserID, delegationID string) (bool, error) {
@@ -71,22 +96,41 @@ func (s *Store) DeleteDelegation(ctx context.Context, workspaceID notification.W
 	if workspaceID == "" || ownerID == "" || delegationID == "" {
 		return false, fmt.Errorf("notification inbox delegation identity is required")
 	}
+	if err := s.requireWorkspace(workspaceID); err != nil {
+		return false, err
+	}
 	ctx = s.workspaceScope.Context(ctx, workspaceID)
-	queryValue, args, err := query.NewWorkspaceDeleteBuilder(s.Renderer, "_notification_inbox_delegations", workspaceID.String()).Where(query.And(query.Equal("owner_user_id", ownerID.String()), query.Equal("id", delegationID))).Build()
+	tx, err := s.Database.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelSerializable})
 	if err != nil {
 		return false, err
 	}
-	result, err := s.Database.ExecContext(ctx, queryValue, args...)
+	defer tx.Rollback()
+	exists, err := s.delegationExists(ctx, tx, workspaceID, ownerID, delegationID)
+	if err != nil || !exists {
+		return false, err
+	}
+	predicate := query.And(query.Equal("owner_user_id", ownerID.String()), query.Equal("id", delegationID))
+	queryValue, args, err := query.NewWorkspaceDeleteBuilder(s.Renderer, "_notification_inbox_delegations", workspaceID.String()).Where(predicate).Build()
+	if err != nil {
+		return false, err
+	}
+	result, err := tx.ExecContext(ctx, queryValue, args...)
 	if err != nil {
 		return false, fmt.Errorf("delete notification inbox delegation: %w", err)
 	}
 	count, err := result.RowsAffected()
-	return count == 1, err
+	if err != nil || count != 1 {
+		return false, err
+	}
+	return true, tx.Commit()
 }
 
 func (s *Store) ListActiveDelegatedOwnerIDs(ctx context.Context, workspaceID notification.WorkspaceID, delegateID notification.UserID, surface notification.Surface, now string) ([]notification.UserID, error) {
 	if workspaceID == "" || delegateID == "" || surface == "" || strings.TrimSpace(now) == "" {
 		return nil, fmt.Errorf("notification active delegation query identity is required")
+	}
+	if err := s.requireWorkspace(workspaceID); err != nil {
+		return nil, err
 	}
 	ctx = s.workspaceScope.Context(ctx, workspaceID)
 	predicate := query.And(query.Equal("delegate_user_id", delegateID.String()), query.Equal("surface", string(surface)), query.Equal("enabled", true), query.Or(query.Equal("starts_at", ""), query.LessThanOrEqual("starts_at", now)), query.Or(query.Equal("ends_at", ""), query.GreaterThan("ends_at", now)))
@@ -108,6 +152,20 @@ func (s *Store) ListActiveDelegatedOwnerIDs(ctx context.Context, workspaceID not
 		values = append(values, owner)
 	}
 	return values, rows.Err()
+}
+
+func (s *Store) delegationExists(ctx context.Context, queryer sqlhost.Queryer, workspaceID notification.WorkspaceID, ownerID notification.UserID, delegationID string) (bool, error) {
+	predicate := query.And(query.Equal("owner_user_id", ownerID.String()), query.Equal("id", delegationID))
+	statement, args, err := query.NewWorkspaceSelectBuilder(s.Renderer, "_notification_inbox_delegations", workspaceID.String()).Columns("id").Where(predicate).Build()
+	if err != nil {
+		return false, err
+	}
+	var id string
+	err = queryer.QueryRowContext(ctx, statement, args...).Scan(&id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	return err == nil, err
 }
 
 func scanDelegation(row scanner) (inbox.Delegation, error) {

@@ -24,17 +24,11 @@ func TestSchemaOwnershipSeparatesSystemAndWorkspaceState(t *testing.T) {
 			t.Fatalf("table %q has unknown scope %q", table.Name, table.Scope)
 		}
 	}
-	wantSystem := []string{
-		"_notification_delivery_policies",
-		"_notification_template_publication_locks",
-		"_notification_template_publication_requests",
-		"_notification_template_versions",
-		"_notification_templates",
-	}
+	wantSystem := []string{}
 	if !slices.Equal(system, wantSystem) {
 		t.Fatalf("system tables=%v", system)
 	}
-	if len(workspace) != 11 || !slices.Contains(workspace, "_notification_retention_archive_entries") || !slices.Contains(workspace, "_notification_migration_controls") {
+	if len(workspace) != 16 || !slices.Contains(workspace, "_notification_retention_archive_entries") || !slices.Contains(workspace, "_notification_migration_controls") {
 		t.Fatalf("workspace tables=%v", workspace)
 	}
 	flat := schema.OwnedTables()

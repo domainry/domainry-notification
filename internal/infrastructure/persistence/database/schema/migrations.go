@@ -47,10 +47,15 @@ func SchemaMigrations(profile Profile, dialect modulehost.Dialect, tablePrefix s
 	if err != nil {
 		return nil, err
 	}
+	resourceScopeStatements, err := renderResourceScopeMigration(profile, dialect, tablePrefix, "")
+	if err != nil {
+		return nil, err
+	}
 	return []SchemaMigration{
 		{Version: 1, Name: "create_notification_schema", Statements: statements},
 		{Version: 2, Name: "create_notification_retention_archive_entries", Statements: retentionStatements},
 		{Version: 3, Name: "create_notification_migration_control", Statements: migrationControlStatements},
+		{Version: 4, Name: "scope_notification_user_resources", Statements: resourceScopeStatements},
 	}, nil
 }
 
@@ -107,11 +112,49 @@ func ApplicationSchemaMigrations(profile Profile, dialect modulehost.Dialect, ta
 	if err != nil {
 		return nil, err
 	}
+	resourceScopeStatements, err := renderResourceScopeMigration(profile, dialect, tablePrefix, scope.WorkspaceID)
+	if err != nil {
+		return nil, err
+	}
 	return []SchemaMigration{
 		{Version: 1, Name: "create_application_schema", Statements: statements},
 		{Version: 2, Name: "create_notification_retention_archive_entries", Statements: retentionStatements},
 		{Version: 3, Name: "create_notification_migration_control", Statements: migrationControlStatements},
+		{Version: 4, Name: "scope_notification_user_resources", Statements: resourceScopeStatements},
 	}, nil
+}
+
+func renderResourceScopeMigration(profile Profile, dialect modulehost.Dialect, indexPrefix, workspaceID string) ([]string, error) {
+	statements := []string{}
+	for _, table := range []string{
+		"_notification_templates", "_notification_template_versions", "_notification_template_publication_requests",
+		"_notification_template_publication_locks", "_notification_delivery_policies",
+	} {
+		column, err := profile.SchemaColumn("workspace_id", identifierColumn)
+		if err != nil {
+			return nil, err
+		}
+		statement, _, err := ormschema.NewAddColumn(dialect, table, column.NotNull().DefaultValue(workspaceID)).Build()
+		if err != nil {
+			return nil, err
+		}
+		statements = append(statements, statement)
+	}
+	for _, index := range []schemaIndex{
+		{name: "idx_notification_template_workspace", table: "_notification_templates", columns: []string{"workspace_id", "template_key"}},
+		{name: "idx_notification_template_version_workspace", table: "_notification_template_versions", columns: []string{"workspace_id", "template_key", "version"}},
+		{name: "idx_notification_publication_workspace", table: "_notification_template_publication_requests", columns: []string{"workspace_id", "template_key", "requested_at"}},
+		{name: "idx_notification_publication_lock_workspace", table: "_notification_template_publication_locks", columns: []string{"workspace_id", "template_key"}},
+		{name: "idx_notification_delivery_policy_workspace", table: "_notification_delivery_policies", columns: []string{"workspace_id", "policy_key"}},
+	} {
+		builder := ormschema.NewIndex(dialect, indexPrefix+index.name, index.table).Columns(index.columns...)
+		statement, _, err := builder.Build()
+		if err != nil {
+			return nil, err
+		}
+		statements = append(statements, statement)
+	}
+	return statements, nil
 }
 
 type schemaColumn struct {

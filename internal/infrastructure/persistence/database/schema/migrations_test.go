@@ -114,7 +114,7 @@ func TestBaseSchemaMatchesOwnershipAndRunsOnSQLite(t *testing.T) {
 		}
 	}
 	migrations, err := testSchemaMigrations("sqlite", "", "")
-	if err != nil || len(migrations) != 3 || migrations[0].Version != 1 || migrations[0].Name != "create_notification_schema" || migrations[1].Version != 2 || migrations[2].Version != 3 || migrations[2].Name != "create_notification_migration_control" {
+	if err != nil || len(migrations) != 4 || migrations[0].Version != 1 || migrations[0].Name != "create_notification_schema" || migrations[1].Version != 2 || migrations[2].Version != 3 || migrations[2].Name != "create_notification_migration_control" || migrations[3].Version != 4 || migrations[3].Name != "scope_notification_user_resources" {
 		t.Fatalf("migrations=%+v err=%v", migrations, err)
 	}
 	db, err := sql.Open("sqlite", "file:"+t.Name()+"?mode=memory&cache=shared")
@@ -205,7 +205,7 @@ func TestApplicationSchemaMigrationsPersistExactOwnership(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(migrations) != 3 || migrations[0].Name != "create_application_schema" || migrations[1].Version != 2 || migrations[2].Version != 3 {
+	if len(migrations) != 4 || migrations[0].Name != "create_application_schema" || migrations[1].Version != 2 || migrations[2].Version != 3 || migrations[3].Version != 4 {
 		t.Fatalf("migrations=%+v", migrations)
 	}
 	db, err := sql.Open("sqlite", "file:"+t.Name()+"?mode=memory&cache=shared")

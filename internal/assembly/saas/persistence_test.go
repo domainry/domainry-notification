@@ -37,7 +37,7 @@ func TestSQLPersistencePreparesAndReopensExactApplication(t *testing.T) {
 		t.Fatalf("application namespace changed: %s != %s", first.Table("_notification_events"), second.Table("_notification_events"))
 	}
 	var migrations int
-	if err := db.QueryRow(`SELECT COUNT(*) FROM _schema_migrations WHERE namespace = ?`, applicationKey(application)).Scan(&migrations); err != nil || migrations != 3 {
+	if err := db.QueryRow(`SELECT COUNT(*) FROM _schema_migrations WHERE namespace = ?`, applicationKey(application)).Scan(&migrations); err != nil || migrations != 4 {
 		t.Fatalf("migration count=%d err=%v", migrations, err)
 	}
 	var columns int
@@ -70,7 +70,7 @@ func TestSQLPersistenceRejectsASecondApplicationInStandaloneDatabase(t *testing.
 		t.Fatalf("second application error=%v", err)
 	}
 	var migrations int
-	if err := db.QueryRow(`SELECT COUNT(*) FROM _schema_migrations`).Scan(&migrations); err != nil || migrations != 3 {
+	if err := db.QueryRow(`SELECT COUNT(*) FROM _schema_migrations`).Scan(&migrations); err != nil || migrations != 4 {
 		t.Fatalf("migration count=%d err=%v", migrations, err)
 	}
 }

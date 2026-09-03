@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	identitysdk "github.com/domainry/domainry-identity-sdk"
 	notificationsdk "github.com/domainry/domainry-notification-sdk"
@@ -42,9 +43,16 @@ type authorizationBindingStub struct {
 func (s authorizationBindingStub) Authorization() identitysdk.Authorization { return s.authorization }
 
 func authorizedPrincipal(workspaceID string, grants ...identitysdk.FunctionGrant) identitysdk.Principal {
+	if len(grants) == 0 {
+		grants = []identitysdk.FunctionGrant{{Resource: "notification.business_inbox", Action: "list", Effect: identitysdk.EffectAllow}}
+	}
+	policies := make([]identitysdk.DataPolicy, 0, len(grants))
+	for _, grant := range grants {
+		policies = append(policies, identitysdk.DataPolicy{Key: string(grant.Resource) + "." + string(grant.Action), Resource: grant.Resource, Action: grant.Action, Effect: identitysdk.EffectAllow, DataScopes: []identitysdk.DataScope{identitysdk.DataScopeAll}})
+	}
 	return identitysdk.Principal{
 		Known: true, WorkspaceID: workspaceID, UserID: "user-1",
-		AccessBundle: &identitysdk.AccessBundle{FunctionGrants: grants},
+		AccessBundle: &identitysdk.AccessBundle{ContractVersion: identitysdk.CurrentPolicyBundleVersion, AuthorizationRevision: "revision-1", ExpiresAt: time.Now().Add(time.Hour), Subject: identitysdk.Subject{WorkspaceID: identitysdk.WorkspaceID(workspaceID), SubjectID: "user-1"}, FunctionGrants: grants, DataPolicies: policies},
 	}
 }
 
@@ -57,7 +65,7 @@ func TestAuthorizeFailsClosedWithoutRequiredPermission(t *testing.T) {
 			identitysdk.FunctionGrant{Resource: "notification_inbox", Action: "read", Effect: identitysdk.EffectAllow},
 		)},
 	}
-	_, err := b.authorizeAction(context.Background(), notificationsdk.UserAuthority{AccessToken: "secret"}, notificationapplication.ActionTemplatesDraftSave, identitysdk.DataActionWrite, true)
+	_, err := b.authorizeAction(context.Background(), notificationsdk.UserAuthority{AccessToken: "secret"}, notificationapplication.ActionTemplatesDraftSave, true)
 	assertNotificationAuthorizationError(t, err, 403, "notification.permission_denied", false)
 	if len(capture.requests) != 0 {
 		t.Fatalf("reauthorization must not run after cached permission denial: %#v", capture.requests)
@@ -73,7 +81,7 @@ func TestAuthorizeDoesNotExpandAnotherExactPermission(t *testing.T) {
 			identitysdk.FunctionGrant{Resource: "identity.roles", Action: "list", Effect: identitysdk.EffectAllow},
 		)},
 	}
-	_, err := b.authorizeAction(context.Background(), notificationsdk.UserAuthority{AccessToken: "secret"}, notificationapplication.ActionTemplatesDraftSave, identitysdk.DataActionWrite, true)
+	_, err := b.authorizeAction(context.Background(), notificationsdk.UserAuthority{AccessToken: "secret"}, notificationapplication.ActionTemplatesDraftSave, true)
 	assertNotificationAuthorizationError(t, err, 403, "notification.permission_denied", false)
 	if len(capture.requests) != 0 {
 		t.Fatalf("another exact Permission reached reauthorization as an alias: %#v", capture.requests)
@@ -89,7 +97,7 @@ func TestAuthorizeReauthorizesMutationWithExactApplicationFacts(t *testing.T) {
 			identitysdk.FunctionGrant{Resource: "notification.templates.draft", Action: "save", Effect: identitysdk.EffectAllow},
 		)},
 	}
-	principal, err := b.authorizeAction(context.Background(), notificationsdk.UserAuthority{AccessToken: "secret"}, notificationapplication.ActionTemplatesDraftSave, identitysdk.DataActionWrite, true)
+	principal, err := b.authorizeAction(context.Background(), notificationsdk.UserAuthority{AccessToken: "secret"}, notificationapplication.ActionTemplatesDraftSave, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -97,7 +105,7 @@ func TestAuthorizeReauthorizesMutationWithExactApplicationFacts(t *testing.T) {
 		t.Fatalf("unexpected reauthorization result: principal=%#v requests=%#v", principal, capture.requests)
 	}
 	request := capture.requests[0]
-	if request.Identity.AccessToken != "secret" || request.Access.ObjectKey != "notification.templates.draft" || request.Access.Action != "save" || request.Access.DataAction != identitysdk.DataActionWrite {
+	if request.Identity.AccessToken != "secret" || request.Access.ObjectKey != "notification.templates.draft" || request.Access.Action != "save" {
 		t.Fatalf("unexpected decision request: %#v", request)
 	}
 	if request.Facts["tenant_id"] != "tenant-1" || request.Facts["workspace_id"] != "workspace-1" || request.Facts["application_key"] != "app-1" {
@@ -127,7 +135,7 @@ func TestAuthorizeFailsClosedWhenCurrentIdentityDeniesOrIsUnavailable(t *testing
 					identitysdk.FunctionGrant{Resource: "notification.publications", Action: "approve", Effect: identitysdk.EffectAllow},
 				)},
 			}
-			_, err := b.authorizeAction(context.Background(), notificationsdk.UserAuthority{AccessToken: "secret"}, notificationapplication.ActionPublicationsApprove, identitysdk.DataActionWrite, true)
+			_, err := b.authorizeAction(context.Background(), notificationsdk.UserAuthority{AccessToken: "secret"}, notificationapplication.ActionPublicationsApprove, true)
 			assertNotificationAuthorizationError(t, err, test.status, test.code, test.retryable)
 		})
 	}

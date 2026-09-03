@@ -56,7 +56,7 @@ func Open(ctx context.Context, options Options) (identitysdk.Binding, error) {
 		_ = binding.Close(ctx)
 		return nil, fmt.Errorf("Notification SaaS requires Identity SaaS, got %q", descriptor.Mode)
 	}
-	if descriptor.ProtocolVersion != identitysdk.CurrentProtocolVersion || descriptor.BundleVersion != identitysdk.CurrentPolicyBundleVersion || descriptor.AuthorizationVersion != identitysdk.AuthorizationContractVersionV1 {
+	if descriptor.ProtocolVersion != identitysdk.CurrentProtocolVersion || descriptor.BundleVersion != identitysdk.CurrentPolicyBundleVersion || descriptor.AuthorizationVersion != identitysdk.CurrentAuthorizationContractVersion {
 		_ = binding.Close(ctx)
 		return nil, fmt.Errorf("Notification SaaS Identity protocol is incompatible")
 	}

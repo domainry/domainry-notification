@@ -101,7 +101,7 @@ func materializationStore(t *testing.T) (*sql.DB, *sqlstore.Store, *queueScopes)
 	}
 	dialect, _ := ormdialect.ParseRenderer("sqlite", "", "")
 	scopes := &queueScopes{}
-	store, err := sqlstore.New(sqlstore.Config{Database: db, Dialect: dialect, WorkspaceScope: passthroughScope{}, QueueScopes: scopes, Clock: storeClock{value: time.Date(2026, 8, 24, 1, 0, 0, 0, time.UTC)}})
+	store, err := sqlstore.New(sqlstore.Config{Database: db, Dialect: dialect, WorkspaceScope: passthroughScope{}, QueueScopes: scopes, Clock: storeClock{value: time.Date(2026, 8, 24, 1, 0, 0, 0, time.UTC)}, WorkspaceID: "workspace-1"})
 	if err != nil {
 		t.Fatal(err)
 	}

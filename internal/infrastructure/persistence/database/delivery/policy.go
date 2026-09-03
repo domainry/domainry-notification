@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/domainry/domainry-foundation/mutation"
 	"github.com/domainry/domainry-notification/internal/domain/delivery/service"
 	notification "github.com/domainry/domainry-notification/internal/domain/notification/model"
 	"github.com/domainry/domainry-orm/query"
@@ -19,7 +20,8 @@ var _ delivery.PolicyStore = (*Store)(nil)
 const defaultDeliveryPolicyKey = "default"
 
 func (s *Store) GetPolicy(ctx context.Context) (delivery.Policy, error) {
-	queryValue, args, err := query.NewSelectBuilder(s.Renderer, "_notification_delivery_policies").Columns("payload_json").Where(query.Equal("policy_key", defaultDeliveryPolicyKey)).Build()
+	predicate := query.Predicate(query.Equal("policy_key", defaultDeliveryPolicyKey))
+	queryValue, args, err := query.NewWorkspaceSelectBuilder(s.Renderer, "_notification_delivery_policies", s.workspaceID.String()).Columns("payload_json").Where(predicate).Build()
 	if err != nil {
 		return delivery.Policy{}, err
 	}
@@ -41,11 +43,34 @@ func (s *Store) SavePolicy(ctx context.Context, policy delivery.Policy) (deliver
 	if err != nil {
 		return policy, fmt.Errorf("encode notification delivery policy: %w", err)
 	}
-	queryValue, args, err := query.NewUpdateBuilder(s.Renderer, "_notification_delivery_policies").Set("payload_json", string(raw)).Set("updated_by", policy.UpdatedBy).Set("updated_at", policy.UpdatedAt).Where(query.Equal("policy_key", defaultDeliveryPolicyKey)).Build()
+	tx, err := s.Database.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelSerializable})
 	if err != nil {
 		return policy, err
 	}
-	result, err := s.Database.ExecContext(ctx, queryValue, args...)
+	defer tx.Rollback()
+	predicate := query.Predicate(query.Equal("policy_key", defaultDeliveryPolicyKey))
+	var existing string
+	selectSQL, selectArgs, err := query.NewWorkspaceSelectBuilder(s.Renderer, "_notification_delivery_policies", s.workspaceID.String()).Columns("policy_key").Where(predicate).Build()
+	if err != nil {
+		return policy, err
+	}
+	err = tx.QueryRowContext(ctx, selectSQL, selectArgs...).Scan(&existing)
+	if errors.Is(err, sql.ErrNoRows) {
+		_, err = s.WorkspaceInsert(ctx, tx, s.workspaceID.String(), "_notification_delivery_policies", []string{"policy_key", "payload_json", "updated_by", "updated_at", "workspace_id"},
+			defaultDeliveryPolicyKey, string(raw), policy.UpdatedBy, policy.UpdatedAt, s.workspaceID.String())
+		if err != nil {
+			return policy, fmt.Errorf("insert notification delivery policy: %w", err)
+		}
+		return policy, tx.Commit()
+	}
+	if err != nil {
+		return policy, err
+	}
+	queryValue, args, err := query.NewWorkspaceUpdateBuilder(s.Renderer, "_notification_delivery_policies", s.workspaceID.String()).Set("payload_json", string(raw)).Set("updated_by", policy.UpdatedBy).Set("updated_at", policy.UpdatedAt).Where(predicate).Build()
+	if err != nil {
+		return policy, err
+	}
+	result, err := tx.ExecContext(ctx, queryValue, args...)
 	if err != nil {
 		return policy, fmt.Errorf("update notification delivery policy: %w", err)
 	}
@@ -53,22 +78,22 @@ func (s *Store) SavePolicy(ctx context.Context, policy delivery.Policy) (deliver
 	if err != nil {
 		return policy, err
 	}
-	if count == 0 {
-		_, err = s.Insert(ctx, s.Database, "_notification_delivery_policies", []string{"policy_key", "payload_json", "updated_by", "updated_at"},
-			defaultDeliveryPolicyKey, string(raw), policy.UpdatedBy, policy.UpdatedAt)
-		if err != nil {
-			return policy, fmt.Errorf("insert notification delivery policy: %w", err)
-		}
+	if count != 1 {
+		return policy, mutation.MutationConflict("notification_delivery_policy", defaultDeliveryPolicyKey, mutation.MutationConflictOptimistic, nil)
 	}
-	return policy, nil
+	return policy, tx.Commit()
 }
 
 func (s *Store) ListRecipientPreferences(ctx context.Context, workspaceID notification.WorkspaceID) ([]delivery.RecipientPreference, error) {
 	if workspaceID == "" {
 		return nil, fmt.Errorf("notification recipient preference workspace is required")
 	}
+	if err := s.requireWorkspace(workspaceID); err != nil {
+		return nil, err
+	}
 	ctx = s.workspaceScope.Context(ctx, workspaceID)
-	queryValue, args, err := query.NewWorkspaceSelectBuilder(s.Renderer, "_notification_recipient_preferences", workspaceID.String()).Columns("payload_json").Where(query.Equal("workspace_id", workspaceID.String())).OrderBy(query.Ascending("recipient_key")).Build()
+	predicate := query.Equal("workspace_id", workspaceID.String())
+	queryValue, args, err := query.NewWorkspaceSelectBuilder(s.Renderer, "_notification_recipient_preferences", workspaceID.String()).Columns("payload_json").Where(predicate).OrderBy(query.Ascending("recipient_key")).Build()
 	if err != nil {
 		return nil, err
 	}
@@ -96,8 +121,12 @@ func (s *Store) GetRecipientPreference(ctx context.Context, workspaceID notifica
 	if workspaceID == "" || recipientID == "" {
 		return delivery.RecipientPreference{}, false, fmt.Errorf("notification recipient preference identity is required")
 	}
+	if err := s.requireWorkspace(workspaceID); err != nil {
+		return delivery.RecipientPreference{}, false, err
+	}
 	ctx = s.workspaceScope.Context(ctx, workspaceID)
-	queryValue, args, err := query.NewWorkspaceSelectBuilder(s.Renderer, "_notification_recipient_preferences", workspaceID.String()).Columns("payload_json").Where(query.And(query.Equal("workspace_id", workspaceID.String()), query.Equal("recipient_key", recipientID.String()))).Build()
+	predicate := query.Equal("recipient_key", recipientID.String())
+	queryValue, args, err := query.NewWorkspaceSelectBuilder(s.Renderer, "_notification_recipient_preferences", workspaceID.String()).Columns("payload_json").Where(predicate).Build()
 	if err != nil {
 		return delivery.RecipientPreference{}, false, err
 	}
@@ -119,16 +148,42 @@ func (s *Store) SaveRecipientPreference(ctx context.Context, workspaceID notific
 	if workspaceID == "" || value.RecipientKey == "" {
 		return value, fmt.Errorf("notification recipient preference identity is required")
 	}
+	if err := s.requireWorkspace(workspaceID); err != nil {
+		return value, err
+	}
 	ctx = s.workspaceScope.Context(ctx, workspaceID)
 	raw, err := json.Marshal(value)
 	if err != nil {
 		return value, fmt.Errorf("encode notification recipient preference: %w", err)
 	}
-	queryValue, args, err := query.NewWorkspaceUpdateBuilder(s.Renderer, "_notification_recipient_preferences", workspaceID.String()).Set("payload_json", string(raw)).Set("updated_by", value.UpdatedBy).Set("updated_at", value.UpdatedAt).Where(query.And(query.Equal("workspace_id", workspaceID.String()), query.Equal("recipient_key", value.RecipientKey))).Build()
+	tx, err := s.Database.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelSerializable})
 	if err != nil {
 		return value, err
 	}
-	result, err := s.Database.ExecContext(ctx, queryValue, args...)
+	defer tx.Rollback()
+	predicate := query.Equal("recipient_key", value.RecipientKey)
+	var existing string
+	selectSQL, selectArgs, err := query.NewWorkspaceSelectBuilder(s.Renderer, "_notification_recipient_preferences", workspaceID.String()).Columns("recipient_key").Where(predicate).Build()
+	if err != nil {
+		return value, err
+	}
+	err = tx.QueryRowContext(ctx, selectSQL, selectArgs...).Scan(&existing)
+	if errors.Is(err, sql.ErrNoRows) {
+		_, err = s.WorkspaceInsert(ctx, tx, workspaceID.String(), "_notification_recipient_preferences", []string{"workspace_id", "recipient_key", "payload_json", "updated_by", "updated_at"},
+			workspaceID.String(), value.RecipientKey, string(raw), value.UpdatedBy, value.UpdatedAt)
+		if err != nil {
+			return value, fmt.Errorf("insert notification recipient preference: %w", err)
+		}
+		return value, tx.Commit()
+	}
+	if err != nil {
+		return value, err
+	}
+	queryValue, args, err := query.NewWorkspaceUpdateBuilder(s.Renderer, "_notification_recipient_preferences", workspaceID.String()).Set("payload_json", string(raw)).Set("updated_by", value.UpdatedBy).Set("updated_at", value.UpdatedAt).Where(predicate).Build()
+	if err != nil {
+		return value, err
+	}
+	result, err := tx.ExecContext(ctx, queryValue, args...)
 	if err != nil {
 		return value, fmt.Errorf("update notification recipient preference: %w", err)
 	}
@@ -136,14 +191,10 @@ func (s *Store) SaveRecipientPreference(ctx context.Context, workspaceID notific
 	if err != nil {
 		return value, err
 	}
-	if count == 0 {
-		_, err = s.WorkspaceInsert(ctx, s.Database, workspaceID.String(), "_notification_recipient_preferences", []string{"workspace_id", "recipient_key", "payload_json", "updated_by", "updated_at"},
-			workspaceID.String(), value.RecipientKey, string(raw), value.UpdatedBy, value.UpdatedAt)
-		if err != nil {
-			return value, fmt.Errorf("insert notification recipient preference: %w", err)
-		}
+	if count != 1 {
+		return value, mutation.MutationConflict("notification_recipient_preference", value.RecipientKey, mutation.MutationConflictOptimistic, nil)
 	}
-	return value, nil
+	return value, tx.Commit()
 }
 
 func (s *Store) ReserveBatch(ctx context.Context, workspaceID notification.WorkspaceID, reservations []delivery.Reservation, hourlyLimit, dedupeWindowSeconds int) error {

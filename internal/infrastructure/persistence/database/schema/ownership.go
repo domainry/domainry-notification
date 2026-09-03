@@ -20,7 +20,7 @@ type TableOwnership struct {
 var tableOwnership = [...]TableOwnership{
 	{Name: "_notification_alert_groups", Scope: WorkspaceData},
 	{Name: "_notification_channel_plans", Scope: WorkspaceData},
-	{Name: "_notification_delivery_policies", Scope: SystemData},
+	{Name: "_notification_delivery_policies", Scope: WorkspaceData},
 	{Name: "_notification_delivery_reservations", Scope: WorkspaceData},
 	{Name: "_notification_event_failures", Scope: WorkspaceData},
 	{Name: "_notification_events", Scope: WorkspaceData},
@@ -30,10 +30,10 @@ var tableOwnership = [...]TableOwnership{
 	{Name: "_notification_migration_controls", Scope: WorkspaceData},
 	{Name: "_notification_recipient_preferences", Scope: WorkspaceData},
 	{Name: "_notification_retention_archive_entries", Scope: WorkspaceData},
-	{Name: "_notification_template_publication_locks", Scope: SystemData},
-	{Name: "_notification_template_publication_requests", Scope: SystemData},
-	{Name: "_notification_template_versions", Scope: SystemData},
-	{Name: "_notification_templates", Scope: SystemData},
+	{Name: "_notification_template_publication_locks", Scope: WorkspaceData},
+	{Name: "_notification_template_publication_requests", Scope: WorkspaceData},
+	{Name: "_notification_template_versions", Scope: WorkspaceData},
+	{Name: "_notification_templates", Scope: WorkspaceData},
 }
 
 // SchemaOwnership returns a defensive copy of the module's durable table

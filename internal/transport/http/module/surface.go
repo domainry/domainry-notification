@@ -57,7 +57,10 @@ func NewSurface(binding notificationsdk.Binding) (modulehttp.Surface, error) {
 		if !found {
 			return nil, fmt.Errorf("Notification Action %q has no HTTP handler", key)
 		}
-		s.mux.HandleFunc(route.Pattern(), handler)
+		exactKey := key
+		s.mux.HandleFunc(route.Pattern(), func(w http.ResponseWriter, r *http.Request) {
+			handler(w, r.WithContext(notificationapplication.WithExactAction(r.Context(), exactKey)))
+		})
 		delete(handlers, key)
 	}
 	if len(handlers) != 0 {

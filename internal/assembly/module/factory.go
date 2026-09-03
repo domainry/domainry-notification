@@ -96,7 +96,7 @@ func (f *Factory) openHosted(ctx context.Context, application notificationsdk.Ap
 			return nil, fmt.Errorf("apply Notification Module migrations: %w", err)
 		}
 	}
-	store, err := sqlstore.New(sqlstore.Config{Database: host.Database(), Dialect: host.Dialect(), WorkspaceScope: workspaceScopeAdapter{host.WorkspaceScope()}, QueueScopes: queueScopeAdapter{host.QueueScopes()}, Clock: host.Clock()})
+	store, err := sqlstore.New(sqlstore.Config{Database: host.Database(), Dialect: host.Dialect(), WorkspaceScope: workspaceScopeAdapter{host.WorkspaceScope()}, QueueScopes: queueScopeAdapter{host.QueueScopes()}, Clock: host.Clock(), WorkspaceID: notification.WorkspaceID(application.WorkspaceID)})
 	if err != nil {
 		return nil, err
 	}

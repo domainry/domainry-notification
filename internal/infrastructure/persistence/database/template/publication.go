@@ -20,11 +20,16 @@ var publicationRequestColumns = []string{
 	"id", "template_key", "snapshot_json", "candidate_hash", "draft_updated_at", "status", "scheduled_for", "requested_by", "requested_at",
 	"reviewed_by", "reviewed_at", "published_version", "failure", "lease_owner", "lease_expires_at", "fencing_token", "updated_at",
 }
+var publicationRequestInsertColumns = append(append([]string(nil), publicationRequestColumns...), "workspace_id")
 
 func (s *Store) ListPublicationRequests(ctx context.Context, templateKey string) ([]template.PublicationRequest, error) {
-	selectBuilder := query.NewSelectBuilder(s.Renderer, "_notification_template_publication_requests").Columns(publicationRequestColumns...).OrderBy(query.Descending("requested_at"))
+	predicates := []query.Predicate{}
 	if templateKey = strings.TrimSpace(templateKey); templateKey != "" {
-		selectBuilder.Where(query.Equal("template_key", templateKey))
+		predicates = append(predicates, query.Equal("template_key", templateKey))
+	}
+	selectBuilder := query.NewWorkspaceSelectBuilder(s.Renderer, "_notification_template_publication_requests", s.workspaceID.String()).Columns(publicationRequestColumns...).OrderBy(query.Descending("requested_at"))
+	if len(predicates) != 0 {
+		selectBuilder.Where(query.And(predicates...))
 	}
 	queryValue, args, err := selectBuilder.Build()
 	if err != nil {
@@ -68,8 +73,8 @@ func (s *Store) CreatePublicationRequest(ctx context.Context, request template.P
 		return err
 	}
 	defer tx.Rollback()
-	_, err = s.Insert(ctx, tx, "_notification_template_publication_locks", []string{"template_key", "request_id", "created_at"},
-		request.TemplateKey, request.ID, request.RequestedAt)
+	_, err = s.WorkspaceInsert(ctx, tx, s.workspaceID.String(), "_notification_template_publication_locks", []string{"template_key", "request_id", "created_at", "workspace_id"},
+		request.TemplateKey, request.ID, request.RequestedAt, s.workspaceID.String())
 	if err != nil {
 		_ = tx.Rollback()
 		open, inspectErr := s.HasOpenPublicationRequest(ctx, request.TemplateKey)
@@ -78,9 +83,9 @@ func (s *Store) CreatePublicationRequest(ctx context.Context, request template.P
 		}
 		return fmt.Errorf("acquire notification publication lock: %w", err)
 	}
-	_, err = s.Insert(ctx, tx, "_notification_template_publication_requests", publicationRequestColumns, request.ID, request.TemplateKey,
+	_, err = s.WorkspaceInsert(ctx, tx, s.workspaceID.String(), "_notification_template_publication_requests", publicationRequestInsertColumns, request.ID, request.TemplateKey,
 		string(snapshot), request.CandidateHash, request.DraftUpdatedAt, string(request.Status), request.ScheduledFor, request.RequestedBy, request.RequestedAt,
-		request.ReviewedBy, request.ReviewedAt, request.PublishedVersion, request.Failure, request.LeaseOwner, request.LeaseExpiresAt, request.FencingToken, request.UpdatedAt)
+		request.ReviewedBy, request.ReviewedAt, request.PublishedVersion, request.Failure, request.LeaseOwner, request.LeaseExpiresAt, request.FencingToken, request.UpdatedAt, s.workspaceID.String())
 	if err != nil {
 		return fmt.Errorf("insert notification publication request: %w", err)
 	}
@@ -100,11 +105,21 @@ func (s *Store) TransitionPublicationRequest(ctx context.Context, requestID stri
 		return template.PublicationRequest{}, err
 	}
 	defer tx.Rollback()
-	predicate := query.Predicate(query.And(query.Equal("id", requestID), query.Equal("status", string(expectedStatus))))
+	current, found, err := s.publicationRequestByID(ctx, tx, requestID)
+	if err != nil {
+		return template.PublicationRequest{}, err
+	}
+	if !found {
+		return template.PublicationRequest{}, template.ErrPublicationNotFound
+	}
+	if current.Status != expectedStatus {
+		return template.PublicationRequest{}, template.ErrPublicationConflict
+	}
+	predicate := query.And(query.Equal("id", requestID), query.Equal("status", string(expectedStatus)))
 	if transition.ExpectedLeaseOwner = strings.TrimSpace(transition.ExpectedLeaseOwner); transition.ExpectedLeaseOwner != "" && transition.ExpectedFencingToken > 0 {
 		predicate = query.And(predicate, query.Equal("lease_owner", transition.ExpectedLeaseOwner), query.Equal("fencing_token", transition.ExpectedFencingToken))
 	}
-	queryValue, args, err := query.NewUpdateBuilder(s.Renderer, "_notification_template_publication_requests").Set("status", string(transition.Status)).Set("scheduled_for", transition.ScheduledFor).Set("reviewed_by", transition.ReviewedBy).Set("reviewed_at", transition.ReviewedAt).Set("published_version", transition.PublishedVersion).Set("failure", transition.Failure).Set("lease_owner", "").Set("lease_expires_at", "").Set("updated_at", transition.UpdatedAt).Where(predicate).Build()
+	queryValue, args, err := query.NewWorkspaceUpdateBuilder(s.Renderer, "_notification_template_publication_requests", s.workspaceID.String()).Set("status", string(transition.Status)).Set("scheduled_for", transition.ScheduledFor).Set("reviewed_by", transition.ReviewedBy).Set("reviewed_at", transition.ReviewedAt).Set("published_version", transition.PublishedVersion).Set("failure", transition.Failure).Set("lease_owner", "").Set("lease_expires_at", "").Set("updated_at", transition.UpdatedAt).Where(predicate).Build()
 	if err != nil {
 		return template.PublicationRequest{}, err
 	}
@@ -120,7 +135,7 @@ func (s *Store) TransitionPublicationRequest(ctx context.Context, requestID stri
 		return template.PublicationRequest{}, template.ErrPublicationConflict
 	}
 	if !publicationStatusOpen(transition.Status) {
-		queryValue, args, err = query.NewDeleteBuilder(s.Renderer, "_notification_template_publication_locks").Where(query.Equal("request_id", requestID)).Build()
+		queryValue, args, err = query.NewWorkspaceDeleteBuilder(s.Renderer, "_notification_template_publication_locks", s.workspaceID.String()).Where(query.Equal("request_id", requestID)).Build()
 		if err != nil {
 			return template.PublicationRequest{}, err
 		}
@@ -146,7 +161,7 @@ func (s *Store) ListDuePublicationRequests(ctx context.Context, now, staleBefore
 		limit = 25
 	}
 	due := query.Or(query.And(query.Equal("status", "scheduled"), query.LessThanOrEqual("scheduled_for", strings.TrimSpace(now))), query.And(query.Equal("status", "publishing"), query.LessThanOrEqual("lease_expires_at", strings.TrimSpace(staleBefore))))
-	queryValue, args, err := query.NewSelectBuilder(s.Renderer, "_notification_template_publication_requests").Columns(publicationRequestColumns...).Where(due).OrderBy(query.Ascending("scheduled_for"), query.Ascending("requested_at")).Limit(limit).Build()
+	queryValue, args, err := query.NewWorkspaceSelectBuilder(s.Renderer, "_notification_template_publication_requests", s.workspaceID.String()).Columns(publicationRequestColumns...).Where(due).OrderBy(query.Ascending("scheduled_for"), query.Ascending("requested_at")).Limit(limit).Build()
 	if err != nil {
 		return nil, err
 	}
@@ -172,7 +187,7 @@ func (s *Store) ClaimPublicationRequest(ctx context.Context, requestID, owner, n
 		return template.PublicationRequest{}, false, fmt.Errorf("notification publication claim identity and lease are required")
 	}
 	due := query.Or(query.And(query.Equal("status", "scheduled"), query.LessThanOrEqual("scheduled_for", now)), query.And(query.Equal("status", "publishing"), query.LessThanOrEqual("lease_expires_at", now)))
-	queryValue, args, err := query.NewUpdateBuilder(s.Renderer, "_notification_template_publication_requests").Set("status", "publishing").Set("lease_owner", owner).Set("lease_expires_at", expiresAt).SetExpression("fencing_token", query.Add(query.Column("fencing_token"), query.Value(1))).Set("updated_at", now).Where(query.And(query.Equal("id", requestID), due)).Build()
+	queryValue, args, err := query.NewWorkspaceUpdateBuilder(s.Renderer, "_notification_template_publication_requests", s.workspaceID.String()).Set("status", "publishing").Set("lease_owner", owner).Set("lease_expires_at", expiresAt).SetExpression("fencing_token", query.Add(query.Column("fencing_token"), query.Value(1))).Set("updated_at", now).Where(query.And(query.Equal("id", requestID), due)).Build()
 	if err != nil {
 		return template.PublicationRequest{}, false, err
 	}
@@ -189,7 +204,9 @@ func (s *Store) ClaimPublicationRequest(ctx context.Context, requestID, owner, n
 
 func (s *Store) HasOpenPublicationRequest(ctx context.Context, templateKey string) (bool, error) {
 	var count int
-	queryValue, args, err := query.NewSelectBuilder(s.Renderer, "_notification_template_publication_locks").Projections(query.Project(query.CountAll())).Where(query.Equal("template_key", strings.TrimSpace(templateKey))).Build()
+	open := query.In("status", string(template.PublicationPending), string(template.PublicationScheduled), string(template.PublicationPublishing))
+	predicate := query.And(query.Equal("template_key", strings.TrimSpace(templateKey)), open)
+	queryValue, args, err := query.NewWorkspaceSelectBuilder(s.Renderer, "_notification_template_publication_requests", s.workspaceID.String()).Projections(query.Project(query.CountAll())).Where(predicate).Build()
 	if err != nil {
 		return false, err
 	}
@@ -198,7 +215,8 @@ func (s *Store) HasOpenPublicationRequest(ctx context.Context, templateKey strin
 }
 
 func (s *Store) publicationRequestByID(ctx context.Context, queryer sqlhost.Queryer, requestID string) (template.PublicationRequest, bool, error) {
-	queryValue, args, err := query.NewSelectBuilder(s.Renderer, "_notification_template_publication_requests").Columns(publicationRequestColumns...).Where(query.Equal("id", requestID)).Build()
+	predicate := query.Equal("id", requestID)
+	queryValue, args, err := query.NewWorkspaceSelectBuilder(s.Renderer, "_notification_template_publication_requests", s.workspaceID.String()).Columns(publicationRequestColumns...).Where(predicate).Build()
 	if err != nil {
 		return template.PublicationRequest{}, false, err
 	}

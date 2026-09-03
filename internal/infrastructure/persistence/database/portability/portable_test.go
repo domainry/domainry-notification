@@ -12,7 +12,7 @@ import (
 func TestPortableMigrationFiltersWorkspaceImportsOwnershipAndReconciles(t *testing.T) {
 	source := openPortableDatabase(t, "source")
 	applyPortableMigrations(t, source, mustSchemaMigrations(t, ""))
-	if _, err := source.Exec(`INSERT INTO _notification_templates (template_key, draft_json, published_json, published_version, status, updated_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, "welcome", nil, `{}`, 1, "active", "admin", "now", "now"); err != nil {
+	if _, err := source.Exec(`INSERT INTO _notification_templates (template_key, draft_json, published_json, published_version, status, updated_by, created_at, updated_at, workspace_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, "welcome", nil, `{}`, 1, "active", "admin", "now", "now", "workspace"); err != nil {
 		t.Fatal(err)
 	}
 	insertPortableEvent(t, source, "workspace", "event-one", "source-one", "worker")

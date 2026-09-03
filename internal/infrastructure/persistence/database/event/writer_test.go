@@ -68,7 +68,7 @@ func (*fakeQueueScopes) Workspaces(context.Context, sqlhost.Queryer, notificatio
 
 func TestInsertEventUsesCallerExecutorAndHostScopeAdapters(t *testing.T) {
 	database, scopes := &fakeDatabase{}, &fakeQueueScopes{}
-	store, err := sqlstore.New(sqlstore.Config{Database: database, Dialect: fakeDialect{}, WorkspaceScope: fakeWorkspaceScope{}, QueueScopes: scopes, Clock: storeClock{}})
+	store, err := sqlstore.New(sqlstore.Config{Database: database, Dialect: fakeDialect{}, WorkspaceScope: fakeWorkspaceScope{}, QueueScopes: scopes, Clock: storeClock{}, WorkspaceID: "workspace-1"})
 	if err != nil {
 		t.Fatal(err)
 	}

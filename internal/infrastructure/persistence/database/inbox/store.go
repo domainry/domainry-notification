@@ -15,12 +15,14 @@ type Config struct {
 	SQLStore       *base.SQLStore
 	WorkspaceScope WorkspaceScope
 	Clock          notification.Clock
+	WorkspaceID    notification.WorkspaceID
 }
 
 type Store struct {
 	*base.SQLStore
 	workspaceScope WorkspaceScope
 	clock          notification.Clock
+	workspaceID    notification.WorkspaceID
 }
 
 func New(config Config) *Store {
@@ -28,7 +30,15 @@ func New(config Config) *Store {
 		SQLStore:       config.SQLStore,
 		workspaceScope: config.WorkspaceScope,
 		clock:          config.Clock,
+		workspaceID:    config.WorkspaceID,
 	}
+}
+
+func (s *Store) requireWorkspace(workspaceID notification.WorkspaceID) error {
+	if workspaceID == "" || workspaceID != s.workspaceID {
+		return base.ErrExactPermissionDenied
+	}
+	return nil
 }
 
 type scanner interface{ Scan(...any) error }

@@ -221,7 +221,7 @@ func notificationOpenAPIOperation(route modulehttp.Route) (json.RawMessage, erro
 	if route.Action.Permission != nil {
 		authorization.Permission = route.Action.Permission.Key
 	}
-	if route.Action.Authorization.Strategy != actioncontract.AuthorizationExactRolePermission && route.Action.Authorization.Strategy != actioncontract.AuthorizationAuthenticatedPrincipal {
+	if route.Action.Authorization.Strategy != actioncontract.AuthorizationAuthenticated {
 		return nil, fmt.Errorf("Notification route %q has unsupported capability authorization strategy %q", pattern, route.Action.Authorization.Strategy)
 	}
 	extension := modulecapability.OperationExtension{

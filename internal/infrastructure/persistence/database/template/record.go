@@ -16,6 +16,8 @@ import (
 
 var templateRecordColumns = []string{"template_key", "draft_json", "published_json", "published_version", "status", "updated_by", "created_at", "updated_at"}
 var templateVersionColumns = []string{"template_key", "version", "payload_json", "content_hash", "published_by", "published_at"}
+var templateRecordInsertColumns = append(append([]string(nil), templateRecordColumns...), "workspace_id")
+var templateVersionInsertColumns = append(append([]string(nil), templateVersionColumns...), "workspace_id")
 
 func (s *Store) SyncPublished(ctx context.Context, templates []template.Template) error {
 	for _, value := range templates {
@@ -39,7 +41,7 @@ func (s *Store) seedPublishedTemplate(ctx context.Context, value template.Templa
 	}
 	defer tx.Rollback()
 	var exists int
-	lookup, args, err := query.NewSelectBuilder(s.Renderer, "_notification_templates").Projections(query.Project(query.CountAll())).Where(query.Equal("template_key", value.Key)).Build()
+	lookup, args, err := query.NewWorkspaceSelectBuilder(s.Renderer, "_notification_templates", s.workspaceID.String()).Projections(query.Project(query.CountAll())).Where(query.Equal("template_key", value.Key)).Build()
 	if err != nil {
 		return err
 	}
@@ -54,7 +56,7 @@ func (s *Store) seedPublishedTemplate(ctx context.Context, value template.Templa
 		return fmt.Errorf("encode notification template seed: %w", err)
 	}
 	now := notification.Timestamp(s.clock.Now())
-	_, err = s.Insert(ctx, tx, "_notification_templates", templateRecordColumns, value.Key, nil, string(raw), value.Version, "active", "manifest", now, now)
+	_, err = s.WorkspaceInsert(ctx, tx, s.workspaceID.String(), "_notification_templates", templateRecordInsertColumns, value.Key, nil, string(raw), value.Version, "active", "manifest", now, now, s.workspaceID.String())
 	if err != nil {
 		return fmt.Errorf("insert notification template seed: %w", err)
 	}
@@ -65,7 +67,8 @@ func (s *Store) seedPublishedTemplate(ctx context.Context, value template.Templa
 }
 
 func (s *Store) List(ctx context.Context) ([]template.Record, error) {
-	queryValue, args, err := query.NewSelectBuilder(s.Renderer, "_notification_templates").Columns(templateRecordColumns...).OrderBy(query.Ascending("template_key")).Build()
+	builder := query.NewWorkspaceSelectBuilder(s.Renderer, "_notification_templates", s.workspaceID.String()).Columns(templateRecordColumns...).OrderBy(query.Ascending("template_key"))
+	queryValue, args, err := builder.Build()
 	if err != nil {
 		return nil, err
 	}
@@ -86,7 +89,8 @@ func (s *Store) List(ctx context.Context) ([]template.Record, error) {
 }
 
 func (s *Store) PublishedRevision(ctx context.Context) (string, error) {
-	queryValue, args, err := query.NewSelectBuilder(s.Renderer, "_notification_templates").Projections(query.Project(query.CountAll()), query.Project(query.Max(query.Column("updated_at")))).Where(query.And(query.Equal("status", "active"), query.IsNotNull("published_json"))).Build()
+	predicate := query.And(query.Equal("status", "active"), query.IsNotNull("published_json"))
+	queryValue, args, err := query.NewWorkspaceSelectBuilder(s.Renderer, "_notification_templates", s.workspaceID.String()).Projections(query.Project(query.CountAll()), query.Project(query.Max(query.Column("updated_at")))).Where(predicate).Build()
 	if err != nil {
 		return "", err
 	}
@@ -103,20 +107,13 @@ func (s *Store) Get(ctx context.Context, key string) (template.Record, bool, err
 	if key == "" {
 		return template.Record{}, false, fmt.Errorf("notification template key is required")
 	}
-	queryValue, args, err := query.NewSelectBuilder(s.Renderer, "_notification_templates").Columns(templateRecordColumns...).Where(query.Equal("template_key", key)).Build()
-	if err != nil {
-		return template.Record{}, false, err
-	}
-	value, err := scanTemplateRecord(s.Database.QueryRowContext(ctx, queryValue, args...))
-	if errors.Is(err, sql.ErrNoRows) {
-		return template.Record{}, false, nil
-	}
-	return value, err == nil, err
+	return s.templateRecordByKey(ctx, s.Database, key)
 }
 
 func (s *Store) ListVersions(ctx context.Context, key string) ([]template.Version, error) {
 	key = strings.TrimSpace(key)
-	queryValue, args, err := query.NewSelectBuilder(s.Renderer, "_notification_template_versions").Columns(templateVersionColumns...).Where(query.Equal("template_key", key)).OrderBy(query.Descending("version")).Build()
+	predicates := []query.Predicate{query.Equal("template_key", key)}
+	queryValue, args, err := query.NewWorkspaceSelectBuilder(s.Renderer, "_notification_template_versions", s.workspaceID.String()).Columns(templateVersionColumns...).Where(query.And(predicates...)).OrderBy(query.Descending("version")).Build()
 	if err != nil {
 		return nil, err
 	}
@@ -137,7 +134,8 @@ func (s *Store) ListVersions(ctx context.Context, key string) ([]template.Versio
 }
 
 func (s *Store) GetVersion(ctx context.Context, key string, version int) (template.Version, bool, error) {
-	queryValue, args, err := query.NewSelectBuilder(s.Renderer, "_notification_template_versions").Columns(templateVersionColumns...).Where(query.And(query.Equal("template_key", strings.TrimSpace(key)), query.Equal("version", version))).Build()
+	predicates := []query.Predicate{query.Equal("template_key", strings.TrimSpace(key)), query.Equal("version", version)}
+	queryValue, args, err := query.NewWorkspaceSelectBuilder(s.Renderer, "_notification_template_versions", s.workspaceID.String()).Columns(templateVersionColumns...).Where(query.And(predicates...)).Build()
 	if err != nil {
 		return template.Version{}, false, err
 	}
@@ -157,38 +155,51 @@ func (s *Store) SaveDraft(ctx context.Context, value template.Template, expected
 	if err != nil {
 		return template.Record{}, fmt.Errorf("encode notification template draft: %w", err)
 	}
+	tx, err := s.Database.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelSerializable})
+	if err != nil {
+		return template.Record{}, err
+	}
+	defer tx.Rollback()
 	now := notification.Timestamp(s.clock.Now())
-	predicate := query.Predicate(query.Equal("template_key", value.Key))
-	if expectedUpdatedAt != "" {
-		predicate = query.And(predicate, query.Equal("updated_at", expectedUpdatedAt))
-	}
-	queryValue, args, err := query.NewUpdateBuilder(s.Renderer, "_notification_templates").Set("draft_json", string(raw)).Set("status", "active").Set("updated_by", actor).Set("updated_at", now).Where(predicate).Build()
+	current, found, err := s.templateRecordByKey(ctx, tx, value.Key)
 	if err != nil {
 		return template.Record{}, err
 	}
-	result, err := s.Database.ExecContext(ctx, queryValue, args...)
-	if err != nil {
-		return template.Record{}, fmt.Errorf("update notification template draft: %w", err)
-	}
-	count, err := result.RowsAffected()
-	if err != nil {
-		return template.Record{}, err
-	}
-	if count == 0 && expectedUpdatedAt != "" {
-		return template.Record{}, template.ErrRecordConflict
-	}
-	if count == 0 {
-		_, err = s.Insert(ctx, s.Database, "_notification_templates", templateRecordColumns, value.Key, string(raw), nil, 0, "active", actor, now, now)
+	if !found {
+		if expectedUpdatedAt != "" {
+			return template.Record{}, template.ErrRecordConflict
+		}
+		_, err = s.WorkspaceInsert(ctx, tx, s.workspaceID.String(), "_notification_templates", templateRecordInsertColumns, value.Key, string(raw), nil, 0, "active", actor, now, now, s.workspaceID.String())
 		if err != nil {
 			return template.Record{}, fmt.Errorf("insert notification template draft: %w", err)
 		}
+	} else {
+		if expectedUpdatedAt != "" && current.UpdatedAt != expectedUpdatedAt {
+			return template.Record{}, template.ErrRecordConflict
+		}
+		predicate := query.Equal("template_key", value.Key)
+		queryValue, args, buildErr := query.NewWorkspaceUpdateBuilder(s.Renderer, "_notification_templates", s.workspaceID.String()).Set("draft_json", string(raw)).Set("status", "active").Set("updated_by", actor).Set("updated_at", now).Where(predicate).Build()
+		if buildErr != nil {
+			return template.Record{}, buildErr
+		}
+		result, updateErr := tx.ExecContext(ctx, queryValue, args...)
+		if updateErr != nil {
+			return template.Record{}, fmt.Errorf("update notification template draft: %w", updateErr)
+		}
+		count, countErr := result.RowsAffected()
+		if countErr != nil || count != 1 {
+			return template.Record{}, template.ErrRecordConflict
+		}
 	}
-	stored, found, err := s.Get(ctx, value.Key)
+	stored, found, err := s.templateRecordByKey(ctx, tx, value.Key)
 	if err != nil {
 		return template.Record{}, err
 	}
 	if !found {
 		return template.Record{}, template.ErrRecordNotFound
+	}
+	if err := tx.Commit(); err != nil {
+		return template.Record{}, err
 	}
 	return stored, nil
 }
@@ -210,11 +221,18 @@ func (s *Store) Publish(ctx context.Context, value template.Template, expectedUp
 	}
 	defer tx.Rollback()
 	now := notification.Timestamp(s.clock.Now())
-	predicate := query.Predicate(query.Equal("template_key", value.Key))
-	if expectedUpdatedAt != "" {
-		predicate = query.And(predicate, query.Equal("updated_at", expectedUpdatedAt))
+	current, found, err := s.templateRecordByKey(ctx, tx, value.Key)
+	if err != nil {
+		return template.Record{}, err
 	}
-	queryValue, args, err := query.NewUpdateBuilder(s.Renderer, "_notification_templates").Set("draft_json", nil).Set("published_json", string(raw)).Set("published_version", value.Version).Set("status", "active").Set("updated_by", actor).Set("updated_at", now).Where(predicate).Build()
+	if !found {
+		return template.Record{}, template.ErrRecordNotFound
+	}
+	if expectedUpdatedAt != "" && current.UpdatedAt != expectedUpdatedAt {
+		return template.Record{}, template.ErrRecordConflict
+	}
+	predicate := query.Equal("template_key", value.Key)
+	queryValue, args, err := query.NewWorkspaceUpdateBuilder(s.Renderer, "_notification_templates", s.workspaceID.String()).Set("draft_json", nil).Set("published_json", string(raw)).Set("published_version", value.Version).Set("status", "active").Set("updated_by", actor).Set("updated_at", now).Where(predicate).Build()
 	if err != nil {
 		return template.Record{}, err
 	}
@@ -232,15 +250,15 @@ func (s *Store) Publish(ctx context.Context, value template.Template, expectedUp
 	if err := s.insertTemplateVersion(ctx, tx, value, actor, now); err != nil {
 		return template.Record{}, err
 	}
-	if err := tx.Commit(); err != nil {
-		return template.Record{}, err
-	}
-	stored, found, err := s.Get(ctx, value.Key)
+	stored, found, err := s.templateRecordByKey(ctx, tx, value.Key)
 	if err != nil {
 		return template.Record{}, err
 	}
 	if !found {
 		return template.Record{}, template.ErrRecordNotFound
+	}
+	if err := tx.Commit(); err != nil {
+		return template.Record{}, err
 	}
 	return stored, nil
 }
@@ -250,16 +268,28 @@ func (s *Store) Disable(ctx context.Context, key, expectedUpdatedAt, actor strin
 	if key == "" || actor == "" {
 		return template.Record{}, fmt.Errorf("notification template key and actor are required")
 	}
-	now := notification.Timestamp(s.clock.Now())
-	predicate := query.Predicate(query.Equal("template_key", key))
-	if expectedUpdatedAt != "" {
-		predicate = query.And(predicate, query.Equal("updated_at", expectedUpdatedAt))
-	}
-	queryValue, args, err := query.NewUpdateBuilder(s.Renderer, "_notification_templates").Set("status", "disabled").Set("updated_by", actor).Set("updated_at", now).Where(predicate).Build()
+	tx, err := s.Database.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelSerializable})
 	if err != nil {
 		return template.Record{}, err
 	}
-	result, err := s.Database.ExecContext(ctx, queryValue, args...)
+	defer tx.Rollback()
+	current, found, err := s.templateRecordByKey(ctx, tx, key)
+	if err != nil {
+		return template.Record{}, err
+	}
+	if !found {
+		return template.Record{}, template.ErrRecordNotFound
+	}
+	if expectedUpdatedAt != "" && current.UpdatedAt != expectedUpdatedAt {
+		return template.Record{}, template.ErrRecordConflict
+	}
+	now := notification.Timestamp(s.clock.Now())
+	predicate := query.Equal("template_key", key)
+	queryValue, args, err := query.NewWorkspaceUpdateBuilder(s.Renderer, "_notification_templates", s.workspaceID.String()).Set("status", "disabled").Set("updated_by", actor).Set("updated_at", now).Where(predicate).Build()
+	if err != nil {
+		return template.Record{}, err
+	}
+	result, err := tx.ExecContext(ctx, queryValue, args...)
 	if err != nil {
 		return template.Record{}, fmt.Errorf("disable notification template: %w", err)
 	}
@@ -268,15 +298,16 @@ func (s *Store) Disable(ctx context.Context, key, expectedUpdatedAt, actor strin
 		return template.Record{}, err
 	}
 	if count != 1 {
-		if _, found, getErr := s.Get(ctx, key); getErr != nil {
-			return template.Record{}, getErr
-		} else if !found {
-			return template.Record{}, template.ErrRecordNotFound
-		}
 		return template.Record{}, template.ErrRecordConflict
 	}
-	stored, _, err := s.Get(ctx, key)
-	return stored, err
+	stored, found, err := s.templateRecordByKey(ctx, tx, key)
+	if err != nil || !found {
+		return template.Record{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return template.Record{}, err
+	}
+	return stored, nil
 }
 
 func (s *Store) insertTemplateVersion(ctx context.Context, executor sqlhost.Executor, value template.Template, actor, publishedAt string) error {
@@ -284,13 +315,26 @@ func (s *Store) insertTemplateVersion(ctx context.Context, executor sqlhost.Exec
 	if err != nil {
 		return fmt.Errorf("encode notification template version: %w", err)
 	}
-	columns := []string{"id", "template_key", "version", "payload_json", "content_hash", "published_by", "published_at"}
-	_, err = s.Insert(ctx, executor, "_notification_template_versions", columns, fmt.Sprintf("%s:%d", value.Key, value.Version), value.Key,
-		value.Version, string(raw), value.ContentHash, actor, publishedAt)
+	columns := append([]string{"id"}, templateVersionInsertColumns...)
+	_, err = s.WorkspaceInsert(ctx, executor, s.workspaceID.String(), "_notification_template_versions", columns, fmt.Sprintf("%s:%d", value.Key, value.Version), value.Key,
+		value.Version, string(raw), value.ContentHash, actor, publishedAt, s.workspaceID.String())
 	if err != nil {
 		return fmt.Errorf("insert notification template version: %w", err)
 	}
 	return nil
+}
+
+func (s *Store) templateRecordByKey(ctx context.Context, queryer sqlhost.Queryer, key string) (template.Record, bool, error) {
+	predicate := query.Equal("template_key", strings.TrimSpace(key))
+	queryValue, args, err := query.NewWorkspaceSelectBuilder(s.Renderer, "_notification_templates", s.workspaceID.String()).Columns(templateRecordColumns...).Where(predicate).Build()
+	if err != nil {
+		return template.Record{}, false, err
+	}
+	value, err := scanTemplateRecord(queryer.QueryRowContext(ctx, queryValue, args...))
+	if errors.Is(err, sql.ErrNoRows) {
+		return template.Record{}, false, nil
+	}
+	return value, err == nil, err
 }
 
 func scanTemplateRecord(row scanner) (template.Record, error) {

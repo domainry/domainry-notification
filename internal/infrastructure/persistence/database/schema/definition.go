@@ -159,7 +159,16 @@ func ownedSchemaTables() []schemaTable {
 
 func portableSchemaTables() []schemaTable {
 	tables := make([]schemaTable, 0, len(baseSchemaTables)+len(retentionArchiveTables))
-	tables = append(tables, baseSchemaTables...)
+	for _, source := range baseSchemaTables {
+		table := schemaTable{name: source.name, columns: append([]schemaColumn(nil), source.columns...)}
+		switch table.name {
+		case "_notification_templates":
+			table.columns = append(table.columns, required("workspace_id", identifierColumn))
+		case "_notification_template_versions", "_notification_template_publication_requests", "_notification_template_publication_locks", "_notification_delivery_policies":
+			table.columns = append(table.columns, required("workspace_id", identifierColumn))
+		}
+		tables = append(tables, table)
+	}
 	tables = append(tables, retentionArchiveTables...)
 	return tables
 }

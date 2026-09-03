@@ -41,9 +41,9 @@ type notificationHTTPActionSpec struct {
 }
 
 // AuthorizationActions is Notification's single executable HTTP authorization
-// manifest. Management routes own one exact same-key Permission. Personal
-// Inbox routes are authenticated-principal Actions whose source-owned domain
-// service constrains every query and mutation to the resolved principal.
+// manifest. Every user route owns one exact same-key Permission. Identity must
+// pair it with canonical data_scope=all; repositories still enforce workspace
+// isolation on every durable read and write.
 func AuthorizationActions() ([]actioncontract.ActionDefinition, error) {
 	management := []notificationHTTPActionSpec{
 		{Key: ActionCapabilitiesRead, Pattern: "GET /notifications/capabilities", Label: "Read notification capabilities", Effect: actioncontract.EffectRead, Risk: actioncontract.RiskLow},
@@ -83,7 +83,7 @@ func AuthorizationActions() ([]actioncontract.ActionDefinition, error) {
 		{key: "portal_inbox", label: "Portal notification Inbox", prefix: "/portal"},
 	} {
 		for _, spec := range notificationInboxActionSpecs(surface.key, surface.prefix) {
-			definition, err := notificationHTTPAction(spec, false, "notification."+surface.key, surface.label, actioncontract.ExposurePublic)
+			definition, err := notificationHTTPAction(spec, true, "notification."+surface.key, surface.label, actioncontract.ExposurePublic)
 			if err != nil {
 				return nil, err
 			}
@@ -113,13 +113,13 @@ func notificationHTTPAction(spec notificationHTTPActionSpec, permission bool, ca
 		AuditClass: "notification_http", LifecycleStatus: actioncontract.LifecycleActive,
 	}
 	if permission {
-		definition.Authorization = actioncontract.Authorization{Strategy: actioncontract.AuthorizationExactRolePermission}
+		definition.Authorization = actioncontract.Authorization{Strategy: actioncontract.AuthorizationAuthenticated}
 		definition.Permission = &actioncontract.PermissionDefinition{
 			Key: spec.Key, Owner: NotificationAuthorizationOwner, ResourceKey: resourceKey, OperationKey: operationKey,
 			Label: spec.Label, Category: capabilityLabel, LifecycleStatus: actioncontract.LifecycleActive,
 		}
 	} else {
-		definition.Authorization = actioncontract.Authorization{Strategy: actioncontract.AuthorizationAuthenticatedPrincipal}
+		definition.Authorization = actioncontract.Authorization{Strategy: actioncontract.AuthorizationAuthenticated}
 	}
 	definition, err := actioncontract.NormalizeDefinition(definition)
 	if err != nil {
