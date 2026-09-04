@@ -445,6 +445,8 @@ func notificationResponseSchema(method, path string) map[string]any {
 			Versions []contract.NotificationTemplateVersion `json:"versions"`
 			Count    int                                    `json:"count"`
 		}{}), map[reflect.Type]bool{})
+	case strings.HasSuffix(path, "/publication-requests"):
+		return openAPISchemaFor(reflect.TypeOf(contract.NotificationPublicationRequest{}), map[reflect.Type]bool{})
 	case strings.Contains(path, "/templates/"):
 		return openAPISchemaFor(reflect.TypeOf(contract.NotificationTemplateRecord{}), map[reflect.Type]bool{})
 	case path == "/notification/policy":

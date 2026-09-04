@@ -237,7 +237,7 @@ func (s moduleTemplates) List(ctx context.Context, a notificationsdk.UserAuthori
 	}
 	values, err := s.b.templates.List(ctx)
 	if err != nil {
-		return nil, err
+		return nil, moduleError(err)
 	}
 	return convertSlice[contract.NotificationTemplateRecord](values)
 }
@@ -247,7 +247,7 @@ func (s moduleTemplates) Get(ctx context.Context, a notificationsdk.UserAuthorit
 	}
 	value, found, err := s.b.templates.Get(ctx, key)
 	if err != nil || !found {
-		return contract.NotificationTemplateRecord{}, found, err
+		return contract.NotificationTemplateRecord{}, found, moduleError(err)
 	}
 	result, err := convert[contract.NotificationTemplateRecord](value)
 	return result, found, err
@@ -258,7 +258,7 @@ func (s moduleTemplates) ListVersions(ctx context.Context, a notificationsdk.Use
 	}
 	values, err := s.b.templates.ListVersions(ctx, key)
 	if err != nil {
-		return nil, err
+		return nil, moduleError(err)
 	}
 	return convertSlice[contract.NotificationTemplateVersion](values)
 }
@@ -278,7 +278,7 @@ func (s moduleTemplates) SaveDraft(ctx context.Context, a notificationsdk.UserAu
 	}
 	value, err := s.b.templates.SaveDraft(ctx, key, source, expected, actor)
 	if err != nil {
-		return contract.NotificationTemplateRecord{}, err
+		return contract.NotificationTemplateRecord{}, moduleError(err)
 	}
 	return convert[contract.NotificationTemplateRecord](value)
 }
@@ -294,7 +294,7 @@ func (s moduleTemplates) RestoreVersionDraft(ctx context.Context, a notification
 	}
 	value, err := s.b.templates.RestoreVersionDraft(ctx, key, version, expected, actor)
 	if err != nil {
-		return contract.NotificationTemplateRecord{}, err
+		return contract.NotificationTemplateRecord{}, moduleError(err)
 	}
 	return convert[contract.NotificationTemplateRecord](value)
 }
@@ -310,7 +310,7 @@ func (s moduleTemplates) Disable(ctx context.Context, a notificationsdk.UserAuth
 	}
 	value, err := s.b.templates.Disable(ctx, key, expected, actor)
 	if err != nil {
-		return contract.NotificationTemplateRecord{}, err
+		return contract.NotificationTemplateRecord{}, moduleError(err)
 	}
 	return convert[contract.NotificationTemplateRecord](value)
 }
@@ -325,7 +325,7 @@ func (s moduleTemplates) Preview(ctx context.Context, a notificationsdk.UserAuth
 	}
 	value, err := s.b.templates.Preview(ctx, notification.WorkspaceID(p.WorkspaceID), key, locale, ids, variables)
 	if err != nil {
-		return contract.RenderedNotification{}, err
+		return contract.RenderedNotification{}, moduleError(err)
 	}
 	return convert[contract.RenderedNotification](value)
 }
@@ -344,7 +344,7 @@ func (s moduleTemplates) PreviewTemplate(ctx context.Context, a notificationsdk.
 	}
 	value, err := s.b.templates.PreviewTemplate(ctx, notification.WorkspaceID(p.WorkspaceID), source, locale, ids, variables)
 	if err != nil {
-		return contract.RenderedNotification{}, err
+		return contract.RenderedNotification{}, moduleError(err)
 	}
 	return convert[contract.RenderedNotification](value)
 }
@@ -354,7 +354,7 @@ func (s moduleTemplates) ListPublicationRequests(ctx context.Context, a notifica
 	}
 	values, err := s.b.publications.List(ctx, key)
 	if err != nil {
-		return nil, err
+		return nil, moduleError(err)
 	}
 	return convertSlice[contract.NotificationPublicationRequest](values)
 }
@@ -370,7 +370,7 @@ func (s moduleTemplates) RequestPublication(ctx context.Context, a notifications
 	}
 	value, err := s.b.publications.Request(ctx, key, scheduled, expected, actor)
 	if err != nil {
-		return contract.NotificationPublicationRequest{}, err
+		return contract.NotificationPublicationRequest{}, moduleError(err)
 	}
 	return convert[contract.NotificationPublicationRequest](value)
 }
@@ -386,7 +386,7 @@ func (s moduleTemplates) ApprovePublication(ctx context.Context, a notifications
 	}
 	value, err := s.b.publications.Approve(ctx, id, actor)
 	if err != nil {
-		return contract.NotificationPublicationRequest{}, err
+		return contract.NotificationPublicationRequest{}, moduleError(err)
 	}
 	return convert[contract.NotificationPublicationRequest](value)
 }
@@ -402,7 +402,7 @@ func (s moduleTemplates) RejectPublication(ctx context.Context, a notificationsd
 	}
 	value, err := s.b.publications.Reject(ctx, id, actor, reason)
 	if err != nil {
-		return contract.NotificationPublicationRequest{}, err
+		return contract.NotificationPublicationRequest{}, moduleError(err)
 	}
 	return convert[contract.NotificationPublicationRequest](value)
 }
@@ -418,7 +418,7 @@ func (s moduleTemplates) CancelPublication(ctx context.Context, a notificationsd
 	}
 	value, err := s.b.publications.Cancel(ctx, id, actor)
 	if err != nil {
-		return contract.NotificationPublicationRequest{}, err
+		return contract.NotificationPublicationRequest{}, moduleError(err)
 	}
 	return convert[contract.NotificationPublicationRequest](value)
 }
@@ -431,7 +431,7 @@ func (s moduleDelivery) GetPolicy(ctx context.Context, a notificationsdk.UserAut
 	}
 	value, err := s.b.policy.GetPolicy(ctx)
 	if err != nil {
-		return contract.NotificationDeliveryPolicy{}, err
+		return contract.NotificationDeliveryPolicy{}, moduleError(err)
 	}
 	return convert[contract.NotificationDeliveryPolicy](value)
 }
@@ -451,7 +451,7 @@ func (s moduleDelivery) SavePolicy(ctx context.Context, a notificationsdk.UserAu
 	}
 	value, err := s.b.policy.SavePolicy(ctx, source, p.UserID)
 	if err != nil {
-		return contract.NotificationDeliveryPolicy{}, err
+		return contract.NotificationDeliveryPolicy{}, moduleError(err)
 	}
 	return convert[contract.NotificationDeliveryPolicy](value)
 }
@@ -462,7 +462,7 @@ func (s moduleDelivery) ListRecipientPreferences(ctx context.Context, a notifica
 	}
 	values, err := s.b.policy.ListRecipientPreferences(ctx, notification.WorkspaceID(p.WorkspaceID))
 	if err != nil {
-		return nil, err
+		return nil, moduleError(err)
 	}
 	return convertSlice[contract.NotificationRecipientPreference](values)
 }
@@ -485,7 +485,7 @@ func (s moduleDelivery) SaveRecipientPreference(ctx context.Context, a notificat
 	}
 	stored, err := s.b.policy.SaveRecipientPreference(ctx, notification.WorkspaceID(p.WorkspaceID), source, p.UserID)
 	if err != nil {
-		return contract.NotificationRecipientPreference{}, err
+		return contract.NotificationRecipientPreference{}, moduleError(err)
 	}
 	return convert[contract.NotificationRecipientPreference](stored)
 }
@@ -515,7 +515,7 @@ func (s moduleAdministration) InboxGovernanceMetrics(ctx context.Context, a noti
 	}
 	value, err := s.b.mailbox.GovernanceMetrics(ctx, notification.WorkspaceID(p.WorkspaceID), since)
 	if err != nil {
-		return contract.NotificationInboxGovernanceMetrics{}, err
+		return contract.NotificationInboxGovernanceMetrics{}, moduleError(err)
 	}
 	return convert[contract.NotificationInboxGovernanceMetrics](value)
 }
