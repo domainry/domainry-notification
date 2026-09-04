@@ -36,7 +36,3 @@ func NewUserID(value string) (UserID, error) {
 }
 
 func (id UserID) String() string { return string(id) }
-
-// Surface identifies the product surface in which an inbox item is shown.
-// Surface policy and authorization remain host responsibilities.
-type Surface string

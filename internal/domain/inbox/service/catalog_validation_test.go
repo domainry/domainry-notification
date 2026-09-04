@@ -10,8 +10,7 @@ import (
 
 func validEventType() inbox.EventType {
 	return inbox.EventType{
-		Key: "workflow.task.opened", Source: "workflow", Category: "approval", DefaultSeverity: "info",
-		Surfaces: []notification.Surface{"business_workspace"}, MandatoryInApp: true,
+		Key: "workflow.task.opened", Source: "workflow", Category: "approval", DefaultSeverity: "info", MandatoryInApp: true,
 		TemplateKey: "workflow.task.opened.in_app", DefaultLocale: "en-US", Version: 1, Status: "published",
 		Variables: []template.Variable{{Key: "task_title", Type: "text", Required: true}},
 		Locales:   map[string]inbox.Content{"en-US": {Title: "Approval", Body: "Review {{task_title}}"}},

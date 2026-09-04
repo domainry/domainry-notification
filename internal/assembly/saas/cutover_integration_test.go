@@ -47,8 +47,8 @@ func (h *cutoverModuleHost) Migrations() modulehost.MigrationRegistrar { return 
 func TestModuleToSaaSCutoverPreservesStateAndMovesTheOnlyWriter(t *testing.T) {
 	application := notificationsdk.ApplicationRef{TenantID: "tenant", WorkspaceID: "workspace", ApplicationKey: "runtime"}
 	catalog := modulehost.Catalog{
-		DefaultLocale: "en", Surfaces: []string{"business_workspace"}, TemplateCapabilities: []contract.NotificationTemplateCapability{{Channel: "in_app"}},
-		EventTypes: []contract.NotificationEventType{{Key: "report.completed", Source: "report", Category: "report", DefaultSeverity: "info", Surfaces: []string{"business_workspace"}, MandatoryInApp: true, TemplateKey: "report.completed", DefaultLocale: "en", Locales: map[string]contract.NotificationInboxEventTypeContent{"en": {Title: "Report ready", Body: "The report is ready."}}, Version: 1, Status: "published"}},
+		DefaultLocale: "en", TemplateCapabilities: []contract.NotificationTemplateCapability{{Channel: "in_app"}},
+		EventTypes: []contract.NotificationEventType{{Key: "report.completed", Source: "report", Category: "report", DefaultSeverity: "info", MandatoryInApp: true, TemplateKey: "report.completed", DefaultLocale: "en", Locales: map[string]contract.NotificationInboxEventTypeContent{"en": {Title: "Report ready", Body: "The report is ready."}}, Version: 1, Status: "published"}},
 	}
 	sourceDB, err := sql.Open("sqlite", "file:"+t.Name()+"-module?mode=memory&cache=shared")
 	if err != nil {
@@ -58,14 +58,14 @@ func TestModuleToSaaSCutoverPreservesStateAndMovesTheOnlyWriter(t *testing.T) {
 	t.Cleanup(func() { _ = sourceDB.Close() })
 	sourceDialect, _ := ormdialect.ParseRenderer("sqlite", "", "")
 	sourceHost := &cutoverModuleHost{
-		saasApplicationHost: &saasApplicationHost{application: application, database: sourceDB, dialect: sourceDialect, identity: applicationIdentityStub{}, catalog: catalog, clock: wallClock{}, workerID: "module-worker", notifier: discardWorkNotifier{}, directory: identityRecipientDirectory{application: application, directory: directoryStub{}}, audiences: snapshotOnlyAudienceResolver{}, gateway: applicationGatewayStub{}},
+		saasApplicationHost: &saasApplicationHost{application: application, database: sourceDB, dialect: sourceDialect, identity: applicationIdentityStub{}, catalog: catalog, clock: wallClock{}, workerID: "module-worker", notifier: discardWorkNotifier{}, projection: identityRecipientResolver{application: application, projection: projectionStub{}}, audiences: snapshotOnlyAudienceResolver{}, gateway: applicationGatewayStub{}},
 		migrations:          &cutoverMigrationRegistrar{database: sourceDB},
 	}
 	source, err := module.NewFactory(module.Options{}).OpenModule(t.Context(), application, sourceHost)
 	if err != nil {
 		t.Fatal(err)
 	}
-	intent := contract.NotificationIntent{ID: "event-one", WorkspaceID: "workspace", SourceEventID: "report:one", EventType: "report.completed", Surface: "business_workspace", RecipientUserIDs: []string{"user"}, OccurredAt: "2026-08-29T03:00:00Z", SubjectType: "report", SubjectID: "one", SubjectVersion: "1"}
+	intent := contract.NotificationIntent{ID: "event-one", WorkspaceID: "workspace", SourceEventID: "report:one", EventType: "report.completed", RecipientUserIDs: []string{"user"}, OccurredAt: "2026-08-29T03:00:00Z", SubjectType: "report", SubjectID: "one", SubjectVersion: "1"}
 	sourceEvent, created, err := source.Publisher().PublishIntent(t.Context(), intent)
 	if err != nil || !created {
 		t.Fatalf("source event=%+v created=%v err=%v", sourceEvent, created, err)

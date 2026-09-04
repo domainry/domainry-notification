@@ -57,9 +57,9 @@ func (a workNotifierAdapter) Notify(ctx context.Context, work notification.Work)
 	}
 }
 
-type recipientDirectoryAdapter struct{ delegate modulehost.RecipientDirectory }
+type recipientResolverAdapter struct{ delegate modulehost.RecipientResolver }
 
-func (a recipientDirectoryAdapter) FindRecipient(ctx context.Context, workspaceID notification.WorkspaceID, userID notification.UserID) (notification.Recipient, bool, error) {
+func (a recipientResolverAdapter) FindRecipient(ctx context.Context, workspaceID notification.WorkspaceID, userID notification.UserID) (notification.Recipient, bool, error) {
 	if a.delegate == nil {
 		return notification.Recipient{}, false, nil
 	}
@@ -67,7 +67,7 @@ func (a recipientDirectoryAdapter) FindRecipient(ctx context.Context, workspaceI
 	return notification.Recipient{ID: userID, Email: value.Email, Locale: value.Locale, Timezone: value.Timezone}, found, err
 }
 
-type recipientLocaleAdapter struct{ delegate modulehost.RecipientDirectory }
+type recipientLocaleAdapter struct{ delegate modulehost.RecipientResolver }
 
 func (a recipientLocaleAdapter) RecipientLocale(ctx context.Context, workspaceID notification.WorkspaceID, userID notification.UserID) (string, error) {
 	value, found, err := a.delegate.FindRecipient(ctx, workspaceID.String(), userID.String())
@@ -124,7 +124,7 @@ var _ sqlstore.WorkspaceScope = workspaceScopeAdapter{}
 var _ sqlstore.QueueScopeIndex = queueScopeAdapter{}
 var _ inbox.WorkNotifier = workNotifierAdapter{}
 var _ apptemplate.PublicationWorkNotifier = workNotifierAdapter{}
-var _ template.RecipientDirectory = recipientDirectoryAdapter{}
+var _ template.RecipientResolver = recipientResolverAdapter{}
 var _ appinbox.RecipientLocaleResolver = recipientLocaleAdapter{}
 var _ appinbox.AudienceResolver = audienceAdapter{}
 var _ delivery.Dispatcher = deliveryGatewayAdapter{}

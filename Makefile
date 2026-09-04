@@ -1,4 +1,4 @@
-.PHONY: fmt-check test vet boundary architecture check
+.PHONY: fmt-check test integration integration-race vet boundary architecture check
 
 fmt-check:
 	@files="$$(find . -name '*.go' -not -path './.git/*' -print | xargs gofmt -l)"; \
@@ -9,6 +9,12 @@ fmt-check:
 
 test:
 	go test ./...
+
+integration:
+	go test -count=1 ./internal/assembly/module ./internal/assembly/saas ./internal/transport/http/saas
+
+integration-race:
+	go test -race -count=1 ./internal/assembly/module ./internal/assembly/saas ./internal/transport/http/saas
 
 vet:
 	go vet ./...

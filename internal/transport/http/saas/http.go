@@ -71,13 +71,13 @@ func (h *Handler) ServeHTTP(response http.ResponseWriter, request *http.Request)
 		return
 	}
 	switch request.URL.Path {
-	case "/v1/descriptor":
+	case "/notification/v1/descriptor":
 		if request.Method != http.MethodGet {
 			writeHTTPError(response, &notificationsdk.Error{StatusCode: http.StatusMethodNotAllowed, Code: "notification.method_not_allowed"})
 			return
 		}
 		writeJSON(response, http.StatusOK, notificationsdk.Descriptor{ProtocolVersion: notificationsdk.CurrentProtocolVersion, Mode: notificationsdk.DeploymentModeSaaS, Audience: application.ApplicationKey, Capabilities: []string{"publication", "inbox", "templates", "delivery", "administration"}})
-	case "/v1/events:publish":
+	case "/notification/v1/events:publish":
 		if request.Method != http.MethodPost {
 			writeHTTPError(response, &notificationsdk.Error{StatusCode: http.StatusMethodNotAllowed, Code: "notification.method_not_allowed"})
 			return
@@ -100,7 +100,7 @@ func (h *Handler) ServeHTTP(response http.ResponseWriter, request *http.Request)
 			Event   contract.NotificationEvent `json:"event"`
 			Created bool                       `json:"created"`
 		}{event, created})
-	case "/v1/system/templates:sync-published", "/v1/system/templates:list-published":
+	case "/notification/v1/system/templates:sync-published", "/notification/v1/system/templates:list-published":
 		if request.Method != http.MethodPost {
 			writeHTTPError(response, &notificationsdk.Error{StatusCode: http.StatusMethodNotAllowed, Code: "notification.method_not_allowed"})
 			return
@@ -110,7 +110,7 @@ func (h *Handler) ServeHTTP(response http.ResponseWriter, request *http.Request)
 			writeHTTPError(response, &notificationsdk.Error{StatusCode: http.StatusNotImplemented, Code: "notification.system_templates_unsupported"})
 			return
 		}
-		if request.URL.Path == "/v1/system/templates:sync-published" {
+		if request.URL.Path == "/notification/v1/system/templates:sync-published" {
 			var input struct {
 				Templates []contract.NotificationTemplate `json:"templates"`
 			}
@@ -131,7 +131,7 @@ func (h *Handler) ServeHTTP(response http.ResponseWriter, request *http.Request)
 			return
 		}
 		writeJSON(response, http.StatusOK, records)
-	case "/v1/system/subjects:preview", "/v1/system/subjects:export", "/v1/system/subjects:erase":
+	case "/notification/v1/system/subjects:preview", "/notification/v1/system/subjects:export", "/notification/v1/system/subjects:erase":
 		if request.Method != http.MethodPost {
 			writeHTTPError(response, &notificationsdk.Error{StatusCode: http.StatusMethodNotAllowed, Code: "notification.method_not_allowed"})
 			return
@@ -155,9 +155,9 @@ func (h *Handler) ServeHTTP(response http.ResponseWriter, request *http.Request)
 			return
 		}
 		var output json.RawMessage
-		if request.URL.Path == "/v1/system/subjects:preview" {
+		if request.URL.Path == "/notification/v1/system/subjects:preview" {
 			output, err = systemBinding.SystemSubjects().PreviewSubject(request.Context(), input.WorkspaceID, input.SubjectID)
-		} else if request.URL.Path == "/v1/system/subjects:export" {
+		} else if request.URL.Path == "/notification/v1/system/subjects:export" {
 			output, err = systemBinding.SystemSubjects().ExportSubject(request.Context(), input.WorkspaceID, input.SubjectID)
 		} else {
 			output, err = systemBinding.SystemSubjects().EraseSubject(request.Context(), input.WorkspaceID, input.SubjectID, input.LegalHolds)
@@ -167,7 +167,7 @@ func (h *Handler) ServeHTTP(response http.ResponseWriter, request *http.Request)
 			return
 		}
 		writeJSON(response, http.StatusOK, output)
-	case "/v1/system/retention:preview", "/v1/system/retention:process-batch":
+	case "/notification/v1/system/retention:preview", "/notification/v1/system/retention:process-batch":
 		if request.Method != http.MethodPost {
 			writeHTTPError(response, &notificationsdk.Error{StatusCode: http.StatusMethodNotAllowed, Code: "notification.method_not_allowed"})
 			return
@@ -177,7 +177,7 @@ func (h *Handler) ServeHTTP(response http.ResponseWriter, request *http.Request)
 			writeHTTPError(response, &notificationsdk.Error{StatusCode: http.StatusNotImplemented, Code: "notification.system_retention_unsupported"})
 			return
 		}
-		if request.URL.Path == "/v1/system/retention:preview" {
+		if request.URL.Path == "/notification/v1/system/retention:preview" {
 			var input contract.NotificationRetentionPreviewRequest
 			if err := decodeJSON(request.Body, &input); err != nil {
 				writeHTTPError(response, err)
@@ -210,7 +210,7 @@ func (h *Handler) ServeHTTP(response http.ResponseWriter, request *http.Request)
 			return
 		}
 		writeJSON(response, http.StatusOK, output)
-	case "/v1/system/migration:status", "/v1/system/migration:freeze", "/v1/system/migration:export", "/v1/system/migration:import", "/v1/system/migration:activate", "/v1/system/migration:rollback":
+	case "/notification/v1/system/migration:status", "/notification/v1/system/migration:freeze", "/notification/v1/system/migration:export", "/notification/v1/system/migration:import", "/notification/v1/system/migration:activate", "/notification/v1/system/migration:rollback":
 		if request.Method != http.MethodPost {
 			writeHTTPError(response, &notificationsdk.Error{StatusCode: http.StatusMethodNotAllowed, Code: "notification.method_not_allowed"})
 			return
@@ -220,7 +220,7 @@ func (h *Handler) ServeHTTP(response http.ResponseWriter, request *http.Request)
 			writeHTTPError(response, &notificationsdk.Error{StatusCode: http.StatusNotImplemented, Code: "notification.system_migration_unsupported"})
 			return
 		}
-		if request.URL.Path == "/v1/system/migration:export" {
+		if request.URL.Path == "/notification/v1/system/migration:export" {
 			output, err := migrationBinding.SystemMigration().Export(request.Context())
 			if err != nil {
 				writeHTTPError(response, err)
@@ -229,7 +229,7 @@ func (h *Handler) ServeHTTP(response http.ResponseWriter, request *http.Request)
 			writeJSON(response, http.StatusOK, output)
 			return
 		}
-		if request.URL.Path == "/v1/system/migration:status" {
+		if request.URL.Path == "/notification/v1/system/migration:status" {
 			output, err := migrationBinding.SystemMigration().Status(request.Context())
 			if err != nil {
 				writeHTTPError(response, err)
@@ -238,16 +238,16 @@ func (h *Handler) ServeHTTP(response http.ResponseWriter, request *http.Request)
 			writeJSON(response, http.StatusOK, output)
 			return
 		}
-		if request.URL.Path == "/v1/system/migration:freeze" || request.URL.Path == "/v1/system/migration:activate" || request.URL.Path == "/v1/system/migration:rollback" {
+		if request.URL.Path == "/notification/v1/system/migration:freeze" || request.URL.Path == "/notification/v1/system/migration:activate" || request.URL.Path == "/notification/v1/system/migration:rollback" {
 			var command contract.NotificationMigrationCommand
 			if err := decodeJSON(request.Body, &command); err != nil {
 				writeHTTPError(response, err)
 				return
 			}
 			var output contract.NotificationMigrationStatus
-			if request.URL.Path == "/v1/system/migration:freeze" {
+			if request.URL.Path == "/notification/v1/system/migration:freeze" {
 				output, err = migrationBinding.SystemMigration().Freeze(request.Context(), command)
-			} else if request.URL.Path == "/v1/system/migration:activate" {
+			} else if request.URL.Path == "/notification/v1/system/migration:activate" {
 				output, err = migrationBinding.SystemMigration().Activate(request.Context(), command)
 			} else {
 				output, err = migrationBinding.SystemMigration().Rollback(request.Context(), command)

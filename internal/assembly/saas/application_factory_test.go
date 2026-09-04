@@ -6,7 +6,6 @@ import (
 	"errors"
 	"io"
 	"net/http"
-	"net/http/httptest"
 	"reflect"
 	"testing"
 
@@ -32,7 +31,7 @@ type loseFirstPublicationResponseTransport struct {
 
 func (t *loseFirstPublicationResponseTransport) RoundTrip(request *http.Request) (*http.Response, error) {
 	response, err := t.base.RoundTrip(request)
-	if err == nil && request.URL.Path == "/v1/events:publish" && !t.lost {
+	if err == nil && request.URL.Path == "/notification/v1/events:publish" && !t.lost {
 		t.lost = true
 		_, _ = io.Copy(io.Discard, response.Body)
 		_ = response.Body.Close()
@@ -57,7 +56,7 @@ func (applicationIdentityStub) Authorization() identitysdk.Authorization {
 func (applicationIdentityStub) Principals() identitysdk.PrincipalResolver {
 	return applicationPrincipalResolverStub{}
 }
-func (applicationIdentityStub) Directory() identitysdk.Directory { return directoryStub{} }
+func (applicationIdentityStub) Projection() identitysdk.Projection { return projectionStub{} }
 
 func (applicationPrincipalResolverStub) Resolve(_ context.Context, request identitysdk.PrincipalResolutionRequest) (identitysdk.PrincipalResolution, error) {
 	bundle := identitysdk.AccessBundle{FunctionGrants: []identitysdk.FunctionGrant{{Resource: "*", Action: "*", Effect: identitysdk.EffectAllow}}}
@@ -93,8 +92,8 @@ func TestSQLApplicationFactoryOpensSharedSaaSDomainApplication(t *testing.T) {
 	factory, err := NewSQLApplicationFactory(SQLApplicationFactoryOptions{
 		Persistence: persistence,
 		Catalog: modulehost.Catalog{
-			DefaultLocale: "en", Surfaces: []string{"business_workspace"}, TemplateCapabilities: []contract.NotificationTemplateCapability{{Channel: "in_app"}},
-			EventTypes: []contract.NotificationEventType{{Key: "report.completed", Source: "report", Category: "report", DefaultSeverity: "info", Surfaces: []string{"business_workspace"}, MandatoryInApp: true, TemplateKey: "report.completed", DefaultLocale: "en", Locales: map[string]contract.NotificationInboxEventTypeContent{"en": {Title: "Report ready", Body: "The report is ready."}}, Version: 1, Status: "published"}},
+			DefaultLocale: "en", TemplateCapabilities: []contract.NotificationTemplateCapability{{Channel: "in_app"}},
+			EventTypes: []contract.NotificationEventType{{Key: "report.completed", Source: "report", Category: "report", DefaultSeverity: "info", MandatoryInApp: true, TemplateKey: "report.completed", DefaultLocale: "en", Locales: map[string]contract.NotificationInboxEventTypeContent{"en": {Title: "Report ready", Body: "The report is ready."}}, Version: 1, Status: "published"}},
 		},
 		WorkerID:        "notification-test",
 		DeliveryGateway: applicationGatewayStub{},
@@ -113,7 +112,7 @@ func TestSQLApplicationFactoryOpensSharedSaaSDomainApplication(t *testing.T) {
 	if workers, local := binding.LocalWorkers(); !local || workers == nil {
 		t.Fatal("server-owned workers are unavailable")
 	}
-	intent := contract.NotificationIntent{ID: "event", WorkspaceID: "another-workspace", SourceEventID: "source", EventType: "report.completed", Surface: "business_workspace", RecipientUserIDs: []string{"user"}, OccurredAt: "2026-08-28T00:00:00.000000000Z", SubjectType: "report", SubjectID: "report", SubjectVersion: "one"}
+	intent := contract.NotificationIntent{ID: "event", WorkspaceID: "another-workspace", SourceEventID: "source", EventType: "report.completed", RecipientUserIDs: []string{"user"}, OccurredAt: "2026-08-28T00:00:00.000000000Z", SubjectType: "report", SubjectID: "report", SubjectVersion: "one"}
 	if _, _, err := binding.Publisher().PublishIntent(t.Context(), intent); err == nil {
 		t.Fatal("cross-workspace publication was accepted")
 	}
@@ -159,8 +158,8 @@ func TestRemotePublicationReconcilesResponseLossWithoutDuplicateIngest(t *testin
 	factory, err := NewSQLApplicationFactory(SQLApplicationFactoryOptions{
 		Persistence: persistence,
 		Catalog: modulehost.Catalog{
-			DefaultLocale: "en", Surfaces: []string{"business_workspace"},
-			EventTypes: []contract.NotificationEventType{{Key: "report.completed", Source: "report", Category: "report", DefaultSeverity: "info", Surfaces: []string{"business_workspace"}, MandatoryInApp: true, TemplateKey: "report.completed", DefaultLocale: "en", Locales: map[string]contract.NotificationInboxEventTypeContent{"en": {Title: "Report ready", Body: "Ready"}}, Version: 1, Status: "published"}},
+			DefaultLocale: "en",
+			EventTypes:    []contract.NotificationEventType{{Key: "report.completed", Source: "report", Category: "report", DefaultSeverity: "info", MandatoryInApp: true, TemplateKey: "report.completed", DefaultLocale: "en", Locales: map[string]contract.NotificationInboxEventTypeContent{"en": {Title: "Report ready", Body: "Ready"}}, Version: 1, Status: "published"}},
 		},
 		WorkerID: "notification-reconciliation-test", DeliveryGateway: applicationGatewayStub{},
 	})
@@ -180,17 +179,16 @@ func TestRemotePublicationReconcilesResponseLossWithoutDuplicateIngest(t *testin
 	if err != nil {
 		t.Fatal(err)
 	}
-	server := httptest.NewServer(handler)
-	t.Cleanup(server.Close)
-	transport := &loseFirstPublicationResponseTransport{base: http.DefaultTransport}
-	remoteBinding, err := NewRemoteFactory(notificationremote.NewFactory(notificationremote.Config{BaseURL: server.URL, ServiceCredential: "service", CapabilityContractSHA256: capabilitySummary.Identity.ContractSHA256, HTTPClient: &http.Client{Transport: transport}})).Open(t.Context(), application)
+	handlerTransport := &inMemoryHandlerTransport{handler: handler}
+	transport := &loseFirstPublicationResponseTransport{base: handlerTransport}
+	remoteBinding, err := NewRemoteFactory(notificationremote.NewFactory(notificationremote.Config{BaseURL: "http://notification.test", ServiceCredential: "service", CapabilityContractSHA256: capabilitySummary.Identity.ContractSHA256, HTTPClient: &http.Client{Transport: transport}})).Open(t.Context(), application)
 	if err != nil {
 		t.Fatal(err)
 	}
 	capabilitycontracttest.VerifyBinding(t, remoteBinding)
 	provider, ok := remoteBinding.(modulehttp.Provider)
-	if !ok || len(provider.HTTPSurfaces()) != 1 || len(provider.HTTPSurfaces()[0].Routes()) != 61 {
-		t.Fatalf("SaaS Notification HTTP surfaces=%v", provider)
+	if !ok || len(provider.HTTPAdapters()) != 1 || len(provider.HTTPAdapters()[0].Routes()) != 41 {
+		t.Fatalf("SaaS Notification HTTP adapters=%v", provider)
 	}
 	actionProvider, ok := remoteBinding.(actioncontract.Provider)
 	if !ok {
@@ -207,12 +205,12 @@ func TestRemotePublicationReconcilesResponseLossWithoutDuplicateIngest(t *testin
 	if !reflect.DeepEqual(providedActions, canonicalActions) {
 		t.Fatal("SaaS Notification binding drifted from the source-owned Action manifest")
 	}
-	for index, route := range provider.HTTPSurfaces()[0].Routes() {
+	for index, route := range provider.HTTPAdapters()[0].Routes() {
 		if !reflect.DeepEqual(route.Action, canonicalActions[index]) {
 			t.Fatalf("SaaS route %d drifted from the source-owned Action manifest", index)
 		}
 	}
-	intent := contract.NotificationIntent{ID: "event", WorkspaceID: "workspace", SourceEventID: "source", EventType: "report.completed", Surface: "business_workspace", RecipientUserIDs: []string{"user"}, OccurredAt: "2026-08-29T00:00:00Z", SubjectType: "report", SubjectID: "report", SubjectVersion: "one"}
+	intent := contract.NotificationIntent{ID: "event", WorkspaceID: "workspace", SourceEventID: "source", EventType: "report.completed", RecipientUserIDs: []string{"user"}, OccurredAt: "2026-08-29T00:00:00Z", SubjectType: "report", SubjectID: "report", SubjectVersion: "one"}
 	event, created, err := remoteBinding.Publisher().PublishIntent(t.Context(), intent)
 	if err != nil || created || event.ID == "" || !transport.lost {
 		t.Fatalf("event=%+v created=%v response_lost=%v err=%v", event, created, transport.lost, err)

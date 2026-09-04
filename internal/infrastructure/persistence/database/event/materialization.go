@@ -17,13 +17,13 @@ import (
 var _ inbox.EventStore = (*Store)(nil)
 
 var inboxItemColumns = []string{
-	"id", "workspace_id", "recipient_user_id", "surface", "event_id", "event_type", "source", "category", "severity",
+	"id", "workspace_id", "recipient_user_id", "event_id", "event_type", "source", "category", "severity",
 	"title", "body", "search_text", "payload_json", "subject_type", "subject_id", "action_state", "alert_state", "group_key",
 	"occurrence_count", "first_occurred_at", "last_occurred_at", "read_at", "archived_at", "expires_at", "created_at", "updated_at",
 }
 
 var alertGroupColumns = []string{
-	"workspace_id", "recipient_user_id", "surface", "group_key", "state", "occurrence_count", "first_occurred_at",
+	"workspace_id", "recipient_user_id", "group_key", "state", "occurrence_count", "first_occurred_at",
 	"last_occurred_at", "acknowledged_at", "acknowledged_by", "resolved_at", "last_event_id", "updated_at",
 }
 
@@ -89,7 +89,7 @@ func (s *Store) transitionAlertGroup(ctx context.Context, tx *sql.Tx, event inbo
 	if event.AlertState == inbox.AlertFiring {
 		increment = 1
 	}
-	update, updateArgs, err := query.NewWorkspaceUpdateBuilder(s.Renderer, "_notification_alert_groups", event.WorkspaceID.String()).Set("state", string(event.AlertState)).SetExpression("occurrence_count", query.Add(query.Column("occurrence_count"), query.Value(increment))).Set("last_occurred_at", event.OccurredAt).Set("acknowledged_at", "").Set("acknowledged_by", "").Set("resolved_at", resolvedAt).Set("last_event_id", event.ID).Set("updated_at", event.UpdatedAt).Where(query.And(query.Equal("recipient_user_id", item.RecipientUserID.String()), query.Equal("surface", string(event.Surface)), query.Equal("group_key", event.GroupKey), query.LessThanOrEqual("last_occurred_at", event.OccurredAt))).Build()
+	update, updateArgs, err := query.NewWorkspaceUpdateBuilder(s.Renderer, "_notification_alert_groups", event.WorkspaceID.String()).Set("state", string(event.AlertState)).SetExpression("occurrence_count", query.Add(query.Column("occurrence_count"), query.Value(increment))).Set("last_occurred_at", event.OccurredAt).Set("acknowledged_at", "").Set("acknowledged_by", "").Set("resolved_at", resolvedAt).Set("last_event_id", event.ID).Set("updated_at", event.UpdatedAt).Where(query.And(query.Equal("recipient_user_id", item.RecipientUserID.String()), query.Equal("group_key", event.GroupKey), query.LessThanOrEqual("last_occurred_at", event.OccurredAt))).Build()
 	if err != nil {
 		return err
 	}
@@ -102,7 +102,7 @@ func (s *Store) transitionAlertGroup(ctx context.Context, tx *sql.Tx, event inbo
 		return err
 	}
 	var exists int
-	lookup, lookupArgs, err := query.NewWorkspaceSelectBuilder(s.Renderer, "_notification_alert_groups", event.WorkspaceID.String()).Projections(query.Project(query.CountAll())).Where(query.And(query.Equal("recipient_user_id", item.RecipientUserID.String()), query.Equal("surface", string(event.Surface)), query.Equal("group_key", event.GroupKey))).Build()
+	lookup, lookupArgs, err := query.NewWorkspaceSelectBuilder(s.Renderer, "_notification_alert_groups", event.WorkspaceID.String()).Projections(query.Project(query.CountAll())).Where(query.And(query.Equal("recipient_user_id", item.RecipientUserID.String()), query.Equal("group_key", event.GroupKey))).Build()
 	if err != nil {
 		return err
 	}
@@ -112,7 +112,7 @@ func (s *Store) transitionAlertGroup(ctx context.Context, tx *sql.Tx, event inbo
 	if exists == 1 {
 		return nil
 	}
-	_, err = s.WorkspaceInsert(ctx, tx, event.WorkspaceID.String(), "_notification_alert_groups", alertGroupColumns, event.WorkspaceID.String(), item.RecipientUserID.String(), string(event.Surface),
+	_, err = s.WorkspaceInsert(ctx, tx, event.WorkspaceID.String(), "_notification_alert_groups", alertGroupColumns, event.WorkspaceID.String(), item.RecipientUserID.String(),
 		event.GroupKey, string(event.AlertState), increment, event.OccurredAt, event.OccurredAt, "", "", resolvedAt, event.ID, event.UpdatedAt)
 	if err != nil {
 		return fmt.Errorf("insert notification alert group: %w", err)
@@ -163,7 +163,7 @@ func (s *Store) upsertInboxItem(ctx context.Context, tx *sql.Tx, item inbox.Item
 	if item.AlertState == inbox.AlertFiring && occurrences == 0 {
 		occurrences = 1
 	}
-	values := []any{item.ID, item.WorkspaceID.String(), item.RecipientUserID.String(), string(item.Surface), item.EventID, item.EventType, item.Source, item.Category, item.Severity,
+	values := []any{item.ID, item.WorkspaceID.String(), item.RecipientUserID.String(), item.EventID, item.EventType, item.Source, item.Category, item.Severity,
 		item.Title, item.Body, inboxSearchText(item), string(raw), item.SubjectType, item.SubjectID, string(item.ActionState), string(item.AlertState), item.GroupKey,
 		occurrences, item.FirstOccurredAt, item.LastOccurredAt, item.ReadAt, item.ArchivedAt, item.ExpiresAt, item.CreatedAt, item.UpdatedAt}
 	if _, err := s.WorkspaceInsert(ctx, tx, item.WorkspaceID.String(), "_notification_inbox_items", inboxItemColumns, values...); err != nil {

@@ -169,7 +169,7 @@ func (p *Processor) processDigest(ctx context.Context, candidates []Plan, now ti
 func (p *Processor) dispatch(ctx context.Context, plan Plan, now time.Time) (DispatchReceipt, error) {
 	decision, err := p.policy.EvaluateDelivery(ctx, Evaluation{
 		WorkspaceID: plan.WorkspaceID, TemplateKey: plan.TemplateKey, Channel: plan.Channel,
-		Recipients: append([]notification.UserID(nil), plan.RecipientUserIDs...), DedupeKey: plan.DedupeKey,
+		Recipients: append([]notification.UserID(nil), plan.RecipientUserIDs...), DedupeKey: plan.DedupeKey, ReservationKey: plan.ID,
 	})
 	if err != nil {
 		return DispatchReceipt{}, err

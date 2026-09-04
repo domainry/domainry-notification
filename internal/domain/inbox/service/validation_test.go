@@ -10,7 +10,7 @@ import (
 
 func inboxValidator(t *testing.T) *inbox.Validator {
 	t.Helper()
-	configuration, err := inbox.NewConfiguration([]notification.Surface{"business_workspace", "consumer_portal"}, []string{"email", "collaboration"})
+	configuration, err := inbox.NewConfiguration([]string{"email", "collaboration"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -24,7 +24,7 @@ func inboxValidator(t *testing.T) *inbox.Validator {
 func validEvent() inbox.Event {
 	return inbox.Event{
 		ID: "event-1", WorkspaceID: "workspace-1", Source: "workflow", SourceEventID: "task-1:opened",
-		EventType: "workflow.task.opened", Category: "approval", Severity: "info", Surface: "business_workspace",
+		EventType: "workflow.task.opened", Category: "approval", Severity: "info",
 		RecipientUserIDs: []notification.UserID{" user-1 ", "user-1"}, ActionState: inbox.ActionOpen,
 		OccurredAt: time.Date(2026, 8, 24, 1, 2, 3, 0, time.FixedZone("offset", 8*60*60)).Format(time.RFC3339Nano),
 		Snapshot:   inbox.Snapshot{Title: "Approval required", Body: "Review task", Actions: []inbox.ActionRef{{Key: "workflow.task.open", Kind: "route", Label: "Open", ResourceType: "workflow_task", ResourceID: "task-1"}}},
@@ -44,21 +44,13 @@ func TestValidateEventNormalizesDurableState(t *testing.T) {
 	}
 }
 
-func TestValidateEventUsesInjectedSurfaceCatalog(t *testing.T) {
-	value := validEvent()
-	value.Surface = "unknown_surface"
-	if code := notification.ErrorCode(mustEventError(inboxValidator(t), value)); code != "backend.notification.inbox_event_surface_invalid" {
-		t.Fatalf("code=%q", code)
-	}
-}
-
 func TestValidateQueryPreservesAudienceBoundaries(t *testing.T) {
 	validator := inboxValidator(t)
-	query, err := validator.ValidateQuery(inbox.Query{WorkspaceID: "workspace-1", ViewerUserID: "manager", Surface: "business_workspace", Scope: inbox.ScopeTeam, ReportingUserIDs: []notification.UserID{"member"}})
+	query, err := validator.ValidateQuery(inbox.Query{WorkspaceID: "workspace-1", ViewerUserID: "manager", Scope: inbox.ScopeTeam, ReportingUserIDs: []notification.UserID{"member"}})
 	if err != nil || len(query.RecipientUserIDs) != 1 || query.RecipientUserIDs[0] != "member" || query.Limit != 50 {
 		t.Fatalf("query=%+v err=%v", query, err)
 	}
-	_, err = validator.ValidateQuery(inbox.Query{WorkspaceID: "workspace-1", ViewerUserID: "manager", RecipientUserID: "outsider", Surface: "business_workspace", Scope: inbox.ScopeTeam, ReportingUserIDs: []notification.UserID{"member"}})
+	_, err = validator.ValidateQuery(inbox.Query{WorkspaceID: "workspace-1", ViewerUserID: "manager", RecipientUserID: "outsider", Scope: inbox.ScopeTeam, ReportingUserIDs: []notification.UserID{"member"}})
 	if notification.ErrorCode(err) != "backend.notification.inbox_team_scope_denied" {
 		t.Fatalf("error=%v", err)
 	}

@@ -160,7 +160,7 @@ func itemFromEvent(event Event, recipient notification.UserID, locale string) It
 	}
 	snapshot := snapshotForLocale(event, locale)
 	return Item{
-		ID: stableID(event.WorkspaceID.String(), string(event.Surface), recipient.String(), identity), WorkspaceID: event.WorkspaceID, RecipientUserID: recipient, Surface: event.Surface,
+		ID: stableID(event.WorkspaceID.String(), recipient.String(), identity), WorkspaceID: event.WorkspaceID, RecipientUserID: recipient,
 		EventID: event.ID, EventType: event.EventType, Source: event.Source, Category: event.Category, Severity: event.Severity,
 		Title: snapshot.Title, Body: snapshot.Body, Facts: append([]template.Fact(nil), snapshot.Facts...), Actions: append([]ActionRef(nil), snapshot.Actions...),
 		TemplateKey: snapshot.TemplateKey, TemplateVersion: snapshot.TemplateVersion, TemplateLocale: snapshot.TemplateLocale, TemplateContentHash: snapshot.TemplateContentHash,

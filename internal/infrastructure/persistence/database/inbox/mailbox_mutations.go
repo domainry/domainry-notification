@@ -122,7 +122,7 @@ func (s *Store) AcknowledgeAlert(ctx context.Context, queryValue inbox.Query, it
 		return inbox.Item{}, false, fmt.Errorf("notification alert is not firing")
 	}
 	if item.AlertState != inbox.AlertAcknowledged {
-		groupUpdate, groupArgs, buildErr := query.NewWorkspaceUpdateBuilder(s.Renderer, "_notification_alert_groups", item.WorkspaceID.String()).Set("state", string(inbox.AlertAcknowledged)).Set("acknowledged_at", acknowledgedAt).Set("acknowledged_by", actor.String()).Set("updated_at", acknowledgedAt).Where(query.And(query.Equal("recipient_user_id", item.RecipientUserID.String()), query.Equal("surface", string(item.Surface)), query.Equal("group_key", item.GroupKey), query.Equal("state", "firing"))).Build()
+		groupUpdate, groupArgs, buildErr := query.NewWorkspaceUpdateBuilder(s.Renderer, "_notification_alert_groups", item.WorkspaceID.String()).Set("state", string(inbox.AlertAcknowledged)).Set("acknowledged_at", acknowledgedAt).Set("acknowledged_by", actor.String()).Set("updated_at", acknowledgedAt).Where(query.And(query.Equal("recipient_user_id", item.RecipientUserID.String()), query.Equal("group_key", item.GroupKey), query.Equal("state", "firing"))).Build()
 		if buildErr != nil {
 			return inbox.Item{}, false, buildErr
 		}
@@ -137,7 +137,7 @@ func (s *Store) AcknowledgeAlert(ctx context.Context, queryValue inbox.Query, it
 		if count != 1 {
 			return inbox.Item{}, false, mutation.MutationConflict("notification_alert_group", item.GroupKey, mutation.MutationConflictOptimistic, nil)
 		}
-		itemPredicate := query.And(query.Equal("recipient_user_id", item.RecipientUserID.String()), query.Equal("surface", string(item.Surface)), query.Equal("id", item.ID))
+		itemPredicate := query.And(query.Equal("recipient_user_id", item.RecipientUserID.String()), query.Equal("id", item.ID))
 		itemUpdate, itemArgs, buildErr := query.NewWorkspaceUpdateBuilder(s.Renderer, "_notification_inbox_items", item.WorkspaceID.String()).Set("alert_state", string(inbox.AlertAcknowledged)).Set("updated_at", acknowledgedAt).Where(itemPredicate).Build()
 		if buildErr != nil {
 			return inbox.Item{}, false, buildErr

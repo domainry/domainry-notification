@@ -16,17 +16,17 @@ import (
 
 var _ inbox.DelegationStore = (*Store)(nil)
 
-var delegationColumns = []string{"id", "workspace_id", "owner_user_id", "delegate_user_id", "surface", "starts_at", "ends_at", "enabled", "created_at", "updated_at"}
+var delegationColumns = []string{"id", "workspace_id", "owner_user_id", "delegate_user_id", "starts_at", "ends_at", "enabled", "created_at", "updated_at"}
 
-func (s *Store) ListDelegations(ctx context.Context, workspaceID notification.WorkspaceID, ownerID notification.UserID, surface notification.Surface) ([]inbox.Delegation, error) {
-	if workspaceID == "" || ownerID == "" || surface == "" {
+func (s *Store) ListDelegations(ctx context.Context, workspaceID notification.WorkspaceID, ownerID notification.UserID) ([]inbox.Delegation, error) {
+	if workspaceID == "" || ownerID == "" {
 		return nil, fmt.Errorf("notification inbox delegation owner identity is required")
 	}
 	if err := s.requireWorkspace(workspaceID); err != nil {
 		return nil, err
 	}
 	ctx = s.workspaceScope.Context(ctx, workspaceID)
-	predicate := query.And(query.Equal("owner_user_id", ownerID.String()), query.Equal("surface", string(surface)))
+	predicate := query.Equal("owner_user_id", ownerID.String())
 	queryValue, args, err := query.NewWorkspaceSelectBuilder(s.Renderer, "_notification_inbox_delegations", workspaceID.String()).Columns(delegationColumns...).Where(predicate).OrderBy(query.Ascending("created_at")).Build()
 	if err != nil {
 		return nil, err
@@ -48,7 +48,7 @@ func (s *Store) ListDelegations(ctx context.Context, workspaceID notification.Wo
 }
 
 func (s *Store) SaveDelegation(ctx context.Context, value inbox.Delegation) (inbox.Delegation, error) {
-	if value.ID == "" || value.WorkspaceID == "" || value.OwnerUserID == "" || value.DelegateUserID == "" || value.Surface == "" {
+	if value.ID == "" || value.WorkspaceID == "" || value.OwnerUserID == "" || value.DelegateUserID == "" {
 		return value, fmt.Errorf("notification inbox delegation identity is required")
 	}
 	if err := s.requireWorkspace(value.WorkspaceID); err != nil {
@@ -66,7 +66,7 @@ func (s *Store) SaveDelegation(ctx context.Context, value inbox.Delegation) (inb
 	}
 	if !exists {
 		_, err = s.WorkspaceInsert(ctx, tx, value.WorkspaceID.String(), "_notification_inbox_delegations", delegationColumns, value.ID, value.WorkspaceID.String(),
-			value.OwnerUserID.String(), value.DelegateUserID.String(), string(value.Surface), value.StartsAt, value.EndsAt, value.Enabled, value.CreatedAt, value.UpdatedAt)
+			value.OwnerUserID.String(), value.DelegateUserID.String(), value.StartsAt, value.EndsAt, value.Enabled, value.CreatedAt, value.UpdatedAt)
 		if err != nil {
 			return value, fmt.Errorf("insert notification inbox delegation: %w", err)
 		}
@@ -125,15 +125,15 @@ func (s *Store) DeleteDelegation(ctx context.Context, workspaceID notification.W
 	return true, tx.Commit()
 }
 
-func (s *Store) ListActiveDelegatedOwnerIDs(ctx context.Context, workspaceID notification.WorkspaceID, delegateID notification.UserID, surface notification.Surface, now string) ([]notification.UserID, error) {
-	if workspaceID == "" || delegateID == "" || surface == "" || strings.TrimSpace(now) == "" {
+func (s *Store) ListActiveDelegatedOwnerIDs(ctx context.Context, workspaceID notification.WorkspaceID, delegateID notification.UserID, now string) ([]notification.UserID, error) {
+	if workspaceID == "" || delegateID == "" || strings.TrimSpace(now) == "" {
 		return nil, fmt.Errorf("notification active delegation query identity is required")
 	}
 	if err := s.requireWorkspace(workspaceID); err != nil {
 		return nil, err
 	}
 	ctx = s.workspaceScope.Context(ctx, workspaceID)
-	predicate := query.And(query.Equal("delegate_user_id", delegateID.String()), query.Equal("surface", string(surface)), query.Equal("enabled", true), query.Or(query.Equal("starts_at", ""), query.LessThanOrEqual("starts_at", now)), query.Or(query.Equal("ends_at", ""), query.GreaterThan("ends_at", now)))
+	predicate := query.And(query.Equal("delegate_user_id", delegateID.String()), query.Equal("enabled", true), query.Or(query.Equal("starts_at", ""), query.LessThanOrEqual("starts_at", now)), query.Or(query.Equal("ends_at", ""), query.GreaterThan("ends_at", now)))
 	queryValue, args, err := query.NewWorkspaceSelectBuilder(s.Renderer, "_notification_inbox_delegations", workspaceID.String()).Columns("owner_user_id").Distinct().Where(predicate).OrderBy(query.Ascending("owner_user_id")).Build()
 	if err != nil {
 		return nil, err
@@ -170,7 +170,7 @@ func (s *Store) delegationExists(ctx context.Context, queryer sqlhost.Queryer, w
 
 func scanDelegation(row scanner) (inbox.Delegation, error) {
 	var value inbox.Delegation
-	err := row.Scan(&value.ID, &value.WorkspaceID, &value.OwnerUserID, &value.DelegateUserID, &value.Surface, &value.StartsAt, &value.EndsAt,
+	err := row.Scan(&value.ID, &value.WorkspaceID, &value.OwnerUserID, &value.DelegateUserID, &value.StartsAt, &value.EndsAt,
 		&value.Enabled, &value.CreatedAt, &value.UpdatedAt)
 	return value, err
 }

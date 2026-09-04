@@ -17,15 +17,15 @@ import (
 
 var _ inbox.SavedViewStore = (*Store)(nil)
 
-func (s *Store) ListSavedViews(ctx context.Context, workspaceID notification.WorkspaceID, recipientID notification.UserID, surface notification.Surface) ([]inbox.SavedView, error) {
-	if workspaceID == "" || recipientID == "" || surface == "" {
+func (s *Store) ListSavedViews(ctx context.Context, workspaceID notification.WorkspaceID, recipientID notification.UserID) ([]inbox.SavedView, error) {
+	if workspaceID == "" || recipientID == "" {
 		return nil, fmt.Errorf("notification saved-view owner identity is required")
 	}
 	if err := s.requireWorkspace(workspaceID); err != nil {
 		return nil, err
 	}
 	ctx = s.workspaceScope.Context(ctx, workspaceID)
-	predicate := query.And(query.Equal("recipient_user_id", recipientID.String()), query.Equal("surface", string(surface)))
+	predicate := query.Equal("recipient_user_id", recipientID.String())
 	queryValue, args, err := query.NewWorkspaceSelectBuilder(s.Renderer, "_notification_inbox_saved_views", workspaceID.String()).Columns("payload_json").Where(predicate).OrderBy(query.Ascending("view_key")).Build()
 	if err != nil {
 		return nil, err
@@ -50,9 +50,9 @@ func (s *Store) ListSavedViews(ctx context.Context, workspaceID notification.Wor
 	return values, rows.Err()
 }
 
-func (s *Store) SaveSavedView(ctx context.Context, workspaceID notification.WorkspaceID, recipientID notification.UserID, surface notification.Surface, value inbox.SavedView) (inbox.SavedView, error) {
+func (s *Store) SaveSavedView(ctx context.Context, workspaceID notification.WorkspaceID, recipientID notification.UserID, value inbox.SavedView) (inbox.SavedView, error) {
 	value.Key = strings.TrimSpace(value.Key)
-	if workspaceID == "" || recipientID == "" || surface == "" || value.Key == "" {
+	if workspaceID == "" || recipientID == "" || value.Key == "" {
 		return inbox.SavedView{}, fmt.Errorf("notification saved-view identity is required")
 	}
 	if err := s.requireWorkspace(workspaceID); err != nil {
@@ -68,19 +68,19 @@ func (s *Store) SaveSavedView(ctx context.Context, workspaceID notification.Work
 		return inbox.SavedView{}, err
 	}
 	defer tx.Rollback()
-	exists, err := s.savedViewExists(ctx, tx, workspaceID, recipientID, surface, value.Key)
+	exists, err := s.savedViewExists(ctx, tx, workspaceID, recipientID, value.Key)
 	if err != nil {
 		return inbox.SavedView{}, err
 	}
 	if !exists {
-		_, err = s.WorkspaceInsert(ctx, tx, workspaceID.String(), "_notification_inbox_saved_views", []string{"workspace_id", "recipient_user_id", "surface", "view_key", "payload_json", "created_at", "updated_at"},
-			workspaceID.String(), recipientID.String(), string(surface), value.Key, string(raw), value.CreatedAt, value.UpdatedAt)
+		_, err = s.WorkspaceInsert(ctx, tx, workspaceID.String(), "_notification_inbox_saved_views", []string{"workspace_id", "recipient_user_id", "view_key", "payload_json", "created_at", "updated_at"},
+			workspaceID.String(), recipientID.String(), value.Key, string(raw), value.CreatedAt, value.UpdatedAt)
 		if err != nil {
 			return inbox.SavedView{}, fmt.Errorf("insert notification inbox saved view: %w", err)
 		}
 		return value, tx.Commit()
 	}
-	predicate := query.And(query.Equal("recipient_user_id", recipientID.String()), query.Equal("surface", string(surface)), query.Equal("view_key", value.Key))
+	predicate := query.And(query.Equal("recipient_user_id", recipientID.String()), query.Equal("view_key", value.Key))
 	queryValue, args, err := query.NewWorkspaceUpdateBuilder(s.Renderer, "_notification_inbox_saved_views", workspaceID.String()).Set("payload_json", string(raw)).Set("updated_at", value.UpdatedAt).Where(predicate).Build()
 	if err != nil {
 		return inbox.SavedView{}, err
@@ -99,9 +99,9 @@ func (s *Store) SaveSavedView(ctx context.Context, workspaceID notification.Work
 	return value, tx.Commit()
 }
 
-func (s *Store) DeleteSavedView(ctx context.Context, workspaceID notification.WorkspaceID, recipientID notification.UserID, surface notification.Surface, key string) (bool, error) {
+func (s *Store) DeleteSavedView(ctx context.Context, workspaceID notification.WorkspaceID, recipientID notification.UserID, key string) (bool, error) {
 	key = strings.TrimSpace(key)
-	if workspaceID == "" || recipientID == "" || surface == "" || key == "" {
+	if workspaceID == "" || recipientID == "" || key == "" {
 		return false, fmt.Errorf("notification saved-view identity is required")
 	}
 	if err := s.requireWorkspace(workspaceID); err != nil {
@@ -113,11 +113,11 @@ func (s *Store) DeleteSavedView(ctx context.Context, workspaceID notification.Wo
 		return false, err
 	}
 	defer tx.Rollback()
-	exists, err := s.savedViewExists(ctx, tx, workspaceID, recipientID, surface, key)
+	exists, err := s.savedViewExists(ctx, tx, workspaceID, recipientID, key)
 	if err != nil || !exists {
 		return false, err
 	}
-	predicate := query.And(query.Equal("recipient_user_id", recipientID.String()), query.Equal("surface", string(surface)), query.Equal("view_key", key))
+	predicate := query.And(query.Equal("recipient_user_id", recipientID.String()), query.Equal("view_key", key))
 	queryValue, args, err := query.NewWorkspaceDeleteBuilder(s.Renderer, "_notification_inbox_saved_views", workspaceID.String()).Where(predicate).Build()
 	if err != nil {
 		return false, err
@@ -133,8 +133,8 @@ func (s *Store) DeleteSavedView(ctx context.Context, workspaceID notification.Wo
 	return true, tx.Commit()
 }
 
-func (s *Store) savedViewExists(ctx context.Context, queryer sqlhost.Queryer, workspaceID notification.WorkspaceID, recipientID notification.UserID, surface notification.Surface, key string) (bool, error) {
-	predicate := query.And(query.Equal("recipient_user_id", recipientID.String()), query.Equal("surface", string(surface)), query.Equal("view_key", key))
+func (s *Store) savedViewExists(ctx context.Context, queryer sqlhost.Queryer, workspaceID notification.WorkspaceID, recipientID notification.UserID, key string) (bool, error) {
+	predicate := query.And(query.Equal("recipient_user_id", recipientID.String()), query.Equal("view_key", key))
 	statement, args, err := query.NewWorkspaceSelectBuilder(s.Renderer, "_notification_inbox_saved_views", workspaceID.String()).Columns("view_key").Where(predicate).Build()
 	if err != nil {
 		return false, err

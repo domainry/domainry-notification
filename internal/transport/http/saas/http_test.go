@@ -53,7 +53,7 @@ func TestRemoteFactoryAndPublisherUseServerWireContract(t *testing.T) {
 	if _, err := notificationremote.NewFactory(notificationremote.Config{BaseURL: httpServer.URL, ServiceCredential: "service-token", CapabilityContractSHA256: strings.Repeat("0", 64), HTTPClient: httpServer.Client()}).Open(t.Context(), application); err == nil {
 		t.Fatal("Notification Remote accepted a stale capability digest")
 	}
-	intent := contract.NotificationIntent{ID: "request-a", WorkspaceID: "workspace-a", SourceEventID: "record-a:created", EventType: "record.created", Surface: "business_workspace", RecipientUserIDs: []string{"user-a"}, OccurredAt: "2026-08-28T00:00:00Z"}
+	intent := contract.NotificationIntent{ID: "request-a", WorkspaceID: "workspace-a", SourceEventID: "record-a:created", EventType: "record.created", RecipientUserIDs: []string{"user-a"}, OccurredAt: "2026-08-28T00:00:00Z"}
 	event, created, err := binding.Publisher().PublishIntent(t.Context(), intent)
 	if err != nil {
 		t.Fatal(err)
@@ -146,7 +146,7 @@ func TestHandlerSystemMigrationRejectsCrossApplicationBundleBeforeImport(t *test
 		Fingerprint:   "fingerprint",
 	}
 	body, _ := json.Marshal(bundle)
-	request := httptest.NewRequest(http.MethodPost, "/v1/system/migration:import", bytes.NewReader(body))
+	request := httptest.NewRequest(http.MethodPost, "/notification/v1/system/migration:import", bytes.NewReader(body))
 	request.Header.Set("X-Domainry-Service-Credential", "service-token")
 	request.Header.Set("X-Domainry-Tenant-ID", "tenant-a")
 	request.Header.Set("X-Domainry-Workspace-ID", "workspace-a")
@@ -173,7 +173,7 @@ func TestHandlerSystemRetentionEnforcesExactApplicationWorkspace(t *testing.T) {
 	policy := contract.NotificationRetentionPolicy{Key: contract.NotificationRetentionHistoryPolicy, Version: "1", DefaultRetentionSeconds: 3600}
 	for _, workspace := range []string{"workspace-a", "workspace-b"} {
 		body, _ := json.Marshal(contract.NotificationRetentionPreviewRequest{WorkspaceID: workspace, Policy: policy, Now: time.Date(2026, 8, 29, 1, 0, 0, 0, time.UTC)})
-		request := httptest.NewRequest(http.MethodPost, "/v1/system/retention:preview", bytes.NewReader(body))
+		request := httptest.NewRequest(http.MethodPost, "/notification/v1/system/retention:preview", bytes.NewReader(body))
 		request.Header.Set("X-Domainry-Service-Credential", "service-token")
 		request.Header.Set("X-Domainry-Tenant-ID", "tenant-a")
 		request.Header.Set("X-Domainry-Workspace-ID", "workspace-a")
@@ -211,7 +211,7 @@ func TestHandlerSystemSubjectsEnforceExactApplicationWorkspace(t *testing.T) {
 	handler, _ := NewHandler(&serviceAuthenticationStub{}, &bindingResolverStub{binding: &httpBindingStub{publisher: &httpPublisherStub{}, subjects: subjects}})
 	for _, workspace := range []string{"workspace-a", "workspace-b"} {
 		body, _ := json.Marshal(map[string]any{"workspace_id": workspace, "subject_id": "user"})
-		request := httptest.NewRequest(http.MethodPost, "/v1/system/subjects:preview", bytes.NewReader(body))
+		request := httptest.NewRequest(http.MethodPost, "/notification/v1/system/subjects:preview", bytes.NewReader(body))
 		request.Header.Set("X-Domainry-Service-Credential", "service-token")
 		request.Header.Set("X-Domainry-Tenant-ID", "tenant-a")
 		request.Header.Set("X-Domainry-Workspace-ID", "workspace-a")
@@ -244,7 +244,7 @@ func TestHandlerSystemTemplatesUseServiceAuthenticationWithoutUserBearer(t *test
 	system := &httpSystemTemplatesStub{}
 	handler, _ := NewHandler(&serviceAuthenticationStub{}, &bindingResolverStub{binding: &httpBindingStub{publisher: &httpPublisherStub{}, system: system}})
 	body, _ := json.Marshal(map[string]any{"templates": []contract.NotificationTemplate{{Key: "welcome"}}})
-	request := httptest.NewRequest(http.MethodPost, "/v1/system/templates:sync-published", bytes.NewReader(body))
+	request := httptest.NewRequest(http.MethodPost, "/notification/v1/system/templates:sync-published", bytes.NewReader(body))
 	request.Header.Set("X-Domainry-Service-Credential", "service-token")
 	request.Header.Set("X-Domainry-Tenant-ID", "tenant-a")
 	request.Header.Set("X-Domainry-Workspace-ID", "workspace-a")
@@ -264,9 +264,9 @@ func TestHandlerAuthenticatesAndPublishesScopedIntent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	intent := contract.NotificationIntent{ID: "request-a", WorkspaceID: "workspace-a", SourceEventID: "record-a:created", EventType: "record.created", Surface: "business_workspace", OccurredAt: "2026-08-28T00:00:00Z"}
+	intent := contract.NotificationIntent{ID: "request-a", WorkspaceID: "workspace-a", SourceEventID: "record-a:created", EventType: "record.created", OccurredAt: "2026-08-28T00:00:00Z"}
 	body, _ := json.Marshal(intent)
-	request := httptest.NewRequest(http.MethodPost, "/v1/events:publish", bytes.NewReader(body))
+	request := httptest.NewRequest(http.MethodPost, "/notification/v1/events:publish", bytes.NewReader(body))
 	request.Header.Set("X-Domainry-Service-Credential", "service-token")
 	request.Header.Set("X-Domainry-Tenant-ID", "tenant-a")
 	request.Header.Set("X-Domainry-Workspace-ID", "workspace-a")
@@ -285,9 +285,9 @@ func TestHandlerAuthenticatesAndPublishesScopedIntent(t *testing.T) {
 func TestHandlerRejectsWorkspacePayloadMismatchBeforePublication(t *testing.T) {
 	publisher := &httpPublisherStub{}
 	handler, _ := NewHandler(&serviceAuthenticationStub{}, &bindingResolverStub{binding: &httpBindingStub{publisher: publisher}})
-	intent := contract.NotificationIntent{ID: "request-a", WorkspaceID: "workspace-b", SourceEventID: "record-a:created", EventType: "record.created", Surface: "business_workspace", OccurredAt: "2026-08-28T00:00:00Z"}
+	intent := contract.NotificationIntent{ID: "request-a", WorkspaceID: "workspace-b", SourceEventID: "record-a:created", EventType: "record.created", OccurredAt: "2026-08-28T00:00:00Z"}
 	body, _ := json.Marshal(intent)
-	request := httptest.NewRequest(http.MethodPost, "/v1/events:publish", bytes.NewReader(body))
+	request := httptest.NewRequest(http.MethodPost, "/notification/v1/events:publish", bytes.NewReader(body))
 	request.Header.Set("X-Domainry-Service-Credential", "service-token")
 	request.Header.Set("X-Domainry-Tenant-ID", "tenant-a")
 	request.Header.Set("X-Domainry-Workspace-ID", "workspace-a")
@@ -301,7 +301,7 @@ func TestHandlerRejectsWorkspacePayloadMismatchBeforePublication(t *testing.T) {
 
 func TestHandlerDescriptorReportsSaaSModeForExactApplication(t *testing.T) {
 	handler, _ := NewHandler(&serviceAuthenticationStub{}, &bindingResolverStub{binding: &httpBindingStub{publisher: &httpPublisherStub{}}})
-	request := httptest.NewRequest(http.MethodGet, "/v1/descriptor", nil)
+	request := httptest.NewRequest(http.MethodGet, "/notification/v1/descriptor", nil)
 	request.Header.Set("X-Domainry-Service-Credential", "service-token")
 	request.Header.Set("X-Domainry-Tenant-ID", "tenant-a")
 	request.Header.Set("X-Domainry-Workspace-ID", "workspace-a")

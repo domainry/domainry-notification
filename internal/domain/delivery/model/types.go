@@ -36,11 +36,12 @@ type Reservation struct {
 }
 
 type Evaluation struct {
-	WorkspaceID notification.WorkspaceID
-	TemplateKey string
-	Channel     string
-	Recipients  []notification.UserID
-	DedupeKey   string
+	WorkspaceID    notification.WorkspaceID
+	TemplateKey    string
+	Channel        string
+	Recipients     []notification.UserID
+	DedupeKey      string
+	ReservationKey string
 }
 
 type Decision struct {

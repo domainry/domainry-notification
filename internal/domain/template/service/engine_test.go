@@ -9,9 +9,9 @@ import (
 	"github.com/domainry/domainry-notification/internal/domain/template/service"
 )
 
-type recipientDirectory map[notification.UserID]notification.Recipient
+type recipientResolver map[notification.UserID]notification.Recipient
 
-func (d recipientDirectory) FindRecipient(_ context.Context, _ notification.WorkspaceID, id notification.UserID) (notification.Recipient, bool, error) {
+func (d recipientResolver) FindRecipient(_ context.Context, _ notification.WorkspaceID, id notification.UserID) (notification.Recipient, bool, error) {
 	value, found := d[id]
 	return value, found, nil
 }
@@ -22,7 +22,7 @@ func TestEngineRendersPortableSnapshotAndResolvesRecipients(t *testing.T) {
 	content.Facts = []template.Fact{{Key: "Task", Value: "{{task}}"}}
 	content.Actions = []template.Action{{Label: "Open", URL: "https://example.test/tasks/{{task}}", Style: "primary"}}
 	value.Locales["en-US"] = content
-	engine, err := template.NewEngine("en-US", []template.Template{value}, emailValidator(t), recipientDirectory{
+	engine, err := template.NewEngine("en-US", []template.Template{value}, emailValidator(t), recipientResolver{
 		"user-1": {ID: "user-1", Email: "USER@example.test"},
 	})
 	if err != nil {

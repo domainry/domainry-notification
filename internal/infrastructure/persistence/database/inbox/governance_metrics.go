@@ -28,7 +28,7 @@ func (s *Store) GovernanceMetrics(ctx context.Context, workspaceID notification.
 	dimensions := []struct {
 		column string
 		value  *[]inbox.Aggregate
-	}{{"event_type", &result.ByEventType}, {"category", &result.ByCategory}, {"severity", &result.BySeverity}, {"source", &result.BySource}, {"surface", &result.BySurface}}
+	}{{"event_type", &result.ByEventType}, {"category", &result.ByCategory}, {"severity", &result.BySeverity}, {"source", &result.BySource}}
 	for _, dimension := range dimensions {
 		*dimension.value, err = s.inboxAggregateRows(ctx, workspaceID.String(), predicate, dimension.column)
 		if err != nil {

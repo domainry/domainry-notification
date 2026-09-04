@@ -65,7 +65,7 @@ func TestOwnedSQLiteDatabaseRejectsMemoryMode(t *testing.T) {
 
 func TestConfigurationSelectsPostgresAndLoadsCatalog(t *testing.T) {
 	catalogFile := filepath.Join(t.TempDir(), "catalog.json")
-	if err := os.WriteFile(catalogFile, []byte(`{"DefaultLocale":"en","Surfaces":["business_workspace"],"TemplateCapabilities":[{"channel":"in_app"}]}`), 0o600); err != nil {
+	if err := os.WriteFile(catalogFile, []byte(`{"DefaultLocale":"en","TemplateCapabilities":[{"channel":"in_app"}]}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("NOTIFICATION_DATABASE_DRIVER", "postgres")
@@ -89,7 +89,7 @@ func TestConfigurationSelectsPostgresAndLoadsCatalog(t *testing.T) {
 
 func TestConfigurationDefaultsStandaloneSQLiteToRuntimeDatabase(t *testing.T) {
 	catalogFile := filepath.Join(t.TempDir(), "catalog.json")
-	if err := os.WriteFile(catalogFile, []byte(`{"DefaultLocale":"en","Surfaces":["business_workspace"],"TemplateCapabilities":[{"channel":"in_app"}]}`), 0o600); err != nil {
+	if err := os.WriteFile(catalogFile, []byte(`{"DefaultLocale":"en","TemplateCapabilities":[{"channel":"in_app"}]}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	for _, key := range []string{"NOTIFICATION_DATABASE_DRIVER", "NOTIFICATION_DATABASE_DSN"} {

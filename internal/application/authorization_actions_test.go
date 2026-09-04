@@ -12,7 +12,7 @@ func TestAuthorizationActionsFreezeAsSingleExactManifest(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(definitions) != 61 {
+	if len(definitions) != 41 {
 		t.Fatalf("Action count=%d", len(definitions))
 	}
 	registry := actioncontract.NewRegistry()
@@ -23,7 +23,7 @@ func TestAuthorizationActionsFreezeAsSingleExactManifest(t *testing.T) {
 		t.Fatal(err)
 	}
 	permissions := registry.PermissionDefinitions()
-	if len(permissions) != 61 {
+	if len(permissions) != 41 {
 		t.Fatalf("Permission count=%d", len(permissions))
 	}
 	for _, definition := range registry.Definitions() {
@@ -40,8 +40,11 @@ func TestAuthorizationActionsFreezeAsSingleExactManifest(t *testing.T) {
 		if strings.Contains(permission.Key, "*") {
 			t.Fatalf("broad or alias Permission: %#v", permission)
 		}
+		if !strings.HasPrefix(definition.HTTP.RouteTemplate, "/notification/") {
+			t.Fatalf("Notification route escapes the Notification namespace: %q", definition.HTTP.RouteTemplate)
+		}
 	}
-	if _, found := registry.ResolveHTTP("POST", "/notifications/templates/{templateKey}/publish"); found {
+	if _, found := registry.ResolveHTTP("POST", "/notification/templates/{templateKey}/publish"); found {
 		t.Fatal("legacy direct-publish tombstone remains registered")
 	}
 }

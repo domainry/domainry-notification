@@ -14,7 +14,7 @@ func (c fixedClock) Now() time.Time { return c.value }
 
 func TestCompilerProducesRetryStableDurableEvent(t *testing.T) {
 	eventType := validEventType()
-	eventType.Actions = []inbox.ActionDescriptor{{Key: "workflow.task.open", Kind: "route", ResourceType: "workflow_task", SurfaceRoutes: map[string]string{"business_workspace": "workflow.task.detail"}}}
+	eventType.Actions = []inbox.ActionDescriptor{{Key: "workflow.task.open", Kind: "route", ResourceType: "workflow_task", RouteKey: "workflow.task.detail"}}
 	content := eventType.Locales["en-US"]
 	content.ActionLabels = map[string]string{"workflow.task.open": "Open {{task_title}}"}
 	eventType.Locales["en-US"] = content
@@ -31,8 +31,7 @@ func TestCompilerProducesRetryStableDurableEvent(t *testing.T) {
 		t.Fatal(err)
 	}
 	intent := inbox.Intent{
-		ID: "event-1", WorkspaceID: "workspace-1", SourceEventID: "task-1:opened", EventType: eventType.Key,
-		Surface: "business_workspace", RecipientUserIDs: []notification.UserID{"user-1"}, AudienceResolverKeys: []string{"workflow_task_assignee"},
+		ID: "event-1", WorkspaceID: "workspace-1", SourceEventID: "task-1:opened", EventType: eventType.Key, RecipientUserIDs: []notification.UserID{"user-1"}, AudienceResolverKeys: []string{"workflow_task_assignee"},
 		SubjectType: "workflow_task", SubjectID: "task-1", OccurredAt: "2026-08-24T00:00:00Z", Locale: "en_US",
 		Variables: map[string]any{"task_title": "Approve order"},
 	}
@@ -68,8 +67,7 @@ func TestCompilerRejectsUnregisteredAudienceResolver(t *testing.T) {
 	}
 	compiler, _ := inbox.NewCompiler(catalog, validator, fixedClock{value: time.Now()})
 	_, err = compiler.Compile(inbox.Intent{
-		ID: "event-1", WorkspaceID: "workspace-1", SourceEventID: "source-1", EventType: eventType.Key,
-		Surface: "business_workspace", AudienceResolverKeys: []string{"unknown_resolver"}, OccurredAt: time.Now().UTC().Format(time.RFC3339Nano),
+		ID: "event-1", WorkspaceID: "workspace-1", SourceEventID: "source-1", EventType: eventType.Key, AudienceResolverKeys: []string{"unknown_resolver"}, OccurredAt: time.Now().UTC().Format(time.RFC3339Nano),
 		Variables: map[string]any{"task_title": "Task"},
 	})
 	if notification.ErrorCode(err) != "backend.notification.inbox_audience_resolver_not_allowed" {

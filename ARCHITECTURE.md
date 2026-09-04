@@ -19,7 +19,7 @@ and Runtime. Deployment topology is not a domain boundary.
   external SDK and wire-contract conversion;
 - `internal/infrastructure` implements persistence ports;
 - `internal/transport/http/module` implements the topology-neutral product HTTP
-  Surface over the SDK Binding;
+  Adapter over the SDK Binding;
 - `internal/transport/http/saas` implements the standalone service protocol;
 - `internal/assembly/module` and `internal/assembly/saas` are the two composition
   roots over the same domain implementation;
@@ -49,7 +49,7 @@ worker scheduling, claim leases, retry policy execution, or cross-capability
 use-case orchestration.
 
 The host owns authentication and translates its principal into explicit
-workspace, actor, recipient, and surface values before invoking this module.
+workspace, actor, recipient, and adapter values before invoking this module.
 
 The internal inbox mailbox service accepts that already-authorized query scope and owns
 mailbox behavior. The internal action resolver only resolves catalog-backed semantic

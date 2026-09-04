@@ -211,6 +211,13 @@ func (s *Store) ReserveBatch(ctx context.Context, workspaceID notification.Works
 		if strings.TrimSpace(reservation.ID) == "" || reservation.RecipientKey == "" {
 			return fmt.Errorf("notification delivery reservation identity is required")
 		}
+		idempotent, err := s.reservationAlreadyRecorded(ctx, tx, workspaceID, reservation)
+		if err != nil {
+			return err
+		}
+		if idempotent {
+			continue
+		}
 		createdAt, parseErr := time.Parse(time.RFC3339Nano, reservation.CreatedAt)
 		if parseErr != nil {
 			return fmt.Errorf("parse notification delivery reservation timestamp: %w", parseErr)
@@ -245,6 +252,27 @@ func (s *Store) ReserveBatch(ctx context.Context, workspaceID notification.Works
 		}
 	}
 	return tx.Commit()
+}
+
+func (s *Store) reservationAlreadyRecorded(ctx context.Context, queryer *sql.Tx, workspaceID notification.WorkspaceID, reservation delivery.Reservation) (bool, error) {
+	lookup, args, err := query.NewWorkspaceSelectBuilder(s.Renderer, "_notification_delivery_reservations", workspaceID.String()).
+		Columns("recipient_key", "template_key", "channel", "dedupe_key").
+		Where(query.Equal("id", reservation.ID)).Build()
+	if err != nil {
+		return false, err
+	}
+	var recipientKey, templateKey, channel, dedupeKey string
+	err = queryer.QueryRowContext(ctx, lookup, args...).Scan(&recipientKey, &templateKey, &channel, &dedupeKey)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("read notification delivery reservation: %w", err)
+	}
+	if recipientKey != reservation.RecipientKey.String() || templateKey != reservation.TemplateKey || channel != reservation.Channel || dedupeKey != reservation.DedupeKey {
+		return false, fmt.Errorf("notification delivery reservation identity conflict")
+	}
+	return true, nil
 }
 
 func defaultPolicy() delivery.Policy {

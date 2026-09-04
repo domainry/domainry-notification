@@ -35,9 +35,6 @@ func (c *Compiler) Compile(intent Intent) (Event, error) {
 	if !found {
 		return Event{}, invalid("backend.notification.event_type_not_published", "event_type", intent.EventType)
 	}
-	if !eventTypeAllowsSurface(eventType, intent.Surface) {
-		return Event{}, invalid("backend.notification.event_type_surface_invalid", "event_type", intent.EventType)
-	}
 	resolverKeys, err := c.validateAudienceResolvers(eventType, intent.AudienceResolverKeys)
 	if err != nil {
 		return Event{}, err
@@ -73,7 +70,7 @@ func (c *Compiler) Compile(intent Intent) (Event, error) {
 	event := Event{
 		ID: strings.TrimSpace(intent.ID), WorkspaceID: notification.WorkspaceID(strings.TrimSpace(intent.WorkspaceID.String())), Source: eventType.Source,
 		SourceEventID: strings.TrimSpace(intent.SourceEventID), EventType: eventType.Key, Category: eventType.Category,
-		Severity: severity, Surface: notification.Surface(strings.TrimSpace(string(intent.Surface))), RecipientUserIDs: append([]notification.UserID(nil), intent.RecipientUserIDs...), AudienceResolverKeys: resolverKeys,
+		Severity: severity, RecipientUserIDs: append([]notification.UserID(nil), intent.RecipientUserIDs...), AudienceResolverKeys: resolverKeys,
 		SubjectType: strings.TrimSpace(intent.SubjectType), SubjectID: strings.TrimSpace(intent.SubjectID), SubjectVersion: strings.TrimSpace(intent.SubjectVersion),
 		GroupKey: strings.TrimSpace(intent.GroupKey), DedupeKey: strings.TrimSpace(intent.DedupeKey), ActionState: actionState, AlertState: AlertState(strings.TrimSpace(string(intent.AlertState))),
 		ExpiresAt: strings.TrimSpace(intent.ExpiresAt), OccurredAt: strings.TrimSpace(intent.OccurredAt), CorrelationID: strings.TrimSpace(intent.CorrelationID), TraceID: strings.TrimSpace(intent.TraceID),
@@ -122,7 +119,7 @@ func (c *Compiler) validateAudienceResolvers(eventType EventType, requested []st
 
 func (c *Compiler) validateEventContract(event Event) error {
 	eventType, found := c.catalog.EventType(event.EventType)
-	if !found || eventType.Source != event.Source || eventType.Category != event.Category || !eventTypeAllowsSurface(eventType, event.Surface) {
+	if !found || eventType.Source != event.Source || eventType.Category != event.Category {
 		return invalid("backend.notification.event_type_contract_mismatch", "event_type", event.EventType)
 	}
 	snapshots := []Snapshot{event.Snapshot}
@@ -132,7 +129,7 @@ func (c *Compiler) validateEventContract(event Event) error {
 	for _, snapshot := range snapshots {
 		for _, action := range snapshot.Actions {
 			descriptor, found := c.catalog.Action(action.Key)
-			if !found || descriptor.Kind != action.Kind || descriptor.ResourceType != action.ResourceType || strings.TrimSpace(descriptor.SurfaceRoutes[string(event.Surface)]) == "" {
+			if !found || descriptor.Kind != action.Kind || descriptor.ResourceType != action.ResourceType || strings.TrimSpace(descriptor.RouteKey) == "" {
 				return invalid("backend.notification.inbox_action_contract_invalid", "action_key", action.Key)
 			}
 		}
@@ -258,15 +255,6 @@ func eventTypeContent(eventType EventType, requested string) (string, Content) {
 
 func normalizeLocale(value string) string {
 	return strings.TrimSpace(strings.ReplaceAll(value, "_", "-"))
-}
-
-func eventTypeAllowsSurface(eventType EventType, surface notification.Surface) bool {
-	for _, allowed := range eventType.Surfaces {
-		if strings.TrimSpace(string(allowed)) == strings.TrimSpace(string(surface)) {
-			return true
-		}
-	}
-	return false
 }
 
 func stableID(parts ...string) string {

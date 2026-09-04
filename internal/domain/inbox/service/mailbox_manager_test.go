@@ -41,7 +41,7 @@ func (s *mailboxStore) MarkAllRead(context.Context, inbox.Query, string) (int, e
 
 type delegationStore struct{ saved inbox.Delegation }
 
-func (*delegationStore) ListDelegations(context.Context, notification.WorkspaceID, notification.UserID, notification.Surface) ([]inbox.Delegation, error) {
+func (*delegationStore) ListDelegations(context.Context, notification.WorkspaceID, notification.UserID) ([]inbox.Delegation, error) {
 	return nil, nil
 }
 func (s *delegationStore) SaveDelegation(_ context.Context, value inbox.Delegation) (inbox.Delegation, error) {
@@ -51,13 +51,13 @@ func (s *delegationStore) SaveDelegation(_ context.Context, value inbox.Delegati
 func (*delegationStore) DeleteDelegation(context.Context, notification.WorkspaceID, notification.UserID, string) (bool, error) {
 	return true, nil
 }
-func (*delegationStore) ListActiveDelegatedOwnerIDs(context.Context, notification.WorkspaceID, notification.UserID, notification.Surface, string) ([]notification.UserID, error) {
+func (*delegationStore) ListActiveDelegatedOwnerIDs(context.Context, notification.WorkspaceID, notification.UserID, string) ([]notification.UserID, error) {
 	return nil, nil
 }
 
 func newMailboxManager(t *testing.T, mailboxes inbox.MailboxStore, delegations inbox.DelegationStore) *inbox.MailboxManager {
 	t.Helper()
-	configuration, err := inbox.NewConfiguration([]notification.Surface{"custom_surface"}, nil)
+	configuration, err := inbox.NewConfiguration(nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -78,7 +78,7 @@ func newMailboxManager(t *testing.T, mailboxes inbox.MailboxStore, delegations i
 func TestMailboxManagerScopesPersonalMutationAndUsesUTC(t *testing.T) {
 	store := &mailboxStore{item: inbox.Item{ID: "item-1"}}
 	manager := newMailboxManager(t, store, nil)
-	query := inbox.Query{WorkspaceID: " workspace-1 ", ViewerUserID: " user-1 ", Surface: "custom_surface", Scope: inbox.ScopeMine}
+	query := inbox.Query{WorkspaceID: " workspace-1 ", ViewerUserID: " user-1 ", Scope: inbox.ScopeMine}
 	if _, err := manager.SetRead(t.Context(), query, "item-1", true); err != nil {
 		t.Fatal(err)
 	}
@@ -97,20 +97,20 @@ func TestMailboxManagerScopesPersonalMutationAndUsesUTC(t *testing.T) {
 	}
 }
 
-func TestMailboxManagerDelegationUsesConfiguredSurface(t *testing.T) {
+func TestMailboxManagerDelegationUsesStableIdentity(t *testing.T) {
 	mailboxes, delegations := &mailboxStore{}, &delegationStore{}
 	manager := newMailboxManager(t, mailboxes, delegations)
 	value, err := manager.SaveDelegation(t.Context(), inbox.Delegation{
-		WorkspaceID: "workspace-1", OwnerUserID: "owner-1", DelegateUserID: "delegate-1", Surface: "custom_surface",
+		WorkspaceID: "workspace-1", OwnerUserID: "owner-1", DelegateUserID: "delegate-1",
 		StartsAt: "2026-08-24T00:00:00+08:00", EndsAt: "2026-08-25T00:00:00+08:00", Enabled: true,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if value.ID == "" || value.Surface != "custom_surface" || value.StartsAt != "2026-08-23T16:00:00.000000000Z" {
+	if value.ID == "" || value.StartsAt != "2026-08-23T16:00:00.000000000Z" {
 		t.Fatalf("delegation=%+v", value)
 	}
-	if _, err := manager.SaveDelegation(t.Context(), inbox.Delegation{WorkspaceID: "workspace-1", OwnerUserID: "owner-1", DelegateUserID: "owner-1", Surface: "custom_surface"}); notification.ErrorCode(err) != "backend.notification.inbox_delegation_invalid" {
+	if _, err := manager.SaveDelegation(t.Context(), inbox.Delegation{WorkspaceID: "workspace-1", OwnerUserID: "owner-1", DelegateUserID: "owner-1"}); notification.ErrorCode(err) != "backend.notification.inbox_delegation_invalid" {
 		t.Fatalf("error=%v", err)
 	}
 }
@@ -122,7 +122,7 @@ func (r itemReader) Get(context.Context, inbox.Query, string) (inbox.Item, error
 func TestActionResolverReturnsSemanticRouteAndRejectsTeamActions(t *testing.T) {
 	validator := inboxValidator(t)
 	eventType := validEventType()
-	eventType.Actions = []inbox.ActionDescriptor{{Key: "workflow.task.open", Kind: "route", ResourceType: "project_record", SurfaceRoutes: map[string]string{"business_workspace": "workflow.task.detail"}}}
+	eventType.Actions = []inbox.ActionDescriptor{{Key: "workflow.task.open", Kind: "route", ResourceType: "project_record", RouteKey: "workflow.task.detail"}}
 	content := eventType.Locales["en-US"]
 	content.ActionLabels = map[string]string{"workflow.task.open": "Open"}
 	eventType.Locales["en-US"] = content
@@ -138,7 +138,7 @@ func TestActionResolverReturnsSemanticRouteAndRejectsTeamActions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	query := inbox.Query{Surface: "business_workspace", Scope: inbox.ScopeMine}
+	query := inbox.Query{Scope: inbox.ScopeMine}
 	resolved, err := resolver.Resolve(t.Context(), query, "item-1", "workflow.task.open")
 	if err != nil || resolved.RouteKey != "workflow.task.detail" || resolved.RouteParams["object_key"] != "ticket" {
 		t.Fatalf("resolved=%+v err=%v", resolved, err)
@@ -152,7 +152,7 @@ func TestActionResolverReturnsSemanticRouteAndRejectsTeamActions(t *testing.T) {
 }
 
 func TestSavedViewAllowsDelegatedScope(t *testing.T) {
-	configuration, _ := inbox.NewConfiguration([]notification.Surface{"custom_surface"}, nil)
+	configuration, _ := inbox.NewConfiguration(nil)
 	validator, _ := inbox.NewValidator(configuration)
 	value, err := validator.ValidateSavedView(inbox.SavedView{Key: "delegated.alerts", Name: "Delegated alerts", Scope: inbox.ScopeDelegated, TeamMemberID: "owner-1"})
 	if err != nil || value.Scope != inbox.ScopeDelegated {

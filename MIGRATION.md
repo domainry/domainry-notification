@@ -9,7 +9,7 @@ The internal SQL store must never process the same durable work concurrently.
 
 | Plane responsibility | Module entry point | Responsibility retained by Plane |
 | --- | --- | --- |
-| template administration | internal template domain service and product HTTP Surface | listener, cross-cutting authentication guard and Surface mounting |
+| template administration | internal template domain service and product HTTP Adapter | listener, cross-cutting authentication guard and Adapter mounting |
 | scheduled template publication | internal template publication service | worker scheduling and wakeups |
 | event-type and rule catalog | internal inbox catalog service | source modules contribute definitions at startup |
 | producer notification intents | Notification SDK `Publisher` | source transaction and after-commit wakeup |

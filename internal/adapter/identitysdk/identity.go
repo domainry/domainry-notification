@@ -64,7 +64,7 @@ func Open(ctx context.Context, options Options) (identitysdk.Binding, error) {
 		_ = binding.Close(ctx)
 		return nil, fmt.Errorf("Notification SaaS Identity issuer/audience scope is invalid")
 	}
-	if nilIdentityCapability(binding.Tokens()) || nilIdentityCapability(binding.Authorization()) || nilIdentityCapability(binding.Principals()) || nilIdentityCapability(binding.Directory()) || nilIdentityCapability(binding.Applications()) || nilIdentityCapability(binding.Permissions()) {
+	if nilIdentityCapability(binding.Tokens()) || nilIdentityCapability(binding.Authorization()) || nilIdentityCapability(binding.Principals()) || nilIdentityCapability(binding.Projection()) || nilIdentityCapability(binding.Applications()) || nilIdentityCapability(binding.Permissions()) {
 		_ = binding.Close(ctx)
 		return nil, fmt.Errorf("Notification SaaS Identity capabilities are incomplete")
 	}

@@ -36,7 +36,7 @@ func TestObserveHTTPExportsMetricsAndContinuesW3CTrace(t *testing.T) {
 		}
 		response.WriteHeader(http.StatusServiceUnavailable)
 	}), metrics)
-	request := httptest.NewRequest(http.MethodPost, "/v1/events:publish", nil)
+	request := httptest.NewRequest(http.MethodPost, "/notification/v1/events:publish", nil)
 	request.Header.Set("traceparent", "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01")
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, request)
@@ -48,7 +48,7 @@ func TestObserveHTTPExportsMetricsAndContinuesW3CTrace(t *testing.T) {
 		t.Fatalf("spans=%+v", spans)
 	}
 	prometheus := metrics.Prometheus()
-	for _, expected := range []string{`notification_http_requests_total{method="POST",path="/v1/events:publish",status_class="5xx"} 1`, `notification_http_errors_total{method="POST",path="/v1/events:publish",status_class="5xx"} 1`} {
+	for _, expected := range []string{`notification_http_requests_total{method="POST",path="/notification/v1/events:publish",status_class="5xx"} 1`, `notification_http_errors_total{method="POST",path="/notification/v1/events:publish",status_class="5xx"} 1`} {
 		if !strings.Contains(prometheus, expected) {
 			t.Fatalf("metrics missing %q:\n%s", expected, prometheus)
 		}

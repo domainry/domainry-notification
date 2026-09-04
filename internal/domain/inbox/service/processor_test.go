@@ -64,7 +64,7 @@ func (localeResolver) RecipientLocale(_ context.Context, _ notification.Workspac
 func TestProcessorResolvesAudienceAndMaterializesLocalizedItems(t *testing.T) {
 	wakeups := &notifier{}
 	store := &eventStore{event: inbox.Event{
-		ID: "event-1", WorkspaceID: "workspace-1", Surface: "business_workspace", RecipientUserIDs: []notification.UserID{"explicit-user"}, AudienceResolverKeys: []string{"workflow_task_assignee"},
+		ID: "event-1", WorkspaceID: "workspace-1", RecipientUserIDs: []notification.UserID{"explicit-user"}, AudienceResolverKeys: []string{"workflow_task_assignee"},
 		Snapshot: inbox.Snapshot{Title: "English", Body: "Body"}, LocalizedSnapshots: map[string]inbox.Snapshot{"zh-CN": {Title: "中文", Body: "正文"}},
 		ChannelPlans: []delivery.Plan{{ID: "plan-1", WorkspaceID: "workspace-1"}},
 		OccurredAt:   "2026-08-24T00:00:00.000000000Z", CreatedAt: "2026-08-24T00:00:00.000000000Z", UpdatedAt: "2026-08-24T00:00:00.000000000Z",
@@ -110,7 +110,7 @@ func TestPublisherWakesOnlyAfterCreatedEvent(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, created, err := publisher.PublishIntent(t.Context(), inbox.Intent{
-		ID: "event-1", WorkspaceID: "workspace-1", SourceEventID: "source-1", EventType: "workflow.task.opened", Surface: "business_workspace",
+		ID: "event-1", WorkspaceID: "workspace-1", SourceEventID: "source-1", EventType: "workflow.task.opened",
 		RecipientUserIDs: []notification.UserID{"user-1"}, OccurredAt: time.Now().UTC().Format(time.RFC3339Nano), Variables: map[string]any{"task_title": "Task"},
 	})
 	if err != nil || !created || len(wakeups.work) != 1 || wakeups.work[0].TaskID != "event-1" {

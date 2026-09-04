@@ -19,8 +19,8 @@ import (
 )
 
 // ProductRoutes is the source-owned Notification product HTTP manifest. Both
-// the executable Module Surface and the model-facing capability disclosure are
-// projections of this exact list. SaaS composition mounts the same Surface, so
+// the executable Module Adapter and the model-facing capability disclosure are
+// projections of this exact list. SaaS composition mounts the same Adapter, so
 // switching topology cannot change the product endpoint contract.
 func ProductRoutes() ([]modulehttp.Route, error) {
 	actions, err := notificationapplication.AuthorizationActions()
@@ -137,8 +137,7 @@ func NewCapabilityBinding(templateCapabilities []contract.NotificationTemplateCa
 			AssemblyChains: []string{
 				"domain_event_to_notification_intent_to_inbox_and_channel_delivery",
 				"notification_template_publication_before_event_delivery",
-				"identity_principal_before_business_inbox_access",
-				"identity_principal_before_consumer_inbox_access",
+				"identity_principal_before_notification_inbox_access",
 			},
 			ValidationScopes:  []string{"notification.event_type", "notification.rule", "notification.template"},
 			SelectionExamples: []modulecapability.ScenarioExample{{Requirement: "Notify an approver, show it in their Inbox, and email them according to preferences", Reason: "Notification owns durable user Inbox state, templates, preferences, and channel delivery"}},
@@ -165,11 +164,9 @@ func uniqueNotificationCapabilityStrings(values []string) []string {
 func notificationCapabilityCategory(pattern string) string {
 	_, path, _ := strings.Cut(pattern, " ")
 	switch {
-	case strings.HasPrefix(path, "/business/"):
-		return "notification.business_inbox"
-	case strings.HasPrefix(path, "/portal/"):
-		return "notification.consumer_inbox"
-	case path == "/notifications/policy" || path == "/notifications/preferences" || strings.HasPrefix(path, "/notifications/preferences/") || path == "/notifications/metrics" || strings.HasPrefix(path, "/notifications/governance/"):
+	case path == "/notification/inbox" || strings.HasPrefix(path, "/notification/inbox/"):
+		return "notification.inbox"
+	case path == "/notification/policy" || path == "/notification/preferences" || strings.HasPrefix(path, "/notification/preferences/") || path == "/notification/metrics" || strings.HasPrefix(path, "/notification/governance/"):
 		return "notification.delivery_governance"
 	default:
 		return "notification.templates"
@@ -178,10 +175,8 @@ func notificationCapabilityCategory(pattern string) string {
 
 func notificationCategoryMetadata(key string) (string, string, []string, []string) {
 	switch key {
-	case "notification.business_inbox":
-		return "Business notification Inbox", "Read and manage the authenticated user's durable Business Workspace notification Inbox.", []string{}, []string{"identity_principal_before_business_inbox_access"}
-	case "notification.consumer_inbox":
-		return "Consumer notification Inbox", "Read and manage the authenticated consumer principal's durable Portal notification Inbox.", []string{}, []string{"identity_principal_before_consumer_inbox_access"}
+	case "notification.inbox":
+		return "Notification Inbox", "Read and manage the authenticated principal's durable notification Inbox.", []string{}, []string{"identity_principal_before_notification_inbox_access"}
 	case "notification.delivery_governance":
 		return "Notification delivery governance", "Configure event types and delivery rules and inspect delivery and Inbox governance metrics.", []string{"notification.event_type", "notification.rule"}, []string{"domain_event_to_notification_intent_to_inbox_and_channel_delivery"}
 	default:
@@ -229,7 +224,7 @@ func notificationOpenAPIOperation(route modulehttp.Route) (json.RawMessage, erro
 		Effect:      modulecapability.EffectClass(route.Action.EffectClass),
 		Idempotency: modulecapability.Idempotency{Mode: route.Action.IdempotencyDecision},
 	}
-	if strings.HasSuffix(path, "/notifications/stream") {
+	if path == "/notification/inbox/stream" {
 		extension.Transport = &modulecapability.Transport{Mode: "sse", ResumeSemantics: "Last-Event-ID or cursor; each signal requires a durable Inbox refetch", DeliveryOrdering: "latest state cursor"}
 	}
 	operation := map[string]any{
@@ -259,7 +254,7 @@ func notificationOpenAPIOperation(route modulehttp.Route) (json.RawMessage, erro
 			status = "201"
 		}
 		contentType := "application/json"
-		if strings.HasSuffix(path, "/notifications/stream") {
+		if path == "/notification/inbox/stream" {
 			contentType = "text/event-stream"
 		}
 		responses[status] = map[string]any{"description": notificationResponseDescription(path), "content": map[string]any{contentType: map[string]any{"schema": notificationResponseSchema(method, path)}}}
@@ -292,10 +287,8 @@ func notificationOperationID(method, path string) string {
 
 func notificationOperationTag(path string) string {
 	switch {
-	case strings.HasPrefix(path, "/business/"):
-		return "Notification Business Inbox"
-	case strings.HasPrefix(path, "/portal/"):
-		return "Notification Consumer Inbox"
+	case path == "/notification/inbox" || strings.HasPrefix(path, "/notification/inbox/"):
+		return "Notification Inbox"
 	case strings.Contains(path, "/governance/") || strings.HasSuffix(path, "/policy") || strings.Contains(path, "/preferences") || strings.HasSuffix(path, "/metrics"):
 		return "Notification Delivery Governance"
 	default:
@@ -308,7 +301,7 @@ func notificationOperationSummary(method, path string) string {
 }
 
 func notificationOperationDescription(method, path string) string {
-	if strings.HasSuffix(path, "/notifications/stream") {
+	if path == "/notification/inbox/stream" {
 		return "Resume the authenticated principal's Inbox synchronization stream and refetch durable state after each signal."
 	}
 	return "Notification-owned " + strings.ToLower(notificationOperationTag(path)) + " operation."
@@ -329,7 +322,7 @@ func notificationOperationParameters(method, path string) []any {
 	addQuery := func(name string, schema map[string]any) {
 		parameters = append(parameters, map[string]any{"name": name, "in": "query", "required": false, "schema": schema})
 	}
-	if strings.HasSuffix(path, "/notifications") || strings.HasSuffix(path, "/notifications/facets") || strings.HasSuffix(path, "/notifications/read-all") {
+	if path == "/notification/inbox" || path == "/notification/inbox/facets" || path == "/notification/inbox/read-all" {
 		for _, name := range []string{"mailbox", "query", "scope", "team_member_id", "delegated_owner_id", "from", "to"} {
 			addQuery(name, map[string]any{"type": "string"})
 		}
@@ -341,14 +334,14 @@ func notificationOperationParameters(method, path string) []any {
 			addQuery("cursor", map[string]any{"type": "string"})
 		}
 	}
-	if strings.HasSuffix(path, "/notifications/stream") {
+	if path == "/notification/inbox/stream" {
 		parameters = append(parameters, map[string]any{"name": "Last-Event-ID", "in": "header", "required": false, "schema": map[string]any{"type": "string"}})
 		addQuery("cursor", map[string]any{"type": "string"})
 	}
-	if path == "/notifications/publications" {
+	if path == "/notification/publications" {
 		addQuery("template_key", map[string]any{"type": "string"})
 	}
-	if path == "/notifications/metrics" || path == "/notifications/governance/inbox-metrics" {
+	if path == "/notification/metrics" || path == "/notification/governance/inbox-metrics" {
 		addQuery("hours", map[string]any{"type": "integer", "minimum": 1, "maximum": 720, "default": 24})
 	}
 	_ = method
@@ -360,15 +353,15 @@ func notificationRequestSchema(method, path string) map[string]any {
 		return nil
 	}
 	switch {
-	case strings.HasSuffix(path, "/notifications/read-all"), strings.HasSuffix(path, "/read"), strings.HasSuffix(path, "/unread"), strings.HasSuffix(path, "/archive"), strings.HasSuffix(path, "/restore"), strings.HasSuffix(path, "/acknowledge"), strings.HasSuffix(path, "/approve"), strings.HasSuffix(path, "/cancel"):
+	case path == "/notification/inbox/read-all", strings.HasSuffix(path, "/read"), strings.HasSuffix(path, "/unread"), strings.HasSuffix(path, "/archive"), strings.HasSuffix(path, "/restore"), strings.HasSuffix(path, "/acknowledge"), strings.HasSuffix(path, "/approve"), strings.HasSuffix(path, "/cancel"):
 		return nil
-	case strings.HasSuffix(path, "/notification-preferences"):
+	case path == "/notification/inbox/preference":
 		return openAPISchemaFor(reflect.TypeOf(contract.NotificationRecipientPreference{}), map[reflect.Type]bool{})
 	case strings.Contains(path, "/saved-views/"):
 		return openAPISchemaFor(reflect.TypeOf(contract.NotificationInboxSavedView{}), map[reflect.Type]bool{})
 	case strings.Contains(path, "/delegations/"):
 		return openAPISchemaFor(reflect.TypeOf(contract.NotificationInboxDelegation{}), map[reflect.Type]bool{})
-	case path == "/notifications/templates/preview":
+	case path == "/notification/templates/preview":
 		return openAPISchemaFor(reflect.TypeOf(previewDraftInput{}), map[reflect.Type]bool{})
 	case strings.HasSuffix(path, "/draft"):
 		return openAPISchemaFor(reflect.TypeOf(draftInput{}), map[reflect.Type]bool{})
@@ -380,9 +373,9 @@ func notificationRequestSchema(method, path string) map[string]any {
 		return openAPISchemaFor(reflect.TypeOf(previewInput{}), map[reflect.Type]bool{})
 	case strings.HasSuffix(path, "/reject"):
 		return openAPISchemaFor(reflect.TypeOf(reviewInput{}), map[reflect.Type]bool{})
-	case path == "/notifications/policy":
+	case path == "/notification/policy":
 		return openAPISchemaFor(reflect.TypeOf(contract.NotificationDeliveryPolicy{}), map[reflect.Type]bool{})
-	case strings.HasPrefix(path, "/notifications/preferences/"):
+	case strings.HasPrefix(path, "/notification/preferences/"):
 		return openAPISchemaFor(reflect.TypeOf(contract.NotificationRecipientPreference{}), map[reflect.Type]bool{})
 	default:
 		return nil
@@ -391,61 +384,61 @@ func notificationRequestSchema(method, path string) map[string]any {
 
 func notificationResponseSchema(method, path string) map[string]any {
 	switch {
-	case strings.HasSuffix(path, "/notifications/stream"):
+	case path == "/notification/inbox/stream":
 		return map[string]any{"type": "string", "description": "Server-sent notification.sync and notification.ready events"}
-	case strings.HasSuffix(path, "/notifications/unread-count"):
+	case path == "/notification/inbox/unread-count":
 		return openAPISchemaFor(reflect.TypeOf(struct {
 			Unread int `json:"unread"`
 		}{}), map[reflect.Type]bool{})
-	case strings.HasSuffix(path, "/notifications/facets"):
+	case path == "/notification/inbox/facets":
 		return openAPISchemaFor(reflect.TypeOf(contract.NotificationInboxFacets{}), map[reflect.Type]bool{})
-	case strings.HasSuffix(path, "/notifications/read-all"):
+	case path == "/notification/inbox/read-all":
 		return openAPISchemaFor(reflect.TypeOf(struct {
 			Updated int `json:"updated"`
 		}{}), map[reflect.Type]bool{})
-	case strings.HasSuffix(path, "/notifications/saved-views"):
+	case path == "/notification/inbox/saved-views":
 		return openAPISchemaFor(reflect.TypeOf(struct {
 			Views []contract.NotificationInboxSavedView `json:"views"`
 			Count int                                   `json:"count"`
 		}{}), map[reflect.Type]bool{})
-	case strings.Contains(path, "/notifications/saved-views/"):
+	case strings.Contains(path, "/notification/inbox/saved-views/"):
 		return openAPISchemaFor(reflect.TypeOf(contract.NotificationInboxSavedView{}), map[reflect.Type]bool{})
-	case strings.HasSuffix(path, "/notifications/delegations"):
+	case path == "/notification/inbox/delegations":
 		return openAPISchemaFor(reflect.TypeOf(struct {
 			Delegations []contract.NotificationInboxDelegation `json:"delegations"`
 			Count       int                                    `json:"count"`
 		}{}), map[reflect.Type]bool{})
-	case strings.Contains(path, "/notifications/delegations/"):
+	case strings.Contains(path, "/notification/inbox/delegations/"):
 		return openAPISchemaFor(reflect.TypeOf(contract.NotificationInboxDelegation{}), map[reflect.Type]bool{})
-	case strings.HasSuffix(path, "/notifications/delegated-owners"):
+	case path == "/notification/inbox/delegated-owners":
 		return openAPISchemaFor(reflect.TypeOf(struct {
 			OwnerUserIDs []string `json:"owner_user_ids"`
 			Count        int      `json:"count"`
 		}{}), map[reflect.Type]bool{})
-	case strings.HasSuffix(path, "/notification-preferences"):
+	case path == "/notification/inbox/preference":
 		return openAPISchemaFor(reflect.TypeOf(contract.NotificationRecipientPreference{}), map[reflect.Type]bool{})
-	case strings.Contains(path, "/notifications/{notificationID}"):
+	case strings.Contains(path, "/notification/inbox/{notificationID}"):
 		return openAPISchemaFor(reflect.TypeOf(contract.NotificationInboxItem{}), map[reflect.Type]bool{})
-	case strings.HasSuffix(path, "/notifications"):
+	case path == "/notification/inbox":
 		return openAPISchemaFor(reflect.TypeOf(contract.NotificationInboxPage{}), map[reflect.Type]bool{})
-	case path == "/notifications/capabilities":
+	case path == "/notification/capabilities":
 		return openAPISchemaFor(reflect.TypeOf(struct {
 			Capabilities []contract.NotificationTemplateCapability `json:"capabilities"`
 			Count        int                                       `json:"count"`
 		}{}), map[reflect.Type]bool{})
-	case path == "/notifications/templates":
+	case path == "/notification/templates":
 		return openAPISchemaFor(reflect.TypeOf(struct {
 			Templates []contract.NotificationTemplateRecord `json:"templates"`
 			Count     int                                   `json:"count"`
 		}{}), map[reflect.Type]bool{})
-	case path == "/notifications/publications":
+	case path == "/notification/publications":
 		return openAPISchemaFor(reflect.TypeOf(struct {
 			Publications []contract.NotificationPublicationRequest `json:"publications"`
 			Count        int                                       `json:"count"`
 		}{}), map[reflect.Type]bool{})
 	case strings.Contains(path, "/publications/"):
 		return openAPISchemaFor(reflect.TypeOf(contract.NotificationPublicationRequest{}), map[reflect.Type]bool{})
-	case path == "/notifications/templates/preview" || strings.HasSuffix(path, "/preview"):
+	case path == "/notification/templates/preview" || strings.HasSuffix(path, "/preview"):
 		return openAPISchemaFor(reflect.TypeOf(contract.RenderedNotification{}), map[reflect.Type]bool{})
 	case strings.HasSuffix(path, "/versions"):
 		return openAPISchemaFor(reflect.TypeOf(struct {
@@ -454,20 +447,20 @@ func notificationResponseSchema(method, path string) map[string]any {
 		}{}), map[reflect.Type]bool{})
 	case strings.Contains(path, "/templates/"):
 		return openAPISchemaFor(reflect.TypeOf(contract.NotificationTemplateRecord{}), map[reflect.Type]bool{})
-	case path == "/notifications/policy":
+	case path == "/notification/policy":
 		return openAPISchemaFor(reflect.TypeOf(contract.NotificationDeliveryPolicy{}), map[reflect.Type]bool{})
-	case path == "/notifications/preferences":
+	case path == "/notification/preferences":
 		return openAPISchemaFor(reflect.TypeOf(struct {
 			Preferences []contract.NotificationRecipientPreference `json:"preferences"`
 			Count       int                                        `json:"count"`
 		}{}), map[reflect.Type]bool{})
-	case strings.HasPrefix(path, "/notifications/preferences/"):
+	case strings.HasPrefix(path, "/notification/preferences/"):
 		return openAPISchemaFor(reflect.TypeOf(contract.NotificationRecipientPreference{}), map[reflect.Type]bool{})
-	case path == "/notifications/metrics":
+	case path == "/notification/metrics":
 		return openAPISchemaFor(reflect.TypeOf(contract.NotificationDeliveryMetrics{}), map[reflect.Type]bool{})
-	case path == "/notifications/governance/catalog":
+	case path == "/notification/governance/catalog":
 		return openAPISchemaFor(reflect.TypeOf(contract.NotificationGovernanceCatalog{}), map[reflect.Type]bool{})
-	case path == "/notifications/governance/inbox-metrics":
+	case path == "/notification/governance/inbox-metrics":
 		return openAPISchemaFor(reflect.TypeOf(contract.NotificationInboxGovernanceMetrics{}), map[reflect.Type]bool{})
 	default:
 		_ = method
@@ -476,7 +469,7 @@ func notificationResponseSchema(method, path string) map[string]any {
 }
 
 func notificationResponseDescription(path string) string {
-	if strings.HasSuffix(path, "/notifications/stream") {
+	if path == "/notification/inbox/stream" {
 		return "Inbox synchronization SSE stream"
 	}
 	return "Notification-owned operation result"
@@ -544,4 +537,4 @@ func openAPISchemaFor(value reflect.Type, stack map[reflect.Type]bool) map[strin
 	}
 }
 
-var _ modulehttp.OpenAPIProvider = (*surface)(nil)
+var _ modulehttp.OpenAPIProvider = (*adapter)(nil)

@@ -108,13 +108,12 @@ func TestMailboxWorkspaceIsolationAndAtomicMarkAllRead(t *testing.T) {
 }
 
 func mailboxItem(event inbox.Event, id string, recipient notification.UserID) inbox.Item {
-	return inbox.Item{ID: id, WorkspaceID: event.WorkspaceID, RecipientUserID: recipient, Surface: event.Surface, EventID: event.ID,
+	return inbox.Item{ID: id, WorkspaceID: event.WorkspaceID, RecipientUserID: recipient, EventID: event.ID,
 		EventType: event.EventType, Source: event.Source, Category: event.Category, Severity: event.Severity, Title: "Build failed", Body: "Open run",
 		ActionState: inbox.ActionOpen, AlertState: inbox.AlertFiring, GroupKey: event.GroupKey, OccurrenceCount: 1,
 		FirstOccurredAt: event.OccurredAt, LastOccurredAt: event.OccurredAt, CreatedAt: event.CreatedAt, UpdatedAt: event.UpdatedAt}
 }
 
 func personalMailboxQuery(user notification.UserID) inbox.Query {
-	return inbox.Query{WorkspaceID: "workspace-1", ViewerUserID: user, RecipientUserID: user, RecipientUserIDs: []notification.UserID{user},
-		Surface: "business_workspace", Scope: inbox.ScopeMine, Mailbox: inbox.MailboxInbox, Limit: 20}
+	return inbox.Query{WorkspaceID: "workspace-1", ViewerUserID: user, RecipientUserID: user, RecipientUserIDs: []notification.UserID{user}, Scope: inbox.ScopeMine, Mailbox: inbox.MailboxInbox, Limit: 20}
 }

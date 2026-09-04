@@ -41,7 +41,7 @@ func TestMaterializeCommitsAllProjectionsAndFencedEvent(t *testing.T) {
 	event := claimedEvent()
 	insertClaimedEvent(t, db, event)
 	item := inbox.Item{
-		ID: "item-1", WorkspaceID: event.WorkspaceID, RecipientUserID: "user-1", Surface: event.Surface,
+		ID: "item-1", WorkspaceID: event.WorkspaceID, RecipientUserID: "user-1",
 		EventID: event.ID, EventType: event.EventType, Source: event.Source, Category: event.Category, Severity: event.Severity,
 		Title: "Build failed", Body: "Open the run", ActionState: inbox.ActionOpen, AlertState: inbox.AlertFiring, GroupKey: event.GroupKey,
 		OccurrenceCount: 1, FirstOccurredAt: event.OccurredAt, LastOccurredAt: event.OccurredAt, CreatedAt: event.CreatedAt, UpdatedAt: event.UpdatedAt,
@@ -69,7 +69,7 @@ func TestMaterializeRollsBackWhenLeaseWasLost(t *testing.T) {
 	event := claimedEvent()
 	insertClaimedEvent(t, db, event)
 	event.FencingToken++
-	item := inbox.Item{ID: "item-1", WorkspaceID: event.WorkspaceID, RecipientUserID: "user-1", Surface: event.Surface, EventID: event.ID,
+	item := inbox.Item{ID: "item-1", WorkspaceID: event.WorkspaceID, RecipientUserID: "user-1", EventID: event.ID,
 		LastOccurredAt: event.OccurredAt, FirstOccurredAt: event.OccurredAt, CreatedAt: event.CreatedAt, UpdatedAt: event.UpdatedAt}
 	if err := store.Materialize(t.Context(), event, []inbox.Item{item}); !mutation.IsMutationConflict(err, mutation.MutationConflictLeaseLost) {
 		t.Fatalf("err=%v", err)
@@ -90,8 +90,8 @@ func materializationStore(t *testing.T) (*sql.DB, *sqlstore.Store, *queueScopes)
 	t.Cleanup(func() { _ = db.Close() })
 	statements := []string{
 		`CREATE TABLE _notification_events (id TEXT, workspace_id TEXT, source TEXT, source_event_id TEXT, status TEXT, payload_json TEXT, attempt_count INTEGER, next_attempt_at TEXT, last_error_code TEXT, lease_owner TEXT, lease_expires_at TEXT, fencing_token INTEGER, occurred_at TEXT, created_at TEXT, updated_at TEXT, UNIQUE(workspace_id,id), UNIQUE(workspace_id,source,source_event_id))`,
-		`CREATE TABLE _notification_inbox_items (id TEXT, workspace_id TEXT, recipient_user_id TEXT, surface TEXT, event_id TEXT, event_type TEXT, source TEXT, category TEXT, severity TEXT, title TEXT, body TEXT, search_text TEXT, payload_json TEXT, subject_type TEXT, subject_id TEXT, action_state TEXT, alert_state TEXT, group_key TEXT, occurrence_count INTEGER, first_occurred_at TEXT, last_occurred_at TEXT, read_at TEXT, archived_at TEXT, expires_at TEXT, created_at TEXT, updated_at TEXT, UNIQUE(workspace_id,id))`,
-		`CREATE TABLE _notification_alert_groups (workspace_id TEXT, recipient_user_id TEXT, surface TEXT, group_key TEXT, state TEXT, occurrence_count INTEGER, first_occurred_at TEXT, last_occurred_at TEXT, acknowledged_at TEXT, acknowledged_by TEXT, resolved_at TEXT, last_event_id TEXT, updated_at TEXT, UNIQUE(workspace_id,recipient_user_id,surface,group_key))`,
+		`CREATE TABLE _notification_inbox_items (id TEXT, workspace_id TEXT, recipient_user_id TEXT, event_id TEXT, event_type TEXT, source TEXT, category TEXT, severity TEXT, title TEXT, body TEXT, search_text TEXT, payload_json TEXT, subject_type TEXT, subject_id TEXT, action_state TEXT, alert_state TEXT, group_key TEXT, occurrence_count INTEGER, first_occurred_at TEXT, last_occurred_at TEXT, read_at TEXT, archived_at TEXT, expires_at TEXT, created_at TEXT, updated_at TEXT, UNIQUE(workspace_id,id))`,
+		`CREATE TABLE _notification_alert_groups (workspace_id TEXT, recipient_user_id TEXT, group_key TEXT, state TEXT, occurrence_count INTEGER, first_occurred_at TEXT, last_occurred_at TEXT, acknowledged_at TEXT, acknowledged_by TEXT, resolved_at TEXT, last_event_id TEXT, updated_at TEXT, UNIQUE(workspace_id,recipient_user_id,group_key))`,
 		`CREATE TABLE _notification_channel_plans (id TEXT, workspace_id TEXT, event_id TEXT, channel TEXT, status TEXT, payload_json TEXT, attempt_count INTEGER, next_attempt_at TEXT, last_error_code TEXT, outbox_message_id TEXT, lease_owner TEXT, lease_expires_at TEXT, fencing_token INTEGER, created_at TEXT, updated_at TEXT, UNIQUE(workspace_id,id))`,
 	}
 	for _, statement := range statements {
@@ -110,7 +110,7 @@ func materializationStore(t *testing.T) (*sql.DB, *sqlstore.Store, *queueScopes)
 
 func claimedEvent() inbox.Event {
 	return inbox.Event{ID: "event-1", WorkspaceID: "workspace-1", Source: "workflow", SourceEventID: "run-1", EventType: "workflow.run.failed",
-		Category: "workflow", Severity: "error", Surface: "business_workspace", GroupKey: "run-1", AlertState: inbox.AlertFiring,
+		Category: "workflow", Severity: "error", GroupKey: "run-1", AlertState: inbox.AlertFiring,
 		Status: inbox.EventProcessing, LeaseOwner: "worker-1", FencingToken: 3, OccurredAt: "2026-08-24T01:00:00.000000000Z",
 		CreatedAt: "2026-08-24T01:00:00.000000000Z", UpdatedAt: "2026-08-24T01:00:00.000000000Z",
 		ChannelPlans: []delivery.Plan{{ID: "plan-1", WorkspaceID: "workspace-1", EventID: "event-1", Channel: "slack", Status: "queued", CreatedAt: "2026-08-24T01:00:00.000000000Z", UpdatedAt: "2026-08-24T01:00:00.000000000Z"}}}

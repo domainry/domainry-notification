@@ -102,7 +102,11 @@ func (m *PolicyManager) EvaluateDelivery(ctx context.Context, evaluation Evaluat
 			}
 		}
 		createdAt := notification.Timestamp(now)
-		identity := strings.Join([]string{evaluation.WorkspaceID.String(), recipient.String(), evaluation.TemplateKey, evaluation.Channel, evaluation.DedupeKey, createdAt}, "\x00")
+		reservationKey := strings.TrimSpace(evaluation.ReservationKey)
+		if reservationKey == "" {
+			reservationKey = createdAt
+		}
+		identity := strings.Join([]string{evaluation.WorkspaceID.String(), recipient.String(), evaluation.TemplateKey, evaluation.Channel, evaluation.DedupeKey, reservationKey}, "\x00")
 		sum := sha256.Sum256([]byte(identity))
 		reservations = append(reservations, Reservation{ID: hex.EncodeToString(sum[:]), RecipientKey: recipient, TemplateKey: evaluation.TemplateKey,
 			Channel: evaluation.Channel, DedupeKey: evaluation.DedupeKey, CreatedAt: createdAt})

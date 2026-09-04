@@ -153,7 +153,7 @@ func (s *managementStore) ClaimPublicationRequest(_ context.Context, id, owner, 
 
 func TestManagerDraftPublishDisableAndCatalogReconciliation(t *testing.T) {
 	validator := emailValidator(t)
-	engine, err := template.NewEngine("en-US", nil, validator, recipientDirectory{"user-1": {ID: "user-1", Email: "user@example.test"}})
+	engine, err := template.NewEngine("en-US", nil, validator, recipientResolver{"user-1": {ID: "user-1", Email: "user@example.test"}})
 	if err != nil {
 		t.Fatal(err)
 	}

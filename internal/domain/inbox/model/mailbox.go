@@ -9,7 +9,6 @@ type Item struct {
 	ID                  string                   `json:"id"`
 	WorkspaceID         notification.WorkspaceID `json:"workspace_id"`
 	RecipientUserID     notification.UserID      `json:"recipient_user_id"`
-	Surface             notification.Surface     `json:"surface"`
 	EventID             string                   `json:"event_id"`
 	EventType           string                   `json:"event_type"`
 	Source              string                   `json:"source"`
@@ -46,7 +45,6 @@ type Query struct {
 	RecipientUserIDs []notification.UserID
 	ReportingUserIDs []notification.UserID
 	DelegatedUserIDs []notification.UserID
-	Surface          notification.Surface
 	Scope            Scope
 	Mailbox          Mailbox
 	Query            string
@@ -80,14 +78,13 @@ type Facets struct {
 	Severities     []Facet `json:"severities"`
 }
 
-// Delegation grants read-only mailbox access for one product surface. It never
-// grants authority to mutate the owner's mailbox or source business resource.
+// Delegation grants read-only mailbox access. It never grants authority to
+// mutate the owner's mailbox or source business resource.
 type Delegation struct {
 	ID             string                   `json:"id"`
 	WorkspaceID    notification.WorkspaceID `json:"workspace_id"`
 	OwnerUserID    notification.UserID      `json:"owner_user_id"`
 	DelegateUserID notification.UserID      `json:"delegate_user_id"`
-	Surface        notification.Surface     `json:"surface"`
 	StartsAt       string                   `json:"starts_at,omitempty"`
 	EndsAt         string                   `json:"ends_at,omitempty"`
 	Enabled        bool                     `json:"enabled"`
@@ -112,12 +109,11 @@ type SavedView struct {
 	UpdatedAt    string              `json:"updated_at,omitempty"`
 }
 
-// AlertGroup is the durable lifecycle of a continuing alert for one recipient
-// and product surface. Inbox rows mirror this state for mailbox queries.
+// AlertGroup is the durable lifecycle of a continuing alert for one recipient.
+// Inbox rows mirror this state for mailbox queries.
 type AlertGroup struct {
 	WorkspaceID     notification.WorkspaceID `json:"workspace_id"`
 	RecipientUserID notification.UserID      `json:"recipient_user_id"`
-	Surface         notification.Surface     `json:"surface"`
 	GroupKey        string                   `json:"group_key"`
 	State           AlertState               `json:"state"`
 	OccurrenceCount int                      `json:"occurrence_count"`

@@ -69,7 +69,7 @@ var baseSchemaTables = []schemaTable{
 		required("created_at", indexedTextColumn), required("updated_at", indexedTextColumn),
 	}},
 	{name: "_notification_inbox_items", columns: []schemaColumn{
-		required("id", identifierColumn), required("workspace_id", identifierColumn), required("recipient_user_id", indexedTextColumn), required("surface", indexedTextColumn),
+		required("id", identifierColumn), required("workspace_id", identifierColumn), required("recipient_user_id", indexedTextColumn),
 		required("event_id", indexedTextColumn), required("event_type", indexedTextColumn), required("source", indexedTextColumn), required("category", indexedTextColumn),
 		required("severity", indexedTextColumn), required("title", documentColumn), required("body", documentColumn), required("search_text", documentColumn),
 		required("payload_json", documentColumn), defaulted("subject_type", indexedTextColumn, ""), defaulted("subject_id", indexedTextColumn, ""),
@@ -80,17 +80,17 @@ var baseSchemaTables = []schemaTable{
 	}},
 	{name: "_notification_inbox_delegations", columns: []schemaColumn{
 		required("id", identifierColumn), required("workspace_id", identifierColumn), required("owner_user_id", indexedTextColumn), required("delegate_user_id", indexedTextColumn),
-		required("surface", indexedTextColumn), defaulted("starts_at", indexedTextColumn, ""), defaulted("ends_at", indexedTextColumn, ""),
+		defaulted("starts_at", indexedTextColumn, ""), defaulted("ends_at", indexedTextColumn, ""),
 		defaulted("enabled", booleanColumn, true), required("created_at", indexedTextColumn), required("updated_at", indexedTextColumn),
 	}},
 	{name: "_notification_alert_groups", columns: []schemaColumn{
-		required("workspace_id", identifierColumn), required("recipient_user_id", indexedTextColumn), required("surface", indexedTextColumn), required("group_key", indexedTextColumn),
+		required("workspace_id", identifierColumn), required("recipient_user_id", indexedTextColumn), required("group_key", indexedTextColumn),
 		required("state", indexedTextColumn), defaulted("occurrence_count", integerColumn, 1), required("first_occurred_at", indexedTextColumn),
 		required("last_occurred_at", indexedTextColumn), defaulted("acknowledged_at", indexedTextColumn, ""), defaulted("acknowledged_by", indexedTextColumn, ""),
 		defaulted("resolved_at", indexedTextColumn, ""), required("last_event_id", indexedTextColumn), required("updated_at", indexedTextColumn),
 	}},
 	{name: "_notification_inbox_saved_views", columns: []schemaColumn{
-		required("workspace_id", identifierColumn), required("recipient_user_id", indexedTextColumn), required("surface", indexedTextColumn),
+		required("workspace_id", identifierColumn), required("recipient_user_id", indexedTextColumn),
 		required("view_key", indexedTextColumn), required("payload_json", documentColumn), required("created_at", indexedTextColumn), required("updated_at", indexedTextColumn),
 	}},
 }
@@ -112,15 +112,15 @@ var baseSchemaIndexes = []schemaIndex{
 	{name: "uniq_notification_channel_plan_identity", table: "_notification_channel_plans", unique: true, columns: []string{"workspace_id", "id"}},
 	{name: "idx_notification_channel_plan_due", table: "_notification_channel_plans", columns: []string{"status", "next_attempt_at", "lease_expires_at", "created_at"}},
 	{name: "uniq_notification_inbox_workspace_identity", table: "_notification_inbox_items", unique: true, columns: []string{"workspace_id", "id"}},
-	{name: "idx_notification_inbox_mailbox", table: "_notification_inbox_items", columns: []string{"workspace_id", "recipient_user_id", "surface", "archived_at", "updated_at", "id"}},
-	{name: "idx_notification_inbox_unread", table: "_notification_inbox_items", columns: []string{"workspace_id", "recipient_user_id", "surface", "read_at", "archived_at"}},
-	{name: "idx_notification_inbox_facets", table: "_notification_inbox_items", columns: []string{"workspace_id", "recipient_user_id", "surface", "category", "source", "severity", "archived_at"}},
-	{name: "idx_notification_inbox_group", table: "_notification_inbox_items", columns: []string{"workspace_id", "recipient_user_id", "surface", "group_key", "alert_state"}},
+	{name: "idx_notification_inbox_mailbox", table: "_notification_inbox_items", columns: []string{"workspace_id", "recipient_user_id", "archived_at", "updated_at", "id"}},
+	{name: "idx_notification_inbox_unread", table: "_notification_inbox_items", columns: []string{"workspace_id", "recipient_user_id", "read_at", "archived_at"}},
+	{name: "idx_notification_inbox_facets", table: "_notification_inbox_items", columns: []string{"workspace_id", "recipient_user_id", "category", "source", "severity", "archived_at"}},
+	{name: "idx_notification_inbox_group", table: "_notification_inbox_items", columns: []string{"workspace_id", "recipient_user_id", "group_key", "alert_state"}},
 	{name: "uniq_notification_inbox_delegation_identity", table: "_notification_inbox_delegations", unique: true, columns: []string{"workspace_id", "id"}},
-	{name: "idx_notification_inbox_delegation_delegate", table: "_notification_inbox_delegations", columns: []string{"workspace_id", "delegate_user_id", "surface", "enabled", "starts_at", "ends_at"}},
-	{name: "uniq_notification_alert_group", table: "_notification_alert_groups", unique: true, columns: []string{"workspace_id", "recipient_user_id", "surface", "group_key"}},
+	{name: "idx_notification_inbox_delegation_delegate", table: "_notification_inbox_delegations", columns: []string{"workspace_id", "delegate_user_id", "enabled", "starts_at", "ends_at"}},
+	{name: "uniq_notification_alert_group", table: "_notification_alert_groups", unique: true, columns: []string{"workspace_id", "recipient_user_id", "group_key"}},
 	{name: "idx_notification_alert_group_state", table: "_notification_alert_groups", columns: []string{"workspace_id", "state", "updated_at"}},
-	{name: "uniq_notification_inbox_saved_view", table: "_notification_inbox_saved_views", unique: true, columns: []string{"workspace_id", "recipient_user_id", "surface", "view_key"}},
+	{name: "uniq_notification_inbox_saved_view", table: "_notification_inbox_saved_views", unique: true, columns: []string{"workspace_id", "recipient_user_id", "view_key"}},
 }
 
 var retentionArchiveTables = []schemaTable{

@@ -29,25 +29,25 @@ func (f *RemoteFactory) Open(ctx context.Context, application notificationsdk.Ap
 	if err != nil {
 		return nil, err
 	}
-	surface, err := notificationhttp.NewSurface(binding)
+	adapter, err := notificationhttp.NewAdapter(binding)
 	if err != nil {
 		_ = binding.Close(context.WithoutCancel(ctx))
 		return nil, err
 	}
-	return newBindingWithHTTPSurface(binding, surface), nil
+	return newBindingWithHTTPAdapter(binding, adapter), nil
 }
 
-type bindingWithHTTPSurface struct {
+type bindingWithHTTPAdapter struct {
 	notificationsdk.Binding
 	systemTemplates notificationsdk.SystemTemplates
 	systemSubjects  notificationsdk.SystemSubjects
 	systemRetention notificationsdk.SystemRetention
 	systemMigration notificationsdk.SystemMigration
-	surfaces        []modulehttp.Surface
+	adapters        []modulehttp.Adapter
 }
 
-func newBindingWithHTTPSurface(binding notificationsdk.Binding, surface modulehttp.Surface) *bindingWithHTTPSurface {
-	result := &bindingWithHTTPSurface{Binding: binding, surfaces: []modulehttp.Surface{surface}}
+func newBindingWithHTTPAdapter(binding notificationsdk.Binding, adapter modulehttp.Adapter) *bindingWithHTTPAdapter {
+	result := &bindingWithHTTPAdapter{Binding: binding, adapters: []modulehttp.Adapter{adapter}}
 	if value, ok := binding.(notificationsdk.SystemTemplateBinding); ok {
 		result.systemTemplates = value.SystemTemplates()
 	}
@@ -63,29 +63,29 @@ func newBindingWithHTTPSurface(binding notificationsdk.Binding, surface moduleht
 	return result
 }
 
-func (b *bindingWithHTTPSurface) SystemTemplates() notificationsdk.SystemTemplates {
+func (b *bindingWithHTTPAdapter) SystemTemplates() notificationsdk.SystemTemplates {
 	return b.systemTemplates
 }
-func (b *bindingWithHTTPSurface) SystemSubjects() notificationsdk.SystemSubjects {
+func (b *bindingWithHTTPAdapter) SystemSubjects() notificationsdk.SystemSubjects {
 	return b.systemSubjects
 }
-func (b *bindingWithHTTPSurface) SystemRetention() notificationsdk.SystemRetention {
+func (b *bindingWithHTTPAdapter) SystemRetention() notificationsdk.SystemRetention {
 	return b.systemRetention
 }
-func (b *bindingWithHTTPSurface) SystemMigration() notificationsdk.SystemMigration {
+func (b *bindingWithHTTPAdapter) SystemMigration() notificationsdk.SystemMigration {
 	return b.systemMigration
 }
-func (b *bindingWithHTTPSurface) HTTPSurfaces() []modulehttp.Surface {
-	return append([]modulehttp.Surface(nil), b.surfaces...)
+func (b *bindingWithHTTPAdapter) HTTPAdapters() []modulehttp.Adapter {
+	return append([]modulehttp.Adapter(nil), b.adapters...)
 }
-func (b *bindingWithHTTPSurface) AuthorizationActions() ([]actioncontract.ActionDefinition, error) {
+func (b *bindingWithHTTPAdapter) AuthorizationActions() ([]actioncontract.ActionDefinition, error) {
 	return notificationapplication.AuthorizationActions()
 }
 
 var _ notificationsdk.Factory = (*RemoteFactory)(nil)
-var _ notificationsdk.SystemTemplateBinding = (*bindingWithHTTPSurface)(nil)
-var _ notificationsdk.SystemSubjectBinding = (*bindingWithHTTPSurface)(nil)
-var _ notificationsdk.SystemRetentionBinding = (*bindingWithHTTPSurface)(nil)
-var _ notificationsdk.SystemMigrationBinding = (*bindingWithHTTPSurface)(nil)
-var _ modulehttp.Provider = (*bindingWithHTTPSurface)(nil)
-var _ actioncontract.Provider = (*bindingWithHTTPSurface)(nil)
+var _ notificationsdk.SystemTemplateBinding = (*bindingWithHTTPAdapter)(nil)
+var _ notificationsdk.SystemSubjectBinding = (*bindingWithHTTPAdapter)(nil)
+var _ notificationsdk.SystemRetentionBinding = (*bindingWithHTTPAdapter)(nil)
+var _ notificationsdk.SystemMigrationBinding = (*bindingWithHTTPAdapter)(nil)
+var _ modulehttp.Provider = (*bindingWithHTTPAdapter)(nil)
+var _ actioncontract.Provider = (*bindingWithHTTPAdapter)(nil)

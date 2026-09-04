@@ -140,19 +140,19 @@ func (m *MailboxManager) MarkAllRead(ctx context.Context, query Query) (int, err
 	return m.mailboxes.MarkAllRead(ctx, validated, notification.Timestamp(m.clock.Now().UTC()))
 }
 
-func (m *MailboxManager) ListSavedViews(ctx context.Context, workspaceID notification.WorkspaceID, userID notification.UserID, surface notification.Surface) ([]SavedView, error) {
-	workspaceID, userID, surface, err := m.validateMailboxOwner(workspaceID, userID, surface)
+func (m *MailboxManager) ListSavedViews(ctx context.Context, workspaceID notification.WorkspaceID, userID notification.UserID) ([]SavedView, error) {
+	workspaceID, userID, err := m.validateMailboxOwner(workspaceID, userID)
 	if err != nil {
 		return nil, err
 	}
 	if m.savedViews == nil {
 		return nil, unavailable("backend.notification.inbox_saved_views_unavailable", nil)
 	}
-	return m.savedViews.ListSavedViews(ctx, workspaceID, userID, surface)
+	return m.savedViews.ListSavedViews(ctx, workspaceID, userID)
 }
 
-func (m *MailboxManager) SaveSavedView(ctx context.Context, workspaceID notification.WorkspaceID, userID notification.UserID, surface notification.Surface, value SavedView) (SavedView, error) {
-	workspaceID, userID, surface, err := m.validateMailboxOwner(workspaceID, userID, surface)
+func (m *MailboxManager) SaveSavedView(ctx context.Context, workspaceID notification.WorkspaceID, userID notification.UserID, value SavedView) (SavedView, error) {
+	workspaceID, userID, err := m.validateMailboxOwner(workspaceID, userID)
 	if err != nil {
 		return SavedView{}, err
 	}
@@ -168,7 +168,7 @@ func (m *MailboxManager) SaveSavedView(ctx context.Context, workspaceID notifica
 	if validated.CreatedAt == "" {
 		validated.CreatedAt = now
 	}
-	return m.savedViews.SaveSavedView(ctx, workspaceID, userID, surface, validated)
+	return m.savedViews.SaveSavedView(ctx, workspaceID, userID, validated)
 }
 
 // ValidateSavedView exposes the same pure owner validation used by SaveSavedView
@@ -181,15 +181,15 @@ func (m *MailboxManager) ValidateSavedView(value SavedView) error {
 	return err
 }
 
-func (m *MailboxManager) DeleteSavedView(ctx context.Context, workspaceID notification.WorkspaceID, userID notification.UserID, surface notification.Surface, key string) error {
-	workspaceID, userID, surface, err := m.validateMailboxOwner(workspaceID, userID, surface)
+func (m *MailboxManager) DeleteSavedView(ctx context.Context, workspaceID notification.WorkspaceID, userID notification.UserID, key string) error {
+	workspaceID, userID, err := m.validateMailboxOwner(workspaceID, userID)
 	if err != nil {
 		return err
 	}
 	if m.savedViews == nil {
 		return unavailable("backend.notification.inbox_saved_views_unavailable", nil)
 	}
-	deleted, err := m.savedViews.DeleteSavedView(ctx, workspaceID, userID, surface, strings.TrimSpace(key))
+	deleted, err := m.savedViews.DeleteSavedView(ctx, workspaceID, userID, strings.TrimSpace(key))
 	if err != nil {
 		return err
 	}
@@ -199,15 +199,15 @@ func (m *MailboxManager) DeleteSavedView(ctx context.Context, workspaceID notifi
 	return nil
 }
 
-func (m *MailboxManager) ListDelegations(ctx context.Context, workspaceID notification.WorkspaceID, ownerID notification.UserID, surface notification.Surface) ([]Delegation, error) {
-	workspaceID, ownerID, surface, err := m.validateMailboxOwner(workspaceID, ownerID, surface)
+func (m *MailboxManager) ListDelegations(ctx context.Context, workspaceID notification.WorkspaceID, ownerID notification.UserID) ([]Delegation, error) {
+	workspaceID, ownerID, err := m.validateMailboxOwner(workspaceID, ownerID)
 	if err != nil {
 		return nil, err
 	}
 	if m.delegations == nil {
 		return nil, unavailable("backend.notification.inbox_delegations_unavailable", nil)
 	}
-	return m.delegations.ListDelegations(ctx, workspaceID, ownerID, surface)
+	return m.delegations.ListDelegations(ctx, workspaceID, ownerID)
 }
 
 func (m *MailboxManager) SaveDelegation(ctx context.Context, value Delegation) (Delegation, error) {
@@ -219,7 +219,7 @@ func (m *MailboxManager) SaveDelegation(ctx context.Context, value Delegation) (
 		return value, err
 	}
 	if strings.TrimSpace(value.ID) == "" {
-		value.ID = stableID(value.WorkspaceID.String(), value.OwnerUserID.String(), value.DelegateUserID.String(), string(value.Surface))
+		value.ID = stableID(value.WorkspaceID.String(), value.OwnerUserID.String(), value.DelegateUserID.String())
 	}
 	now := notification.Timestamp(m.clock.Now().UTC())
 	if value.CreatedAt == "" {
@@ -265,15 +265,15 @@ func (m *MailboxManager) DeleteDelegation(ctx context.Context, workspaceID notif
 	return nil
 }
 
-func (m *MailboxManager) ActiveDelegatedOwnerIDs(ctx context.Context, workspaceID notification.WorkspaceID, delegateID notification.UserID, surface notification.Surface) ([]notification.UserID, error) {
-	workspaceID, delegateID, surface, err := m.validateMailboxOwner(workspaceID, delegateID, surface)
+func (m *MailboxManager) ActiveDelegatedOwnerIDs(ctx context.Context, workspaceID notification.WorkspaceID, delegateID notification.UserID) ([]notification.UserID, error) {
+	workspaceID, delegateID, err := m.validateMailboxOwner(workspaceID, delegateID)
 	if err != nil {
 		return nil, err
 	}
 	if m.delegations == nil {
 		return nil, unavailable("backend.notification.inbox_delegations_unavailable", nil)
 	}
-	return m.delegations.ListActiveDelegatedOwnerIDs(ctx, workspaceID, delegateID, surface, notification.Timestamp(m.clock.Now().UTC()))
+	return m.delegations.ListActiveDelegatedOwnerIDs(ctx, workspaceID, delegateID, notification.Timestamp(m.clock.Now().UTC()))
 }
 
 func (m *MailboxManager) GovernanceMetrics(ctx context.Context, workspaceID notification.WorkspaceID, since string) (GovernanceMetrics, error) {
@@ -284,14 +284,13 @@ func (m *MailboxManager) GovernanceMetrics(ctx context.Context, workspaceID noti
 	return m.metrics.GovernanceMetrics(ctx, workspaceID, strings.TrimSpace(since))
 }
 
-func (m *MailboxManager) validateMailboxOwner(workspaceID notification.WorkspaceID, userID notification.UserID, surface notification.Surface) (notification.WorkspaceID, notification.UserID, notification.Surface, error) {
+func (m *MailboxManager) validateMailboxOwner(workspaceID notification.WorkspaceID, userID notification.UserID) (notification.WorkspaceID, notification.UserID, error) {
 	workspaceID = notification.WorkspaceID(strings.TrimSpace(workspaceID.String()))
 	userID = notification.UserID(strings.TrimSpace(userID.String()))
-	surface = notification.Surface(strings.TrimSpace(string(surface)))
-	if workspaceID == "" || userID == "" || !m.validator.SupportsSurface(surface) {
-		return "", "", "", invalid("backend.notification.inbox_scope_invalid")
+	if workspaceID == "" || userID == "" {
+		return "", "", invalid("backend.notification.inbox_scope_invalid")
 	}
-	return workspaceID, userID, surface, nil
+	return workspaceID, userID, nil
 }
 
 func mailboxMutationResult(value Item, found bool, err error, id string) (Item, error) {

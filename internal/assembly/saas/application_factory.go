@@ -66,8 +66,8 @@ func (f *SQLApplicationFactory) OpenSaaS(ctx context.Context, application notifi
 	if f == nil || f.persistence == nil {
 		return nil, fmt.Errorf("Notification SaaS Application Factory is unavailable")
 	}
-	if identity == nil || identity.Directory() == nil {
-		return nil, fmt.Errorf("Notification SaaS Identity Directory is required")
+	if identity == nil || identity.Projection() == nil {
+		return nil, fmt.Errorf("Notification SaaS Identity Projection is required")
 	}
 	dialect, err := f.persistence.PrepareApplication(ctx, application)
 	if err != nil {
@@ -86,7 +86,7 @@ func (f *SQLApplicationFactory) OpenSaaS(ctx context.Context, application notifi
 		clock:       f.options.Clock,
 		workerID:    f.options.WorkerID + ":" + applicationKey(application),
 		notifier:    f.options.WorkNotifier,
-		directory:   identityRecipientDirectory{application: application, directory: identity.Directory()},
+		projection:  identityRecipientResolver{application: application, projection: identity.Projection()},
 		audiences:   f.options.AudienceResolver,
 		gateway:     gateway,
 		metrics:     f.options.DeliveryMetrics,
@@ -111,7 +111,7 @@ type saasApplicationHost struct {
 	clock       modulehost.Clock
 	workerID    string
 	notifier    modulehost.WorkNotifier
-	directory   modulehost.RecipientDirectory
+	projection  modulehost.RecipientResolver
 	audiences   modulehost.AudienceResolver
 	gateway     modulehost.DeliveryGateway
 	metrics     modulehost.DeliveryMetrics
@@ -126,15 +126,15 @@ func (h *saasApplicationHost) WorkspaceScope() modulehost.WorkspaceScope {
 func (h *saasApplicationHost) QueueScopes() modulehost.QueueScopeIndex {
 	return exactQueueScope{workspaceID: h.application.WorkspaceID}
 }
-func (h *saasApplicationHost) Identity() identitysdk.Binding                     { return h.identity }
-func (h *saasApplicationHost) Clock() modulehost.Clock                           { return h.clock }
-func (h *saasApplicationHost) WorkerID() string                                  { return h.workerID }
-func (h *saasApplicationHost) Catalog() modulehost.Catalog                       { return h.catalog }
-func (h *saasApplicationHost) WorkNotifier() modulehost.WorkNotifier             { return h.notifier }
-func (h *saasApplicationHost) RecipientDirectory() modulehost.RecipientDirectory { return h.directory }
-func (h *saasApplicationHost) AudienceResolver() modulehost.AudienceResolver     { return h.audiences }
-func (h *saasApplicationHost) DeliveryGateway() modulehost.DeliveryGateway       { return h.gateway }
-func (h *saasApplicationHost) DeliveryMetrics() modulehost.DeliveryMetrics       { return h.metrics }
+func (h *saasApplicationHost) Identity() identitysdk.Binding                   { return h.identity }
+func (h *saasApplicationHost) Clock() modulehost.Clock                         { return h.clock }
+func (h *saasApplicationHost) WorkerID() string                                { return h.workerID }
+func (h *saasApplicationHost) Catalog() modulehost.Catalog                     { return h.catalog }
+func (h *saasApplicationHost) WorkNotifier() modulehost.WorkNotifier           { return h.notifier }
+func (h *saasApplicationHost) RecipientResolver() modulehost.RecipientResolver { return h.projection }
+func (h *saasApplicationHost) AudienceResolver() modulehost.AudienceResolver   { return h.audiences }
+func (h *saasApplicationHost) DeliveryGateway() modulehost.DeliveryGateway     { return h.gateway }
+func (h *saasApplicationHost) DeliveryMetrics() modulehost.DeliveryMetrics     { return h.metrics }
 func (h *saasApplicationHost) ProviderTemplateValidator() modulehost.ProviderTemplateValidator {
 	return h.validator
 }
@@ -173,16 +173,16 @@ func (s exactQueueScope) Workspaces(_ context.Context, _ modulehost.Queryer, _ s
 	return []string{s.workspaceID}, nil
 }
 
-type identityRecipientDirectory struct {
+type identityRecipientResolver struct {
 	application notificationsdk.ApplicationRef
-	directory   identitysdk.Directory
+	projection  identitysdk.Projection
 }
 
-func (d identityRecipientDirectory) FindRecipient(ctx context.Context, workspaceID, userID string) (modulehost.Recipient, bool, error) {
+func (d identityRecipientResolver) FindRecipient(ctx context.Context, workspaceID, userID string) (modulehost.Recipient, bool, error) {
 	if strings.TrimSpace(workspaceID) != d.application.WorkspaceID || strings.TrimSpace(userID) == "" {
 		return modulehost.Recipient{}, false, nil
 	}
-	user, found, err := d.directory.FindUser(ctx, identitysdk.UserLookup{Application: identitysdk.ApplicationScope{
+	user, found, err := d.projection.FindUser(ctx, identitysdk.UserLookup{Application: identitysdk.ApplicationScope{
 		TenantID: identitysdk.TenantID(d.application.TenantID), WorkspaceID: identitysdk.WorkspaceID(d.application.WorkspaceID), ApplicationKey: identitysdk.ApplicationKey(d.application.ApplicationKey),
 	}, UserID: identitysdk.SubjectID(userID)})
 	if err != nil || !found {

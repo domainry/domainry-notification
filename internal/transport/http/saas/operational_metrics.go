@@ -155,7 +155,7 @@ func (m *OperationalMetrics) observeHTTP(method, path string, status int, durati
 
 func normalizedMetricPath(path string) string {
 	path = strings.TrimSpace(path)
-	if strings.HasPrefix(path, "/v1/") || path == "/live" || path == "/ready" || path == "/metrics" {
+	if strings.HasPrefix(path, "/notification/v1/") || path == "/live" || path == "/ready" || path == "/metrics" {
 		return path
 	}
 	return "other"

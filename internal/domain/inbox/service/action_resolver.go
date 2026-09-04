@@ -8,7 +8,7 @@ import (
 	notification "github.com/domainry/domainry-notification/internal/domain/notification/model"
 )
 
-const NavigationSurfaceRoute = "surface_route"
+const NavigationRoute = "route"
 
 type MailboxItemReader interface {
 	Get(context.Context, Query, string) (Item, error)
@@ -58,7 +58,7 @@ func (r *ActionResolver) Resolve(ctx context.Context, query Query, notificationI
 		}
 	}
 	descriptor, found := r.catalog.Action(action.Key)
-	routeKey := strings.TrimSpace(descriptor.SurfaceRoutes[string(query.Surface)])
+	routeKey := strings.TrimSpace(descriptor.RouteKey)
 	if !found || descriptor.Kind != action.Kind || descriptor.ResourceType != action.ResourceType || routeKey == "" {
 		return ResolvedAction{}, conflict("backend.notification.inbox_action_unavailable", "action_key", action.Key)
 	}
@@ -68,7 +68,7 @@ func (r *ActionResolver) Resolve(ctx context.Context, query Query, notificationI
 	}
 	return ResolvedAction{
 		Key: action.Key, Label: action.Label, Style: action.Style,
-		NavigationKind: NavigationSurfaceRoute, RouteKey: routeKey,
+		NavigationKind: NavigationRoute, RouteKey: routeKey,
 		RouteParams: params, Status: "available",
 	}, nil
 }

@@ -31,5 +31,4 @@ type GovernanceMetrics struct {
 	ByCategory  []Aggregate    `json:"by_category"`
 	BySeverity  []Aggregate    `json:"by_severity"`
 	BySource    []Aggregate    `json:"by_source"`
-	BySurface   []Aggregate    `json:"by_surface"`
 }

@@ -34,7 +34,7 @@ func TestOpenIsTopologyNeutralAndOwnerValidated(t *testing.T) {
 		t.Fatalf("official provider catalog is missing: %v", firstSummary.Scenarios.ProvidedCapabilities)
 	}
 	candidate, _ := json.Marshal(contract.NotificationEventType{
-		Key: "ticket.assigned", Source: "project", Category: "business", DefaultSeverity: "info", Surfaces: []string{"business_workspace"}, MandatoryInApp: true,
+		Key: "ticket.assigned", Source: "project", Category: "business", DefaultSeverity: "info", MandatoryInApp: true,
 		TemplateKey: "ticket_assigned", DefaultLocale: "en_US", Locales: map[string]contract.NotificationInboxEventTypeContent{"en_US": {Title: "Assigned", Body: "Assigned"}}, Version: 1, Status: "draft",
 	})
 	request := modulecapability.ValidationRequest{
@@ -48,6 +48,17 @@ func TestOpenIsTopologyNeutralAndOwnerValidated(t *testing.T) {
 	result, err := first.ValidateCapabilityCandidate(t.Context(), request)
 	if err != nil || len(result.Diagnostics) != 1 || result.Diagnostics[0].RuleKey != "notification.event_type.invalid" {
 		t.Fatalf("event type diagnostics=%+v err=%v", result.Diagnostics, err)
+	}
+	authoringCandidate, _ := json.Marshal(contract.NotificationEventType{
+		Key: "ticket.resolved", Source: "project", Category: "business", DefaultSeverity: "info", MandatoryInApp: true,
+		TemplateKey: "ticket_resolved", DefaultLocale: "en_US",
+		Locales: map[string]contract.NotificationInboxEventTypeContent{"en_US": {Title: "Resolved", Body: "Resolved", ActionLabels: map[string]string{"open_ticket": "Open"}}},
+		Actions: []contract.NotificationInboxActionDescriptor{{Key: "open_ticket", ResourceType: "project_record", RouteKey: "ticket.detail"}},
+	})
+	request.Candidate = modulecapability.AuthoringFragment{Collection: "notification_event_types", Key: "ticket.resolved", Value: authoringCandidate}
+	result, err = first.ValidateCapabilityCandidate(t.Context(), request)
+	if err != nil || len(result.Diagnostics) != 0 {
+		t.Fatalf("authoring event type diagnostics=%+v err=%v", result.Diagnostics, err)
 	}
 }
 

@@ -20,7 +20,7 @@ type ownerValidator struct {
 }
 
 // NewOwnerValidator builds the exact pure validator used by the public
-// capability binding. Provider capabilities and product surfaces come from the
+// capability binding. Provider capabilities and semantic routes come from the
 // Notification SDK, not from the currently mounted Runtime topology.
 func NewOwnerValidator() (modulecapability.Validator, error) {
 	templateCatalog, err := modulehost.DefaultTemplateCapabilityCatalog()
@@ -54,6 +54,7 @@ func (v *ownerValidator) Validate(_ context.Context, request modulecapability.Va
 		if strings.TrimSpace(value.Key) != request.Candidate.Key {
 			return invalid("notification.template.source_key_invalid", "$.candidate.value.key", fmt.Errorf("template value key must equal the source fragment key"))
 		}
+		applyAuthoringPublicationDefaults(&value.Status, &value.Version)
 		if err := v.templates.ValidateEditable(value); err != nil {
 			return invalid(validationRule(err, "notification.template.invalid"), "$.candidate.value", err)
 		}
@@ -65,6 +66,7 @@ func (v *ownerValidator) Validate(_ context.Context, request modulecapability.Va
 		if strings.TrimSpace(value.Key) != request.Candidate.Key {
 			return invalid("notification.event_type.source_key_invalid", "$.candidate.value.key", fmt.Errorf("event type value key must equal the source fragment key"))
 		}
+		applyAuthoringEventDefaults(&value)
 		if _, err := contract.ValidateEventType(value); err != nil {
 			return invalid(validationRule(err, "notification.event_type.invalid"), "$.candidate.value", err)
 		}
@@ -82,6 +84,7 @@ func (v *ownerValidator) Validate(_ context.Context, request modulecapability.Va
 			if err := modulecapability.DecodeKeyedAuthoringValue(fragment, "key", &eventType); err != nil {
 				return invalid("notification.rule.context_invalid", "$.referenced_context", err)
 			}
+			applyAuthoringEventDefaults(&eventType)
 			eventTypes = append(eventTypes, eventType)
 		}
 		if err := contract.ValidateEventTypes(eventTypes, []contract.NotificationRule{value}); err != nil {
@@ -91,6 +94,24 @@ func (v *ownerValidator) Validate(_ context.Context, request modulecapability.Va
 		return modulecapability.ValidationResult{}, &modulecapability.Error{StatusCode: 400, Code: "module_capability.validation_scope_invalid"}
 	}
 	return modulecapability.ValidationResult{Diagnostics: []modulecapability.Diagnostic{}}, nil
+}
+
+func applyAuthoringPublicationDefaults(status *string, version *int) {
+	if strings.TrimSpace(*status) == "" {
+		*status = "published"
+	}
+	if *version == 0 {
+		*version = 1
+	}
+}
+
+func applyAuthoringEventDefaults(value *contract.NotificationEventType) {
+	applyAuthoringPublicationDefaults(&value.Status, &value.Version)
+	for index := range value.Actions {
+		if strings.TrimSpace(value.Actions[index].Kind) == "" {
+			value.Actions[index].Kind = "route"
+		}
+	}
 }
 
 func validationRule(err error, fallback string) string {

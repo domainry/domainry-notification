@@ -11,8 +11,8 @@ type ActionRef struct {
 	Style        string `json:"style,omitempty"`
 }
 
-// ResolvedAction is safe navigation output for the current product surface.
-// RouteKey is interpreted by the host router.
+// ResolvedAction is safe navigation output. RouteKey is interpreted by the
+// host router.
 type ResolvedAction struct {
 	Key            string            `json:"key"`
 	Label          string            `json:"label"`
@@ -24,8 +24,8 @@ type ResolvedAction struct {
 }
 
 type ActionDescriptor struct {
-	Key           string            `json:"key"`
-	Kind          string            `json:"kind"`
-	ResourceType  string            `json:"resource_type"`
-	SurfaceRoutes map[string]string `json:"surface_routes"`
+	Key          string `json:"key"`
+	Kind         string `json:"kind"`
+	ResourceType string `json:"resource_type"`
+	RouteKey     string `json:"route_key"`
 }

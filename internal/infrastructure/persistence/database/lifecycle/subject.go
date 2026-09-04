@@ -51,7 +51,7 @@ func (s *Store) ExportSubject(ctx context.Context, workspaceID, subjectID string
 	if s == nil || s.Database == nil || strings.TrimSpace(workspaceID) == "" || strings.TrimSpace(subjectID) == "" {
 		return nil, fmt.Errorf("notification subject scope is required")
 	}
-	columns := []string{"id", "surface", "event_type", "source", "category", "severity", "title", "body", "action_state", "alert_state", "first_occurred_at", "last_occurred_at", "read_at", "archived_at"}
+	columns := []string{"id", "event_type", "source", "category", "severity", "title", "body", "action_state", "alert_state", "first_occurred_at", "last_occurred_at", "read_at", "archived_at"}
 	queryValue, args, err := query.NewWorkspaceSelectBuilder(s.Renderer, "_notification_inbox_items", workspaceID).Columns(columns...).Where(query.Equal("recipient_user_id", subjectID)).OrderBy(query.Ascending("created_at")).Build()
 	if err != nil {
 		return nil, err

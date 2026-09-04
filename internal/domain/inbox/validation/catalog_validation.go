@@ -5,8 +5,6 @@ import (
 	"regexp"
 	"strings"
 	"unicode"
-
-	notification "github.com/domainry/domainry-notification/internal/domain/notification/model"
 )
 
 func (v *Validator) ValidateCatalog(values []EventType, rules []Rule) error {
@@ -77,9 +75,6 @@ func (v *Validator) ValidateEventType(value EventType) (EventType, error) {
 	if !severities[value.DefaultSeverity] {
 		return value, invalid("backend.notification.event_type_severity_invalid", "event_type", value.Key)
 	}
-	if len(value.Surfaces) == 0 {
-		return value, invalid("backend.notification.event_type_surface_invalid", "event_type", value.Key)
-	}
 	variableKeys := map[string]bool{}
 	for index, variable := range value.Variables {
 		variable.Key, variable.Type = strings.TrimSpace(variable.Key), strings.TrimSpace(variable.Type)
@@ -91,22 +86,11 @@ func (v *Validator) ValidateEventType(value EventType) (EventType, error) {
 		}
 		variableKeys[variable.Key], value.Variables[index] = true, variable
 	}
-	for index, surface := range value.Surfaces {
-		surface = notification.Surface(strings.TrimSpace(string(surface)))
-		if !v.configuration.SupportsSurface(surface) {
-			return value, invalid("backend.notification.event_type_surface_invalid", "event_type", value.Key)
-		}
-		value.Surfaces[index] = surface
-	}
 	for actionIndex, descriptor := range value.Actions {
-		descriptor.Key, descriptor.Kind, descriptor.ResourceType = strings.TrimSpace(descriptor.Key), strings.TrimSpace(descriptor.Kind), strings.TrimSpace(descriptor.ResourceType)
-		if !stableKeyPattern.MatchString(descriptor.Key) || (descriptor.Kind != "route" && descriptor.Kind != "business_action") || !stableKeyPattern.MatchString(descriptor.ResourceType) || len(descriptor.SurfaceRoutes) == 0 {
+		descriptor.Key, descriptor.Kind = strings.TrimSpace(descriptor.Key), strings.TrimSpace(descriptor.Kind)
+		descriptor.ResourceType, descriptor.RouteKey = strings.TrimSpace(descriptor.ResourceType), strings.TrimSpace(descriptor.RouteKey)
+		if !stableKeyPattern.MatchString(descriptor.Key) || (descriptor.Kind != "route" && descriptor.Kind != "business_action") || !stableKeyPattern.MatchString(descriptor.ResourceType) || !stableKeyPattern.MatchString(descriptor.RouteKey) {
 			return value, invalid("backend.notification.event_type_action_invalid", "event_type", value.Key)
-		}
-		for surface, routeKey := range descriptor.SurfaceRoutes {
-			if !v.configuration.SupportsSurface(notification.Surface(strings.TrimSpace(surface))) || !stableKeyPattern.MatchString(strings.TrimSpace(routeKey)) {
-				return value, invalid("backend.notification.event_type_action_route_invalid", "action_key", descriptor.Key)
-			}
 		}
 		value.Actions[actionIndex] = descriptor
 		for locale, content := range value.Locales {

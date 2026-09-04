@@ -36,17 +36,12 @@ func NewValidator(configuration *Configuration) (*Validator, error) {
 	return &Validator{configuration: configuration}, nil
 }
 
-func (v *Validator) SupportsSurface(surface notification.Surface) bool {
-	return v != nil && v.configuration.SupportsSurface(surface)
-}
-
 func (v *Validator) ValidateEvent(value Event) (Event, error) {
 	value.ID = strings.TrimSpace(value.ID)
 	value.WorkspaceID = notification.WorkspaceID(strings.TrimSpace(value.WorkspaceID.String()))
 	value.Source, value.SourceEventID = strings.TrimSpace(value.Source), strings.TrimSpace(value.SourceEventID)
 	value.EventType, value.Category = strings.TrimSpace(value.EventType), strings.TrimSpace(value.Category)
 	value.Severity = strings.TrimSpace(value.Severity)
-	value.Surface = notification.Surface(strings.TrimSpace(string(value.Surface)))
 	value.SubjectType, value.SubjectID, value.SubjectVersion = strings.TrimSpace(value.SubjectType), strings.TrimSpace(value.SubjectID), strings.TrimSpace(value.SubjectVersion)
 	value.GroupKey, value.DedupeKey = strings.TrimSpace(value.GroupKey), strings.TrimSpace(value.DedupeKey)
 	value.ActionState = ActionState(strings.TrimSpace(string(value.ActionState)))
@@ -72,9 +67,6 @@ func (v *Validator) ValidateEvent(value Event) (Event, error) {
 	}
 	if !severities[value.Severity] {
 		return value, invalid("backend.notification.inbox_event_severity_invalid", "severity", value.Severity)
-	}
-	if !v.configuration.SupportsSurface(value.Surface) {
-		return value, invalid("backend.notification.inbox_event_surface_invalid", "surface", string(value.Surface))
 	}
 	if value.ActionState == "" {
 		value.ActionState = ActionNone
@@ -147,11 +139,10 @@ func (v *Validator) ValidateQuery(value Query) (Query, error) {
 	value.WorkspaceID = notification.WorkspaceID(strings.TrimSpace(value.WorkspaceID.String()))
 	value.ViewerUserID = notification.UserID(strings.TrimSpace(value.ViewerUserID.String()))
 	value.RecipientUserID = notification.UserID(strings.TrimSpace(value.RecipientUserID.String()))
-	value.Surface = notification.Surface(strings.TrimSpace(string(value.Surface)))
 	value.Scope = Scope(strings.TrimSpace(string(value.Scope)))
 	value.Mailbox = Mailbox(strings.TrimSpace(string(value.Mailbox)))
 	value.Query = strings.TrimSpace(value.Query)
-	if value.WorkspaceID == "" || value.ViewerUserID == "" || !v.configuration.SupportsSurface(value.Surface) {
+	if value.WorkspaceID == "" || value.ViewerUserID == "" {
 		return value, invalid("backend.notification.inbox_scope_invalid")
 	}
 	if value.Scope == "" {
@@ -224,7 +215,7 @@ func (v *Validator) ValidateSavedView(value SavedView) (SavedView, error) {
 		reportingIDs, delegatedIDs = nil, []notification.UserID{reportingID}
 	}
 	query, err := v.ValidateQuery(Query{
-		WorkspaceID: "saved-view", ViewerUserID: "saved-view", Surface: firstSurface(v.configuration), Scope: value.Scope,
+		WorkspaceID: "saved-view", ViewerUserID: "saved-view", Scope: value.Scope,
 		RecipientUserID: value.TeamMemberID, ReportingUserIDs: reportingIDs, DelegatedUserIDs: delegatedIDs, Mailbox: value.Mailbox,
 		Query: value.Query, Categories: value.Categories, Sources: value.Sources, Severities: value.Severities,
 		ActionStates: value.ActionStates, From: value.From, To: value.To, Limit: 1,
@@ -243,8 +234,7 @@ func (v *Validator) ValidateDelegation(value Delegation) (Delegation, error) {
 	value.WorkspaceID = notification.WorkspaceID(strings.TrimSpace(value.WorkspaceID.String()))
 	value.OwnerUserID = notification.UserID(strings.TrimSpace(value.OwnerUserID.String()))
 	value.DelegateUserID = notification.UserID(strings.TrimSpace(value.DelegateUserID.String()))
-	value.Surface = notification.Surface(strings.TrimSpace(string(value.Surface)))
-	if value.WorkspaceID == "" || value.OwnerUserID == "" || value.DelegateUserID == "" || value.DelegateUserID == value.OwnerUserID || !v.SupportsSurface(value.Surface) {
+	if value.WorkspaceID == "" || value.OwnerUserID == "" || value.DelegateUserID == "" || value.DelegateUserID == value.OwnerUserID {
 		return value, invalid("backend.notification.inbox_delegation_invalid")
 	}
 	var starts, ends time.Time
@@ -339,11 +329,4 @@ func normalizeDelegationTime(field, value string) (string, time.Time, error) {
 		return value, time.Time{}, invalid("backend.notification.inbox_delegation_time_invalid", "field", field)
 	}
 	return notification.Timestamp(parsed), parsed, nil
-}
-
-func firstSurface(configuration *Configuration) notification.Surface {
-	for surface := range configuration.surfaces {
-		return surface
-	}
-	return ""
 }

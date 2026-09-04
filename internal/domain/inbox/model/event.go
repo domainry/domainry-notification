@@ -15,7 +15,6 @@ type Intent struct {
 	SourceEventID        string                   `json:"source_event_id"`
 	EventType            string                   `json:"event_type"`
 	Severity             string                   `json:"severity,omitempty"`
-	Surface              notification.Surface     `json:"surface"`
 	RecipientUserIDs     []notification.UserID    `json:"recipient_user_ids"`
 	AudienceResolverKeys []string                 `json:"audience_resolver_keys,omitempty"`
 	SubjectType          string                   `json:"subject_type,omitempty"`
@@ -55,7 +54,6 @@ type Event struct {
 	EventType            string                   `json:"event_type"`
 	Category             string                   `json:"category"`
 	Severity             string                   `json:"severity"`
-	Surface              notification.Surface     `json:"surface"`
 	RecipientUserIDs     []notification.UserID    `json:"recipient_user_ids"`
 	AudienceResolverKeys []string                 `json:"audience_resolver_keys,omitempty"`
 	SubjectType          string                   `json:"subject_type,omitempty"`

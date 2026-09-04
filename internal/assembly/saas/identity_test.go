@@ -48,7 +48,7 @@ func (b *identityBindingStub) Authorization() identitysdk.Authorization {
 func (*identityBindingStub) Principals() identitysdk.PrincipalResolver {
 	return principalResolverStub{}
 }
-func (*identityBindingStub) Directory() identitysdk.Directory { return directoryStub{} }
+func (*identityBindingStub) Projection() identitysdk.Projection { return projectionStub{} }
 func (b *identityBindingStub) Applications() identitysdk.ApplicationRegistry {
 	return b.applications
 }
@@ -92,21 +92,21 @@ func (principalResolverStub) Resolve(context.Context, identitysdk.PrincipalResol
 	return identitysdk.PrincipalResolution{}, nil
 }
 
-type directoryStub struct{}
+type projectionStub struct{}
 
-func (directoryStub) FindUser(context.Context, identitysdk.UserLookup) (identitysdk.User, bool, error) {
+func (projectionStub) FindUser(context.Context, identitysdk.UserLookup) (identitysdk.User, bool, error) {
 	return identitysdk.User{}, false, nil
 }
-func (directoryStub) FindOrganizationUnit(context.Context, identitysdk.OrganizationUnitLookup) (identitysdk.OrganizationUnit, bool, error) {
+func (projectionStub) FindOrganizationUnit(context.Context, identitysdk.OrganizationUnitLookup) (identitysdk.OrganizationUnit, bool, error) {
 	return identitysdk.OrganizationUnit{}, false, nil
 }
-func (directoryStub) ListUsers(context.Context, identitysdk.DirectoryQuery) ([]identitysdk.User, error) {
+func (projectionStub) ListUsers(context.Context, identitysdk.ProjectionQuery) ([]identitysdk.User, error) {
 	return nil, nil
 }
-func (directoryStub) ListRoles(context.Context, identitysdk.DirectoryQuery) ([]identitysdk.Role, error) {
+func (projectionStub) ListRoles(context.Context, identitysdk.ProjectionQuery) ([]identitysdk.Role, error) {
 	return nil, nil
 }
-func (directoryStub) ListUserRoleAssignments(context.Context, identitysdk.UserRoleAssignmentQuery) ([]identitysdk.UserRoleAssignment, error) {
+func (projectionStub) ListUserRoleAssignments(context.Context, identitysdk.UserRoleAssignmentQuery) ([]identitysdk.UserRoleAssignment, error) {
 	return nil, nil
 }
 
@@ -192,7 +192,7 @@ func TestOpenRequiresSaaSAndRegistersScopedApplicationPermissions(t *testing.T) 
 	application := identitysdk.ApplicationRef{TenantID: "tenant-a", WorkspaceID: "workspace-a", ApplicationKey: "domainry-notification"}
 	previousDefinitions := []identitysdk.PermissionDefinition{{
 		PermissionKey: "notification.templates.list", ResourceKey: "notification.templates", OperationKey: "list",
-		Label: "List notification templates", Category: "Notification", SourceKind: "module_surface",
+		Label: "List notification templates", Category: "Notification", SourceKind: "module_http",
 	}}
 	previousHash, err := identitysdk.PermissionSnapshotHash("module:notification", previousDefinitions)
 	if err != nil {

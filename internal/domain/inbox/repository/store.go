@@ -30,16 +30,16 @@ type MailboxStore interface {
 }
 
 type SavedViewStore interface {
-	ListSavedViews(context.Context, notification.WorkspaceID, notification.UserID, notification.Surface) ([]inboxmodel.SavedView, error)
-	SaveSavedView(context.Context, notification.WorkspaceID, notification.UserID, notification.Surface, inboxmodel.SavedView) (inboxmodel.SavedView, error)
-	DeleteSavedView(context.Context, notification.WorkspaceID, notification.UserID, notification.Surface, string) (bool, error)
+	ListSavedViews(context.Context, notification.WorkspaceID, notification.UserID) ([]inboxmodel.SavedView, error)
+	SaveSavedView(context.Context, notification.WorkspaceID, notification.UserID, inboxmodel.SavedView) (inboxmodel.SavedView, error)
+	DeleteSavedView(context.Context, notification.WorkspaceID, notification.UserID, string) (bool, error)
 }
 
 type DelegationStore interface {
-	ListDelegations(context.Context, notification.WorkspaceID, notification.UserID, notification.Surface) ([]inboxmodel.Delegation, error)
+	ListDelegations(context.Context, notification.WorkspaceID, notification.UserID) ([]inboxmodel.Delegation, error)
 	SaveDelegation(context.Context, inboxmodel.Delegation) (inboxmodel.Delegation, error)
 	DeleteDelegation(context.Context, notification.WorkspaceID, notification.UserID, string) (bool, error)
-	ListActiveDelegatedOwnerIDs(context.Context, notification.WorkspaceID, notification.UserID, notification.Surface, string) ([]notification.UserID, error)
+	ListActiveDelegatedOwnerIDs(context.Context, notification.WorkspaceID, notification.UserID, string) ([]notification.UserID, error)
 }
 
 type MetricsStore interface {

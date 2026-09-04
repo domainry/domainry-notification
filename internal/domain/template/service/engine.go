@@ -17,19 +17,19 @@ import (
 type Engine struct {
 	defaultLocale string
 	validator     *Validator
-	directory     RecipientDirectory
+	recipients    RecipientResolver
 	templates     map[string]Template
 	mu            sync.RWMutex
 }
 
-func NewEngine(defaultLocale string, templates []Template, validator *Validator, directory RecipientDirectory) (*Engine, error) {
+func NewEngine(defaultLocale string, templates []Template, validator *Validator, recipients RecipientResolver) (*Engine, error) {
 	if validator == nil {
 		return nil, notification.NewError(notification.ErrorUnavailable, "backend.notification.service_unavailable", nil, nil)
 	}
 	if err := validator.ValidateAll(templates); err != nil {
 		return nil, err
 	}
-	engine := &Engine{defaultLocale: strings.TrimSpace(defaultLocale), validator: validator, directory: directory, templates: make(map[string]Template, len(templates))}
+	engine := &Engine{defaultLocale: strings.TrimSpace(defaultLocale), validator: validator, recipients: recipients, templates: make(map[string]Template, len(templates))}
 	for _, value := range templates {
 		value = cloneTemplate(value)
 		value.ContentHash = ContentHash(value)
@@ -175,10 +175,10 @@ func (e *Engine) resolveRecipients(ctx context.Context, workspaceID notification
 		}
 		address := userID.String()
 		if channel == "email" {
-			if e.directory == nil {
-				return nil, invalid("backend.notification.recipient_directory_unavailable", "recipient", userID.String())
+			if e.recipients == nil {
+				return nil, invalid("backend.notification.recipient_resolver_unavailable", "recipient", userID.String())
 			}
-			recipient, found, err := e.directory.FindRecipient(ctx, workspaceID, userID)
+			recipient, found, err := e.recipients.FindRecipient(ctx, workspaceID, userID)
 			if err != nil {
 				return nil, err
 			}

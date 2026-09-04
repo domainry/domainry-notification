@@ -13,8 +13,8 @@ import (
 	"github.com/domainry/domainry-notification-sdk/contract"
 )
 
-func (s *surface) inboxActionHandlers(surfaceKey string) map[string]http.HandlerFunc {
-	base := "notification." + strings.TrimSpace(surfaceKey)
+func (s *adapter) inboxActionHandlers() map[string]http.HandlerFunc {
+	base := "notification.inbox"
 	return map[string]http.HandlerFunc{
 		base + ".list":                  s.listInbox,
 		base + ".facets":                s.inboxFacets,
@@ -39,13 +39,7 @@ func (s *surface) inboxActionHandlers(surfaceKey string) map[string]http.Handler
 	}
 }
 
-func inboxSurface(r *http.Request) string {
-	if strings.HasPrefix(r.URL.Path, "/portal/") {
-		return "consumer_portal"
-	}
-	return "business_workspace"
-}
-func (s *surface) inboxCall(w http.ResponseWriter, r *http.Request) (contract.NotificationInboxQuery, bool) {
+func (s *adapter) inboxCall(w http.ResponseWriter, r *http.Request) (contract.NotificationInboxQuery, bool) {
 	if s.binding.Inbox() == nil {
 		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"code": "backend.notification.inbox_unavailable"})
 		return contract.NotificationInboxQuery{}, false
@@ -53,9 +47,7 @@ func (s *surface) inboxCall(w http.ResponseWriter, r *http.Request) (contract.No
 	return inboxQuery(r), true
 }
 func inboxAuth(r *http.Request) (a notificationsdk.UserAuthority, err error) {
-	a, err = authority(r)
-	a.Surface = inboxSurface(r)
-	return
+	return authority(r)
 }
 func inboxQuery(r *http.Request) contract.NotificationInboxQuery {
 	q := r.URL.Query()
@@ -66,7 +58,7 @@ func inboxQuery(r *http.Request) contract.NotificationInboxQuery {
 	}
 	return contract.NotificationInboxQuery{Mailbox: q.Get("mailbox"), Query: q.Get("query"), Categories: q["category"], Sources: q["source"], Severities: q["severity"], ActionStates: q["action_state"], From: q.Get("from"), To: q.Get("to"), Limit: limit, Scope: q.Get("scope"), TeamMemberID: member}
 }
-func (s *surface) withInbox(w http.ResponseWriter, r *http.Request) (notificationsdk.UserAuthority, contract.NotificationInboxQuery, bool) {
+func (s *adapter) withInbox(w http.ResponseWriter, r *http.Request) (notificationsdk.UserAuthority, contract.NotificationInboxQuery, bool) {
 	q, ok := s.inboxCall(w, r)
 	if !ok {
 		return notificationsdk.UserAuthority{}, q, false
@@ -78,7 +70,7 @@ func (s *surface) withInbox(w http.ResponseWriter, r *http.Request) (notificatio
 	}
 	return a, q, true
 }
-func (s *surface) listInbox(w http.ResponseWriter, r *http.Request) {
+func (s *adapter) listInbox(w http.ResponseWriter, r *http.Request) {
 	a, q, ok := s.withInbox(w, r)
 	if !ok {
 		return
@@ -90,7 +82,7 @@ func (s *surface) listInbox(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, 200, v)
 }
-func (s *surface) getInbox(w http.ResponseWriter, r *http.Request) {
+func (s *adapter) getInbox(w http.ResponseWriter, r *http.Request) {
 	a, q, ok := s.withInbox(w, r)
 	if !ok {
 		return
@@ -102,7 +94,7 @@ func (s *surface) getInbox(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, 200, v)
 }
-func (s *surface) inboxFacets(w http.ResponseWriter, r *http.Request) {
+func (s *adapter) inboxFacets(w http.ResponseWriter, r *http.Request) {
 	a, q, ok := s.withInbox(w, r)
 	if !ok {
 		return
@@ -114,7 +106,7 @@ func (s *surface) inboxFacets(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, 200, v)
 }
-func (s *surface) inboxUnreadCount(w http.ResponseWriter, r *http.Request) {
+func (s *adapter) inboxUnreadCount(w http.ResponseWriter, r *http.Request) {
 	a, q, ok := s.withInbox(w, r)
 	if !ok {
 		return
@@ -127,7 +119,7 @@ func (s *surface) inboxUnreadCount(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, 200, map[string]int{"unread": v.Unread})
 }
-func (s *surface) setInboxRead(w http.ResponseWriter, r *http.Request, v bool) {
+func (s *adapter) setInboxRead(w http.ResponseWriter, r *http.Request, v bool) {
 	a, _, ok := s.withInbox(w, r)
 	if !ok {
 		return
@@ -139,7 +131,7 @@ func (s *surface) setInboxRead(w http.ResponseWriter, r *http.Request, v bool) {
 	}
 	writeJSON(w, 200, x)
 }
-func (s *surface) setInboxArchived(w http.ResponseWriter, r *http.Request, v bool) {
+func (s *adapter) setInboxArchived(w http.ResponseWriter, r *http.Request, v bool) {
 	a, _, ok := s.withInbox(w, r)
 	if !ok {
 		return
@@ -151,7 +143,7 @@ func (s *surface) setInboxArchived(w http.ResponseWriter, r *http.Request, v boo
 	}
 	writeJSON(w, 200, x)
 }
-func (s *surface) acknowledgeInbox(w http.ResponseWriter, r *http.Request) {
+func (s *adapter) acknowledgeInbox(w http.ResponseWriter, r *http.Request) {
 	a, _, ok := s.withInbox(w, r)
 	if !ok {
 		return
@@ -163,7 +155,7 @@ func (s *surface) acknowledgeInbox(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, 200, v)
 }
-func (s *surface) markAllInboxRead(w http.ResponseWriter, r *http.Request) {
+func (s *adapter) markAllInboxRead(w http.ResponseWriter, r *http.Request) {
 	a, q, ok := s.withInbox(w, r)
 	if !ok {
 		return
@@ -175,19 +167,19 @@ func (s *surface) markAllInboxRead(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, 200, map[string]int{"updated": v})
 }
-func (s *surface) getInboxPreference(w http.ResponseWriter, r *http.Request) {
+func (s *adapter) getInboxPreference(w http.ResponseWriter, r *http.Request) {
 	a, _, ok := s.withInbox(w, r)
 	if !ok {
 		return
 	}
-	v, e := s.binding.Inbox().GetPreference(r.Context(), a, inboxSurface(r))
+	v, e := s.binding.Inbox().GetPreference(r.Context(), a)
 	if e != nil {
 		writeError(w, e)
 		return
 	}
 	writeJSON(w, 200, v)
 }
-func (s *surface) saveInboxPreference(w http.ResponseWriter, r *http.Request) {
+func (s *adapter) saveInboxPreference(w http.ResponseWriter, r *http.Request) {
 	a, _, ok := s.withInbox(w, r)
 	if !ok {
 		return
@@ -196,26 +188,26 @@ func (s *surface) saveInboxPreference(w http.ResponseWriter, r *http.Request) {
 	if !decode(w, r, &v) {
 		return
 	}
-	x, e := s.binding.Inbox().SavePreference(r.Context(), a, inboxSurface(r), v)
+	x, e := s.binding.Inbox().SavePreference(r.Context(), a, v)
 	if e != nil {
 		writeError(w, e)
 		return
 	}
 	writeJSON(w, 200, x)
 }
-func (s *surface) listSavedViews(w http.ResponseWriter, r *http.Request) {
+func (s *adapter) listSavedViews(w http.ResponseWriter, r *http.Request) {
 	a, _, ok := s.withInbox(w, r)
 	if !ok {
 		return
 	}
-	v, e := s.binding.Inbox().ListSavedViews(r.Context(), a, inboxSurface(r))
+	v, e := s.binding.Inbox().ListSavedViews(r.Context(), a)
 	if e != nil {
 		writeError(w, e)
 		return
 	}
 	writeJSON(w, 200, map[string]any{"views": v, "count": len(v)})
 }
-func (s *surface) saveSavedView(w http.ResponseWriter, r *http.Request) {
+func (s *adapter) saveSavedView(w http.ResponseWriter, r *http.Request) {
 	a, _, ok := s.withInbox(w, r)
 	if !ok {
 		return
@@ -232,7 +224,7 @@ func (s *surface) saveSavedView(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, 200, x)
 }
-func (s *surface) deleteSavedView(w http.ResponseWriter, r *http.Request) {
+func (s *adapter) deleteSavedView(w http.ResponseWriter, r *http.Request) {
 	a, _, ok := s.withInbox(w, r)
 	if !ok {
 		return
@@ -243,19 +235,19 @@ func (s *surface) deleteSavedView(w http.ResponseWriter, r *http.Request) {
 	}
 	w.WriteHeader(204)
 }
-func (s *surface) listDelegations(w http.ResponseWriter, r *http.Request) {
+func (s *adapter) listDelegations(w http.ResponseWriter, r *http.Request) {
 	a, _, ok := s.withInbox(w, r)
 	if !ok {
 		return
 	}
-	v, e := s.binding.Inbox().ListDelegations(r.Context(), a, inboxSurface(r))
+	v, e := s.binding.Inbox().ListDelegations(r.Context(), a)
 	if e != nil {
 		writeError(w, e)
 		return
 	}
 	writeJSON(w, 200, map[string]any{"delegations": v, "count": len(v)})
 }
-func (s *surface) saveDelegation(w http.ResponseWriter, r *http.Request) {
+func (s *adapter) saveDelegation(w http.ResponseWriter, r *http.Request) {
 	a, _, ok := s.withInbox(w, r)
 	if !ok {
 		return
@@ -272,7 +264,7 @@ func (s *surface) saveDelegation(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, 200, x)
 }
-func (s *surface) deleteDelegation(w http.ResponseWriter, r *http.Request) {
+func (s *adapter) deleteDelegation(w http.ResponseWriter, r *http.Request) {
 	a, _, ok := s.withInbox(w, r)
 	if !ok {
 		return
@@ -283,12 +275,12 @@ func (s *surface) deleteDelegation(w http.ResponseWriter, r *http.Request) {
 	}
 	w.WriteHeader(204)
 }
-func (s *surface) listDelegatedOwners(w http.ResponseWriter, r *http.Request) {
+func (s *adapter) listDelegatedOwners(w http.ResponseWriter, r *http.Request) {
 	a, _, ok := s.withInbox(w, r)
 	if !ok {
 		return
 	}
-	v, e := s.binding.Inbox().ListDelegatedOwnerIDs(r.Context(), a, inboxSurface(r))
+	v, e := s.binding.Inbox().ListDelegatedOwnerIDs(r.Context(), a)
 	if e != nil {
 		writeError(w, e)
 		return
@@ -302,7 +294,7 @@ type inboxSync struct {
 	UpdatedAt string `json:"updated_at,omitempty"`
 }
 
-func (s *surface) inboxState(r *http.Request, a notificationsdk.UserAuthority) (inboxSync, error) {
+func (s *adapter) inboxState(r *http.Request, a notificationsdk.UserAuthority) (inboxSync, error) {
 	q := contract.NotificationInboxQuery{Scope: contract.NotificationInboxScopeMine, Mailbox: contract.NotificationMailboxInbox, Limit: 1}
 	p, e := s.binding.Inbox().List(r.Context(), a, q, "")
 	if e != nil {
@@ -334,7 +326,7 @@ func writeInboxSSE(w http.ResponseWriter, event, id string, v inboxSync) bool {
 	}
 	return http.NewResponseController(w).Flush() == nil
 }
-func (s *surface) streamInbox(w http.ResponseWriter, r *http.Request) {
+func (s *adapter) streamInbox(w http.ResponseWriter, r *http.Request) {
 	a, _, ok := s.withInbox(w, r)
 	if !ok {
 		return

@@ -56,7 +56,7 @@ func (f *Factory) openHosted(ctx context.Context, application notificationsdk.Ap
 	if mode != notificationsdk.DeploymentModeModule && mode != notificationsdk.DeploymentModeSaaS {
 		return nil, fmt.Errorf("notification deployment mode %q is unsupported", mode)
 	}
-	if host == nil || host.Database() == nil || host.Dialect() == nil || host.WorkspaceScope() == nil || host.QueueScopes() == nil || host.Identity() == nil || host.Identity().Principals() == nil || host.Clock() == nil || strings.TrimSpace(host.WorkerID()) == "" || host.WorkNotifier() == nil || host.RecipientDirectory() == nil || host.DeliveryGateway() == nil {
+	if host == nil || host.Database() == nil || host.Dialect() == nil || host.WorkspaceScope() == nil || host.QueueScopes() == nil || host.Identity() == nil || host.Identity().Principals() == nil || host.Clock() == nil || strings.TrimSpace(host.WorkerID()) == "" || host.WorkNotifier() == nil || host.RecipientResolver() == nil || host.DeliveryGateway() == nil {
 		return nil, fmt.Errorf("notification Module host is incomplete")
 	}
 	if mode == notificationsdk.DeploymentModeModule {
@@ -132,7 +132,7 @@ func (f *Factory) openHosted(ctx context.Context, application notificationsdk.Ap
 	if err != nil {
 		return nil, err
 	}
-	templateEngine, err := template.NewEngine(catalog.DefaultLocale, installedTemplates, templateValidator, recipientDirectoryAdapter{host.RecipientDirectory()})
+	templateEngine, err := template.NewEngine(catalog.DefaultLocale, installedTemplates, templateValidator, recipientResolverAdapter{host.RecipientResolver()})
 	if err != nil {
 		return nil, err
 	}
@@ -159,13 +159,7 @@ func (f *Factory) openHosted(ctx context.Context, application notificationsdk.Ap
 	if err != nil {
 		return nil, err
 	}
-	surfaces := make([]string, len(catalog.Surfaces))
-	copy(surfaces, catalog.Surfaces)
-	configurationSurfaces := make([]notification.Surface, len(surfaces))
-	for i := range surfaces {
-		configurationSurfaces[i] = notification.Surface(surfaces[i])
-	}
-	inboxConfiguration, err := inbox.NewConfiguration(configurationSurfaces, catalog.ExternalChannels)
+	inboxConfiguration, err := inbox.NewConfiguration(catalog.ExternalChannels)
 	if err != nil {
 		return nil, err
 	}
@@ -193,7 +187,7 @@ func (f *Factory) openHosted(ctx context.Context, application notificationsdk.Ap
 	if err != nil {
 		return nil, err
 	}
-	inboxProcessor, err := appinbox.NewProcessor(appinbox.ProcessorDependencies{Events: store, Clock: host.Clock(), WorkerID: host.WorkerID(), Audiences: audienceAdapter{host.AudienceResolver()}, RecipientLocale: recipientLocaleAdapter{host.RecipientDirectory()}, WorkNotifier: notifier})
+	inboxProcessor, err := appinbox.NewProcessor(appinbox.ProcessorDependencies{Events: store, Clock: host.Clock(), WorkerID: host.WorkerID(), Audiences: audienceAdapter{host.AudienceResolver()}, RecipientLocale: recipientLocaleAdapter{host.RecipientResolver()}, WorkNotifier: notifier})
 	if err != nil {
 		return nil, err
 	}
@@ -226,11 +220,11 @@ func (f *Factory) openHosted(ctx context.Context, application notificationsdk.Ap
 		return nil, err
 	}
 	if mode == notificationsdk.DeploymentModeModule {
-		surface, err := notificationhttp.NewSurface(b)
+		adapter, err := notificationhttp.NewAdapter(b)
 		if err != nil {
 			return nil, err
 		}
-		b.SetHTTPSurfaces([]modulehttp.Surface{surface})
+		b.SetHTTPAdapters([]modulehttp.Adapter{adapter})
 	}
 	return b, nil
 }

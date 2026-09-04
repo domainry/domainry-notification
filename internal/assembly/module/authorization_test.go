@@ -11,7 +11,6 @@ import (
 	"github.com/domainry/domainry-notification-sdk/contract"
 	notificationapplication "github.com/domainry/domainry-notification/internal/application"
 	inbox "github.com/domainry/domainry-notification/internal/domain/inbox/service"
-	notification "github.com/domainry/domainry-notification/internal/domain/notification/model"
 )
 
 type principalAuthenticatorStub struct {
@@ -44,7 +43,7 @@ func (s authorizationBindingStub) Authorization() identitysdk.Authorization { re
 
 func authorizedPrincipal(workspaceID string, grants ...identitysdk.FunctionGrant) identitysdk.Principal {
 	if len(grants) == 0 {
-		grants = []identitysdk.FunctionGrant{{Resource: "notification.business_inbox", Action: "list", Effect: identitysdk.EffectAllow}}
+		grants = []identitysdk.FunctionGrant{{Resource: "notification.inbox", Action: "list", Effect: identitysdk.EffectAllow}}
 	}
 	policies := make([]identitysdk.DataPolicy, 0, len(grants))
 	for _, grant := range grants {
@@ -52,7 +51,7 @@ func authorizedPrincipal(workspaceID string, grants ...identitysdk.FunctionGrant
 	}
 	return identitysdk.Principal{
 		Known: true, WorkspaceID: workspaceID, UserID: "user-1",
-		AccessBundle: &identitysdk.AccessBundle{ContractVersion: identitysdk.CurrentPolicyBundleVersion, AuthorizationRevision: "revision-1", ExpiresAt: time.Now().Add(time.Hour), Subject: identitysdk.Subject{WorkspaceID: identitysdk.WorkspaceID(workspaceID), SubjectID: "user-1"}, FunctionGrants: grants, DataPolicies: policies},
+		AccessBundle: &identitysdk.AccessBundle{ContractVersion: identitysdk.CurrentPolicyBundleVersion, AuthorizationRevision: "revision-1", ExpiresAt: time.Now().Add(time.Hour), Subject: identitysdk.Subject{TenantID: "tenant-1", WorkspaceID: identitysdk.WorkspaceID(workspaceID), SubjectID: "user-1"}, FunctionGrants: grants, DataPolicies: policies},
 	}
 }
 
@@ -148,7 +147,7 @@ func TestInboxScopeUsesAuthenticatedRelationshipFactsWithoutRolePermission(t *te
 		application: notificationsdk.ApplicationRef{TenantID: "tenant-1", WorkspaceID: "workspace-1", ApplicationKey: "app-1"},
 		principals:  principalAuthenticatorStub{principal: principal},
 	}
-	authority := notificationsdk.UserAuthority{AccessToken: "secret", Surface: "business_workspace"}
+	authority := notificationsdk.UserAuthority{AccessToken: "secret"}
 	tests := []struct {
 		name  string
 		query contract.NotificationInboxQuery
@@ -172,11 +171,11 @@ func TestInboxScopeUsesAuthenticatedRelationshipFactsWithoutRolePermission(t *te
 func TestInboxTeamScopeRejectsUserOutsideAuthenticatedReportingFacts(t *testing.T) {
 	principal := authorizedPrincipal("workspace-1")
 	principal.ReportingScopeUserIDs = []string{"user-2"}
-	query, err := inboxQuery(contract.NotificationInboxQuery{Scope: contract.NotificationInboxScopeTeam, TeamMemberID: "outsider"}, principal, "business_workspace")
+	query, err := inboxQuery(contract.NotificationInboxQuery{Scope: contract.NotificationInboxScopeTeam, TeamMemberID: "outsider"}, principal)
 	if err != nil {
 		t.Fatal(err)
 	}
-	configuration, err := inbox.NewConfiguration([]notification.Surface{"business_workspace"}, nil)
+	configuration, err := inbox.NewConfiguration(nil)
 	if err != nil {
 		t.Fatal(err)
 	}

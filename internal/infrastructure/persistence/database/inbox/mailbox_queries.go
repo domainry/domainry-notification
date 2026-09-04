@@ -175,7 +175,7 @@ func mailboxPredicate(queryValue inbox.Query, includeCursor bool) query.Predicat
 }
 
 func mailboxAccessPredicate(queryValue inbox.Query) query.Predicate {
-	predicates := []query.Predicate{query.Equal("workspace_id", queryValue.WorkspaceID.String()), query.Equal("surface", string(queryValue.Surface))}
+	predicates := []query.Predicate{query.Equal("workspace_id", queryValue.WorkspaceID.String())}
 	recipients := make([]string, len(queryValue.RecipientUserIDs))
 	for index, recipient := range queryValue.RecipientUserIDs {
 		recipients[index] = recipient.String()
@@ -204,8 +204,8 @@ func appendStringPredicate(predicates []query.Predicate, column string, values [
 }
 
 func normalizeMailboxStoreQuery(queryValue inbox.Query) (inbox.Query, error) {
-	if queryValue.WorkspaceID == "" || queryValue.Surface == "" || len(queryValue.RecipientUserIDs) == 0 {
-		return queryValue, fmt.Errorf("notification mailbox query requires an explicit workspace, surface, and recipient boundary")
+	if queryValue.WorkspaceID == "" || len(queryValue.RecipientUserIDs) == 0 {
+		return queryValue, fmt.Errorf("notification mailbox query requires an explicit workspace and recipient boundary")
 	}
 	if queryValue.Limit <= 0 {
 		queryValue.Limit = 50

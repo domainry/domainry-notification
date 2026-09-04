@@ -69,7 +69,7 @@ func migratedStore(t *testing.T) (*sql.DB, *sqlstore.Store) {
 func claimedEvent() inbox.Event {
 	return inbox.Event{
 		ID: "event-1", WorkspaceID: "workspace-1", Source: "workflow", SourceEventID: "run-1", EventType: "workflow.run.failed",
-		Category: "workflow", Severity: "error", Surface: "business_workspace", GroupKey: "run-1", AlertState: inbox.AlertFiring,
+		Category: "workflow", Severity: "error", GroupKey: "run-1", AlertState: inbox.AlertFiring,
 		Status: inbox.EventProcessing, LeaseOwner: "worker-1", FencingToken: 3, OccurredAt: "2026-08-24T01:00:00.000000000Z",
 		CreatedAt: "2026-08-24T01:00:00.000000000Z", UpdatedAt: "2026-08-24T01:00:00.000000000Z",
 		ChannelPlans: []delivery.Plan{{ID: "plan-1", WorkspaceID: "workspace-1", EventID: "event-1", Channel: "slack", Status: "queued", CreatedAt: "2026-08-24T01:00:00.000000000Z", UpdatedAt: "2026-08-24T01:00:00.000000000Z"}},

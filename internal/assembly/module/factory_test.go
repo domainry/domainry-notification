@@ -44,9 +44,9 @@ type testWorkNotifier struct{}
 
 func (testWorkNotifier) Notify(context.Context, modulehost.WorkLocator) {}
 
-type testDirectory struct{}
+type testRecipientResolver struct{}
 
-func (testDirectory) FindRecipient(context.Context, string, string) (modulehost.Recipient, bool, error) {
+func (testRecipientResolver) FindRecipient(context.Context, string, string) (modulehost.Recipient, bool, error) {
 	return modulehost.Recipient{}, false, nil
 }
 
@@ -121,10 +121,10 @@ func (testHost) Identity() identitysdk.Binding             { return identityBind
 func (testHost) Clock() modulehost.Clock                   { return testClock{} }
 func (testHost) WorkerID() string                          { return "worker" }
 func (testHost) Catalog() modulehost.Catalog {
-	return modulehost.Catalog{DefaultLocale: "en", Surfaces: []string{"business_workspace"}, TemplateCapabilities: []contract.NotificationTemplateCapability{{Channel: "in_app"}}}
+	return modulehost.Catalog{DefaultLocale: "en", TemplateCapabilities: []contract.NotificationTemplateCapability{{Channel: "in_app"}}}
 }
 func (testHost) WorkNotifier() modulehost.WorkNotifier                           { return testWorkNotifier{} }
-func (testHost) RecipientDirectory() modulehost.RecipientDirectory               { return testDirectory{} }
+func (testHost) RecipientResolver() modulehost.RecipientResolver                 { return testRecipientResolver{} }
 func (testHost) AudienceResolver() modulehost.AudienceResolver                   { return testAudience{} }
 func (testHost) DeliveryGateway() modulehost.DeliveryGateway                     { return testGateway{} }
 func (testHost) DeliveryMetrics() modulehost.DeliveryMetrics                     { return nil }
@@ -170,15 +170,15 @@ func TestModuleFactoryContractAndBorrowedDatabaseLifecycle(t *testing.T) {
 		t.Fatalf("Notification Module reinitialized host pool: max open=%d", stats.MaxOpenConnections)
 	}
 	provider, ok := binding.(modulehttp.Provider)
-	if !ok || len(provider.HTTPSurfaces()) != 1 {
-		t.Fatalf("Notification Module HTTP surfaces=%v", provider)
+	if !ok || len(provider.HTTPAdapters()) != 1 {
+		t.Fatalf("Notification Module HTTP adapters=%v", provider)
 	}
-	if err := modulehttp.ValidateSurface(provider.HTTPSurfaces()[0]); err != nil {
+	if err := modulehttp.ValidateAdapter(provider.HTTPAdapters()[0]); err != nil {
 		t.Fatal(err)
 	}
-	surface := provider.HTTPSurfaces()[0]
-	routes := surface.Routes()
-	if len(routes) != 61 {
+	adapter := provider.HTTPAdapters()[0]
+	routes := adapter.Routes()
+	if len(routes) != 41 {
 		t.Fatalf("Notification routes=%d", len(routes))
 	}
 	actions, err := notificationapplication.AuthorizationActions()
@@ -193,9 +193,9 @@ func TestModuleFactoryContractAndBorrowedDatabaseLifecycle(t *testing.T) {
 			t.Fatalf("route %d is not an exact Action projection: route=%+v action=%+v", index, routes[index].Action, actions[index])
 		}
 	}
-	openAPI, ok := surface.(modulehttp.OpenAPIProvider)
+	openAPI, ok := adapter.(modulehttp.OpenAPIProvider)
 	if !ok {
-		t.Fatal("Notification Surface does not project OpenAPI from its Actions")
+		t.Fatal("Notification Adapter does not project OpenAPI from its Actions")
 	}
 	operations := openAPI.OpenAPIOperations()
 	if len(operations) != len(routes) {
@@ -212,8 +212,7 @@ func TestModuleFactoryContractAndBorrowedDatabaseLifecycle(t *testing.T) {
 		t.Fatal(err)
 	}
 	wantCounts := map[string]int{
-		"notification.business_inbox":      20,
-		"notification.consumer_inbox":      20,
+		"notification.inbox":               20,
 		"notification.delivery_governance": 7,
 		"notification.templates":           14,
 	}
@@ -310,7 +309,7 @@ func TestModuleSystemMigrationExportsAndIdempotentlyReconcilesExactApplication(t
 		},
 		func() error { return inboxAPI.DeleteSavedView(t.Context(), emptyAuthority, "view") },
 		func() error {
-			_, err := inboxAPI.SavePreference(t.Context(), emptyAuthority, "surface", contract.NotificationRecipientPreference{})
+			_, err := inboxAPI.SavePreference(t.Context(), emptyAuthority, contract.NotificationRecipientPreference{})
 			return err
 		},
 		func() error {

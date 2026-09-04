@@ -17,25 +17,25 @@ import (
 	notificationapplication "github.com/domainry/domainry-notification/internal/application"
 )
 
-type surface struct {
+type adapter struct {
 	binding notificationsdk.Binding
 	mux     *http.ServeMux
 	routes  []modulehttp.Route
 }
 
-func (*surface) ContractVersion() string { return modulehttp.ContractVersion }
-func (*surface) Owner() string           { return "notification" }
-func (*surface) Name() string            { return "template_management" }
-func (s *surface) Handler() http.Handler { return s.mux }
-func (s *surface) Routes() []modulehttp.Route {
+func (*adapter) ContractVersion() string { return modulehttp.ContractVersion }
+func (*adapter) Owner() string           { return "notification" }
+func (*adapter) Name() string            { return "template_management" }
+func (s *adapter) Handler() http.Handler { return s.mux }
+func (s *adapter) Routes() []modulehttp.Route {
 	return append([]modulehttp.Route(nil), s.routes...)
 }
 
-func (s *surface) OpenAPIOperations() map[string]map[string]any {
+func (s *adapter) OpenAPIOperations() map[string]map[string]any {
 	return notificationOpenAPIOperations(s.routes)
 }
 
-func NewSurface(binding notificationsdk.Binding) (modulehttp.Surface, error) {
+func NewAdapter(binding notificationsdk.Binding) (modulehttp.Adapter, error) {
 	if binding == nil || binding.Templates() == nil {
 		return nil, errors.New("Notification template binding is unavailable")
 	}
@@ -43,12 +43,9 @@ func NewSurface(binding notificationsdk.Binding) (modulehttp.Surface, error) {
 	if err != nil {
 		return nil, err
 	}
-	s := &surface{binding: binding, mux: http.NewServeMux(), routes: routes}
+	s := &adapter{binding: binding, mux: http.NewServeMux(), routes: routes}
 	handlers := s.actionHandlers()
-	for key, handler := range s.inboxActionHandlers("business_inbox") {
-		handlers[key] = handler
-	}
-	for key, handler := range s.inboxActionHandlers("portal_inbox") {
+	for key, handler := range s.inboxActionHandlers() {
 		handlers[key] = handler
 	}
 	for _, route := range routes {
@@ -74,7 +71,7 @@ func NewSurface(binding notificationsdk.Binding) (modulehttp.Surface, error) {
 	return s, nil
 }
 
-func (s *surface) actionHandlers() map[string]http.HandlerFunc {
+func (s *adapter) actionHandlers() map[string]http.HandlerFunc {
 	return map[string]http.HandlerFunc{
 		notificationapplication.ActionCapabilitiesRead:             s.capabilities,
 		notificationapplication.ActionTemplatesList:                s.list,
@@ -105,11 +102,7 @@ func authority(r *http.Request) (notificationsdk.UserAuthority, error) {
 	if !ok || strings.TrimSpace(identity.AccessToken) == "" {
 		return notificationsdk.UserAuthority{}, &notificationsdk.Error{StatusCode: http.StatusUnauthorized, Code: "notification.user_authority_required"}
 	}
-	surface := strings.TrimSpace(r.Header.Get("X-Domainry-Product-Surface"))
-	if surface == "" {
-		surface = "admin_console"
-	}
-	return notificationsdk.UserAuthority{AccessToken: identity.AccessToken, Surface: surface}, nil
+	return notificationsdk.UserAuthority{AccessToken: identity.AccessToken}, nil
 }
 
 func writeJSON(w http.ResponseWriter, status int, value any) {
@@ -132,7 +125,7 @@ func writeError(w http.ResponseWriter, err error) {
 	writeJSON(w, status, map[string]string{"code": "backend." + strings.TrimPrefix(code, "backend.")})
 }
 
-func (s *surface) capabilities(w http.ResponseWriter, r *http.Request) {
+func (s *adapter) capabilities(w http.ResponseWriter, r *http.Request) {
 	a, err := authority(r)
 	if err != nil {
 		writeError(w, err)
@@ -146,7 +139,7 @@ func (s *surface) capabilities(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"capabilities": values, "count": len(values)})
 }
 
-func (s *surface) list(w http.ResponseWriter, r *http.Request) {
+func (s *adapter) list(w http.ResponseWriter, r *http.Request) {
 	a, err := authority(r)
 	if err != nil {
 		writeError(w, err)
@@ -160,7 +153,7 @@ func (s *surface) list(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"templates": values, "count": len(values)})
 }
 
-func (s *surface) get(w http.ResponseWriter, r *http.Request) {
+func (s *adapter) get(w http.ResponseWriter, r *http.Request) {
 	a, err := authority(r)
 	if err != nil {
 		writeError(w, err)
@@ -228,7 +221,7 @@ func defaultRecipients(values []string) []string {
 	return values
 }
 
-func (s *surface) listPublications(w http.ResponseWriter, r *http.Request) {
+func (s *adapter) listPublications(w http.ResponseWriter, r *http.Request) {
 	a, ok := withAuthority(w, r)
 	if !ok {
 		return
@@ -240,7 +233,7 @@ func (s *surface) listPublications(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"publications": values, "count": len(values)})
 }
-func (s *surface) approvePublication(w http.ResponseWriter, r *http.Request) {
+func (s *adapter) approvePublication(w http.ResponseWriter, r *http.Request) {
 	a, ok := withAuthority(w, r)
 	if !ok {
 		return
@@ -252,7 +245,7 @@ func (s *surface) approvePublication(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, value)
 }
-func (s *surface) rejectPublication(w http.ResponseWriter, r *http.Request) {
+func (s *adapter) rejectPublication(w http.ResponseWriter, r *http.Request) {
 	a, ok := withAuthority(w, r)
 	if !ok {
 		return
@@ -268,7 +261,7 @@ func (s *surface) rejectPublication(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, value)
 }
-func (s *surface) cancelPublication(w http.ResponseWriter, r *http.Request) {
+func (s *adapter) cancelPublication(w http.ResponseWriter, r *http.Request) {
 	a, ok := withAuthority(w, r)
 	if !ok {
 		return
@@ -280,7 +273,7 @@ func (s *surface) cancelPublication(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, value)
 }
-func (s *surface) previewDraft(w http.ResponseWriter, r *http.Request) {
+func (s *adapter) previewDraft(w http.ResponseWriter, r *http.Request) {
 	a, ok := withAuthority(w, r)
 	if !ok {
 		return
@@ -296,7 +289,7 @@ func (s *surface) previewDraft(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, value)
 }
-func (s *surface) saveDraft(w http.ResponseWriter, r *http.Request) {
+func (s *adapter) saveDraft(w http.ResponseWriter, r *http.Request) {
 	a, ok := withAuthority(w, r)
 	if !ok {
 		return
@@ -312,7 +305,7 @@ func (s *surface) saveDraft(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, value)
 }
-func (s *surface) requestPublication(w http.ResponseWriter, r *http.Request) {
+func (s *adapter) requestPublication(w http.ResponseWriter, r *http.Request) {
 	a, ok := withAuthority(w, r)
 	if !ok {
 		return
@@ -328,7 +321,7 @@ func (s *surface) requestPublication(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusCreated, value)
 }
-func (s *surface) disable(w http.ResponseWriter, r *http.Request) {
+func (s *adapter) disable(w http.ResponseWriter, r *http.Request) {
 	a, ok := withAuthority(w, r)
 	if !ok {
 		return
@@ -344,7 +337,7 @@ func (s *surface) disable(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, value)
 }
-func (s *surface) preview(w http.ResponseWriter, r *http.Request) {
+func (s *adapter) preview(w http.ResponseWriter, r *http.Request) {
 	a, ok := withAuthority(w, r)
 	if !ok {
 		return
@@ -360,7 +353,7 @@ func (s *surface) preview(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, value)
 }
-func (s *surface) listVersions(w http.ResponseWriter, r *http.Request) {
+func (s *adapter) listVersions(w http.ResponseWriter, r *http.Request) {
 	a, ok := withAuthority(w, r)
 	if !ok {
 		return
@@ -372,7 +365,7 @@ func (s *surface) listVersions(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"versions": values, "count": len(values)})
 }
-func (s *surface) restoreVersion(w http.ResponseWriter, r *http.Request) {
+func (s *adapter) restoreVersion(w http.ResponseWriter, r *http.Request) {
 	a, ok := withAuthority(w, r)
 	if !ok {
 		return
@@ -404,7 +397,7 @@ func metricSince(r *http.Request) string {
 	}
 	return time.Now().UTC().Add(-time.Duration(hours) * time.Hour).Format(time.RFC3339)
 }
-func (s *surface) getPolicy(w http.ResponseWriter, r *http.Request) {
+func (s *adapter) getPolicy(w http.ResponseWriter, r *http.Request) {
 	a, ok := withAuthority(w, r)
 	if !ok {
 		return
@@ -416,7 +409,7 @@ func (s *surface) getPolicy(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, value)
 }
-func (s *surface) savePolicy(w http.ResponseWriter, r *http.Request) {
+func (s *adapter) savePolicy(w http.ResponseWriter, r *http.Request) {
 	a, ok := withAuthority(w, r)
 	if !ok {
 		return
@@ -432,7 +425,7 @@ func (s *surface) savePolicy(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, value)
 }
-func (s *surface) listPreferences(w http.ResponseWriter, r *http.Request) {
+func (s *adapter) listPreferences(w http.ResponseWriter, r *http.Request) {
 	a, ok := withAuthority(w, r)
 	if !ok {
 		return
@@ -444,7 +437,7 @@ func (s *surface) listPreferences(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"preferences": values, "count": len(values)})
 }
-func (s *surface) savePreference(w http.ResponseWriter, r *http.Request) {
+func (s *adapter) savePreference(w http.ResponseWriter, r *http.Request) {
 	a, ok := withAuthority(w, r)
 	if !ok {
 		return
@@ -461,7 +454,7 @@ func (s *surface) savePreference(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, value)
 }
-func (s *surface) metrics(w http.ResponseWriter, r *http.Request) {
+func (s *adapter) metrics(w http.ResponseWriter, r *http.Request) {
 	a, ok := withAuthority(w, r)
 	if !ok {
 		return
@@ -473,7 +466,7 @@ func (s *surface) metrics(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, value)
 }
-func (s *surface) governanceCatalog(w http.ResponseWriter, r *http.Request) {
+func (s *adapter) governanceCatalog(w http.ResponseWriter, r *http.Request) {
 	a, ok := withAuthority(w, r)
 	if !ok {
 		return
@@ -485,7 +478,7 @@ func (s *surface) governanceCatalog(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, value)
 }
-func (s *surface) inboxGovernanceMetrics(w http.ResponseWriter, r *http.Request) {
+func (s *adapter) inboxGovernanceMetrics(w http.ResponseWriter, r *http.Request) {
 	a, ok := withAuthority(w, r)
 	if !ok {
 		return
@@ -498,4 +491,4 @@ func (s *surface) inboxGovernanceMetrics(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, http.StatusOK, value)
 }
 
-var _ modulehttp.Surface = (*surface)(nil)
+var _ modulehttp.Adapter = (*adapter)(nil)
