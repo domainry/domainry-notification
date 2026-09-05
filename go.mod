@@ -6,10 +6,10 @@ toolchain go1.26.6
 
 require (
 	github.com/DATA-DOG/go-sqlmock v1.5.2
-	github.com/domainry/domainry-foundation v0.1.0-dev.8.0.20260903120224-ddc3e594ee39
-	github.com/domainry/domainry-identity-sdk v0.1.1-dev7.0.20260903120225-51348ff00e2f
-	github.com/domainry/domainry-notification-sdk v0.1.0-dev.7.0.20260903120225-c4aa3c035b3e
-	github.com/domainry/domainry-orm v0.1.29
+	github.com/domainry/domainry-foundation v0.1.0-dev.9
+	github.com/domainry/domainry-identity-sdk v0.1.1-dev8
+	github.com/domainry/domainry-notification-sdk v0.1.0-dev.8
+	github.com/domainry/domainry-orm v0.1.30
 	github.com/go-sql-driver/mysql v1.10.0
 	github.com/jackc/pgx/v5 v5.10.0
 	go.opentelemetry.io/otel v1.44.0
