@@ -85,8 +85,13 @@ func NewCapabilityBinding(templateCapabilities []contract.NotificationTemplateCa
 		}
 		switch key {
 		case "notification.delivery_governance":
+			routeRule, ruleErr := notificationProjectEventRouteAuthoringRule()
+			if ruleErr != nil {
+				return nil, ruleErr
+			}
+			document.Projections = append(document.Projections, routeRule)
 			document.ValidationContracts = []modulecapability.ValidationScopeContract{
-				{Kind: "notification.event_type", Description: "Validate one published project notification event type.", Coverage: modulecapability.ValidationCoverageAllCandidates, CandidateCollections: []string{"notification_event_types"}},
+				{Kind: "notification.event_type", Description: "Validate one published project notification event type; when a project Action Handler references it, require an explicit project_record semantic route action with a non-empty route_key.", Coverage: modulecapability.ValidationCoverageAllCandidates, CandidateCollections: []string{"notification_event_types"}, ReferencedCollections: []string{"actions"}},
 				{Kind: "notification.rule", Description: "Validate one notification rule against explicitly referenced event types.", Coverage: modulecapability.ValidationCoverageAllCandidates, CandidateCollections: []string{"notification_rules"}, ReferencedCollections: []string{"notification_event_types"}},
 			}
 		case "notification.templates":
@@ -145,6 +150,32 @@ func NewCapabilityBinding(templateCapabilities []contract.NotificationTemplateCa
 		},
 	}
 	return modulecapability.NewStaticBinding(summary, documents, validator)
+}
+
+func notificationProjectEventRouteAuthoringRule() (modulecapability.SourceProjection, error) {
+	payload, err := json.Marshal(map[string]any{
+		"$schema": "https://json-schema.org/draft/2020-12/schema",
+		"title":   "Project Handler notification event semantic route requirement",
+		"type":    "object",
+		"x-domainry-cross-resource-rule": map[string]any{
+			"when": map[string]any{
+				"collection": "actions", "path": "handler.notification_event_types[]",
+			},
+			"target_collection": "notification_event_types",
+			"target_key_source": "referenced_event_type",
+			"requires": map[string]any{
+				"path": "actions[]", "contains": map[string]any{
+					"resource_type": map[string]any{"const": "project_record"},
+					"route_key":     map[string]any{"type": "string", "minLength": 1},
+				},
+			},
+			"route_key_inference": "forbidden",
+		},
+	})
+	if err != nil {
+		return modulecapability.SourceProjection{}, err
+	}
+	return modulecapability.SourceProjection{Kind: "notification.authoring_rule", Key: "project_handler_event_semantic_route", Payload: payload}, nil
 }
 
 func uniqueNotificationCapabilityStrings(values []string) []string {
