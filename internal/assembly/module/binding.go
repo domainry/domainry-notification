@@ -297,7 +297,7 @@ func (s moduleInbox) Get(ctx context.Context, a notificationsdk.UserAuthority, i
 	}
 	value, err := s.b.mailbox.Get(ctx, query, id)
 	if err != nil {
-		return contract.NotificationInboxItem{}, err
+		return contract.NotificationInboxItem{}, moduleError(err)
 	}
 	return convert[contract.NotificationInboxItem](value)
 }
@@ -331,7 +331,7 @@ func (s moduleInbox) SetRead(ctx context.Context, a notificationsdk.UserAuthorit
 	}
 	value, err := s.b.mailbox.SetRead(ctx, q, id, v)
 	if err != nil {
-		return contract.NotificationInboxItem{}, err
+		return contract.NotificationInboxItem{}, moduleError(err)
 	}
 	return convert[contract.NotificationInboxItem](value)
 }
@@ -390,7 +390,7 @@ func (s moduleInbox) ResolveAction(ctx context.Context, a notificationsdk.UserAu
 	}
 	value, err := s.b.actions.Resolve(ctx, q, id, key)
 	if err != nil {
-		return contract.NotificationInboxResolvedAction{}, err
+		return contract.NotificationInboxResolvedAction{}, moduleError(err)
 	}
 	return convert[contract.NotificationInboxResolvedAction](value)
 }
