@@ -12,6 +12,7 @@ import (
 	"github.com/domainry/domainry-foundation/modulecapability"
 	capabilitycontracttest "github.com/domainry/domainry-foundation/modulecapability/contracttest"
 	"github.com/domainry/domainry-foundation/modulehttp"
+	"github.com/domainry/domainry-foundation/requestcontext"
 	identitysdk "github.com/domainry/domainry-identity-sdk"
 	notificationsdk "github.com/domainry/domainry-notification-sdk"
 	"github.com/domainry/domainry-notification-sdk/contract"
@@ -74,10 +75,10 @@ func (identityBindingStub) Authorization() identitysdk.Authorization   { return 
 func (identityBindingStub) Principals() identitysdk.PrincipalResolver  { return principalResolverStub{} }
 func (identityBindingStub) Close(context.Context) error                { return nil }
 
-func (principalResolverStub) Resolve(_ context.Context, request identitysdk.PrincipalResolutionRequest) (identitysdk.PrincipalResolution, error) {
+func (principalResolverStub) Resolve(ctx context.Context, request identitysdk.PrincipalResolutionRequest) (identitysdk.PrincipalResolution, error) {
 	bundle := identitysdk.AccessBundle{FunctionGrants: []identitysdk.FunctionGrant{{Resource: "*", Action: "*", Effect: identitysdk.EffectAllow}}}
 	return identitysdk.PrincipalResolution{
-		Principal:    identitysdk.Principal{Known: true, WorkspaceID: string(request.Application.WorkspaceID), UserID: string(request.SubjectID), AccessBundle: &bundle},
+		Principal:    identitysdk.Principal{Known: true, WorkspaceID: requestcontext.WorkspaceID(ctx), UserID: string(request.SubjectID), AccessBundle: &bundle},
 		AccessBundle: bundle,
 	}, nil
 }

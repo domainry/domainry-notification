@@ -12,6 +12,7 @@ import (
 	actioncontract "github.com/domainry/domainry-foundation/action"
 	capabilitycontracttest "github.com/domainry/domainry-foundation/modulecapability/contracttest"
 	"github.com/domainry/domainry-foundation/modulehttp"
+	"github.com/domainry/domainry-foundation/requestcontext"
 	identitysdk "github.com/domainry/domainry-identity-sdk"
 	notificationsdk "github.com/domainry/domainry-notification-sdk"
 	"github.com/domainry/domainry-notification-sdk/contract"
@@ -58,10 +59,10 @@ func (applicationIdentityStub) Principals() identitysdk.PrincipalResolver {
 }
 func (applicationIdentityStub) Projection() identitysdk.Projection { return projectionStub{} }
 
-func (applicationPrincipalResolverStub) Resolve(_ context.Context, request identitysdk.PrincipalResolutionRequest) (identitysdk.PrincipalResolution, error) {
+func (applicationPrincipalResolverStub) Resolve(ctx context.Context, request identitysdk.PrincipalResolutionRequest) (identitysdk.PrincipalResolution, error) {
 	bundle := identitysdk.AccessBundle{FunctionGrants: []identitysdk.FunctionGrant{{Resource: "*", Action: "*", Effect: identitysdk.EffectAllow}}}
 	return identitysdk.PrincipalResolution{
-		Principal:    identitysdk.Principal{Known: true, WorkspaceID: string(request.Application.WorkspaceID), UserID: string(request.SubjectID), AccessBundle: &bundle},
+		Principal:    identitysdk.Principal{Known: true, WorkspaceID: requestcontext.WorkspaceID(ctx), UserID: string(request.SubjectID), AccessBundle: &bundle},
 		AccessBundle: bundle,
 	}, nil
 }

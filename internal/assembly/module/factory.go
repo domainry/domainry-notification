@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/domainry/domainry-foundation/modulehttp"
+	"github.com/domainry/domainry-foundation/requestcontext"
 	identitysdk "github.com/domainry/domainry-identity-sdk"
 	identityprincipal "github.com/domainry/domainry-identity-sdk/authorization/principal"
 	notificationsdk "github.com/domainry/domainry-notification-sdk"
@@ -144,9 +145,8 @@ func (f *Factory) openHosted(ctx context.Context, application notificationsdk.Ap
 	publicationProcessor, err := apptemplate.NewPublicationProcessor(apptemplate.PublicationProcessorDependencies{
 		Store: store, Manager: templateManager, Clock: host.Clock(), WorkerID: host.WorkerID(), WorkNotifier: notifier,
 		AuthorizeResumed: func(ctx context.Context, actor string) (bool, error) {
-			resolution, err := host.Identity().Principals().Resolve(ctx, identitysdk.PrincipalResolutionRequest{
-				Application: identitysdk.ApplicationScope{TenantID: identitysdk.TenantID(application.TenantID), WorkspaceID: identitysdk.WorkspaceID(application.WorkspaceID), ApplicationKey: identitysdk.ApplicationKey(application.ApplicationKey)},
-				SubjectID:   identitysdk.SubjectID(strings.TrimSpace(actor)),
+			resolution, err := host.Identity().Principals().Resolve(requestcontext.WithWorkspaceID(ctx, application.WorkspaceID), identitysdk.PrincipalResolutionRequest{
+				SubjectID: identitysdk.SubjectID(strings.TrimSpace(actor)),
 			})
 			if err != nil {
 				return false, err

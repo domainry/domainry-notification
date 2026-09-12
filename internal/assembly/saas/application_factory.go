@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/domainry/domainry-foundation/requestcontext"
 	identitysdk "github.com/domainry/domainry-identity-sdk"
 	notificationsdk "github.com/domainry/domainry-notification-sdk"
 	"github.com/domainry/domainry-notification-sdk/contract"
@@ -182,9 +183,7 @@ func (d identityRecipientResolver) FindRecipient(ctx context.Context, workspaceI
 	if strings.TrimSpace(workspaceID) != d.application.WorkspaceID || strings.TrimSpace(userID) == "" {
 		return modulehost.Recipient{}, false, nil
 	}
-	user, found, err := d.projection.FindUser(ctx, identitysdk.UserLookup{Application: identitysdk.ApplicationScope{
-		TenantID: identitysdk.TenantID(d.application.TenantID), WorkspaceID: identitysdk.WorkspaceID(d.application.WorkspaceID), ApplicationKey: identitysdk.ApplicationKey(d.application.ApplicationKey),
-	}, UserID: identitysdk.SubjectID(userID)})
+	user, found, err := d.projection.FindUser(requestcontext.WithWorkspaceID(ctx, workspaceID), identitysdk.UserLookup{UserID: identitysdk.SubjectID(userID)})
 	if err != nil || !found {
 		return modulehost.Recipient{}, found, err
 	}

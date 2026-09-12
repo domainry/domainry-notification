@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/domainry/domainry-foundation/requestcontext"
 	identitysdk "github.com/domainry/domainry-identity-sdk"
 	notificationsdk "github.com/domainry/domainry-notification-sdk"
 	"github.com/domainry/domainry-notification-sdk/contract"
@@ -290,9 +291,9 @@ func (i *integrationIdentity) Authorization() identitysdk.Authorization {
 func (i *integrationIdentity) Principals() identitysdk.PrincipalResolver { return i }
 func (*integrationIdentity) Close(context.Context) error                 { return nil }
 
-func (i *integrationIdentity) Resolve(_ context.Context, request identitysdk.PrincipalResolutionRequest) (identitysdk.PrincipalResolution, error) {
+func (i *integrationIdentity) Resolve(ctx context.Context, request identitysdk.PrincipalResolutionRequest) (identitysdk.PrincipalResolution, error) {
 	for _, profile := range i.profiles {
-		if profile.workspaceID == string(request.Application.WorkspaceID) && profile.userID == string(request.SubjectID) {
+		if profile.workspaceID == requestcontext.WorkspaceID(ctx) && profile.userID == string(request.SubjectID) {
 			bundle := integrationAccessBundle(profile, i.clock.Now())
 			return identitysdk.PrincipalResolution{Principal: identitysdk.Principal{Known: true, WorkspaceID: profile.workspaceID, UserID: profile.userID}, AccessBundle: bundle}, nil
 		}
