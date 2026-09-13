@@ -200,7 +200,7 @@ func TestModuleSchemaBaselineCoversEveryColumnAndDeclaredIndex(t *testing.T) {
 }
 
 func TestApplicationSchemaMigrationsPersistExactOwnership(t *testing.T) {
-	scope := ApplicationScope{TenantID: "tenant-'one", WorkspaceID: "workspace-one", ApplicationKey: "application-one"}
+	scope := ApplicationScope{WorkspaceID: "workspace-one", ApplicationKey: "application-one"}
 	migrations, err := testApplicationSchemaMigrations("sqlite", "", "app_one_", scope)
 	if err != nil {
 		t.Fatal(err)
@@ -223,21 +223,21 @@ func TestApplicationSchemaMigrationsPersistExactOwnership(t *testing.T) {
 	if _, err := db.Exec(`INSERT INTO app_one__notification_events (id, workspace_id, source, source_event_id, status, payload_json, occurred_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, "event-one", scope.WorkspaceID, "test", "source-event-one", "pending", `{}`, "1", "1", "1"); err != nil {
 		t.Fatal(err)
 	}
-	var tenantID, applicationKey string
-	if err := db.QueryRow(`SELECT tenant_id, application_key FROM app_one__notification_events WHERE id = ?`, "event-one").Scan(&tenantID, &applicationKey); err != nil {
+	var workspaceID, applicationKey string
+	if err := db.QueryRow(`SELECT workspace_id, application_key FROM app_one__notification_events WHERE id = ?`, "event-one").Scan(&workspaceID, &applicationKey); err != nil {
 		t.Fatal(err)
 	}
-	if tenantID != scope.TenantID || applicationKey != scope.ApplicationKey {
-		t.Fatalf("ownership=(%q,%q), want (%q,%q)", tenantID, applicationKey, scope.TenantID, scope.ApplicationKey)
+	if workspaceID != scope.WorkspaceID || applicationKey != scope.ApplicationKey {
+		t.Fatalf("ownership=(%q,%q), want (%q,%q)", workspaceID, applicationKey, scope.WorkspaceID, scope.ApplicationKey)
 	}
 }
 
 func TestApplicationSchemaMigrationsUseDistinctPhysicalNamespaces(t *testing.T) {
-	left, err := testApplicationSchemaMigrations("sqlite", "", "left_", ApplicationScope{TenantID: "tenant", WorkspaceID: "workspace", ApplicationKey: "left"})
+	left, err := testApplicationSchemaMigrations("sqlite", "", "left_", ApplicationScope{WorkspaceID: "workspace", ApplicationKey: "left"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	right, err := testApplicationSchemaMigrations("sqlite", "", "right_", ApplicationScope{TenantID: "tenant", WorkspaceID: "workspace", ApplicationKey: "right"})
+	right, err := testApplicationSchemaMigrations("sqlite", "", "right_", ApplicationScope{WorkspaceID: "workspace", ApplicationKey: "right"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -252,9 +252,8 @@ func TestApplicationSchemaMigrationsUseDistinctPhysicalNamespaces(t *testing.T) 
 
 func TestApplicationSchemaMigrationsRequireExactScope(t *testing.T) {
 	for _, scope := range []ApplicationScope{
-		{WorkspaceID: "workspace", ApplicationKey: "application"},
-		{TenantID: "tenant", ApplicationKey: "application"},
-		{TenantID: "tenant", WorkspaceID: "workspace"},
+		{ApplicationKey: "application"},
+		{WorkspaceID: "workspace"},
 	} {
 		if _, err := testApplicationSchemaMigrations("sqlite", "", "app_", scope); err == nil {
 			t.Fatalf("expected incomplete scope error for %+v", scope)

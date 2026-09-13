@@ -50,7 +50,7 @@ func (s moduleSystemMigration) Export(ctx context.Context) (contract.Notificatio
 	if s.b == nil || s.b.store == nil {
 		return contract.NotificationPortableExport{}, &notificationsdk.Error{StatusCode: 503, Code: "notification.system_migration_unavailable"}
 	}
-	scope := sqlstore.PortableScope{TenantID: s.b.application.TenantID, WorkspaceID: s.b.application.WorkspaceID, ApplicationKey: s.b.application.ApplicationKey}
+	scope := sqlstore.PortableScope{WorkspaceID: s.b.application.WorkspaceID, ApplicationKey: s.b.application.ApplicationKey}
 	status, err := s.b.store.MigrationStatus(ctx, s.b.application.WorkspaceID)
 	if err != nil {
 		return contract.NotificationPortableExport{}, err
@@ -82,7 +82,7 @@ func (s moduleSystemMigration) Import(ctx context.Context, bundle contract.Notif
 	}
 	s.b.migrationMu.Lock()
 	defer s.b.migrationMu.Unlock()
-	scope := sqlstore.PortableScope{TenantID: s.b.application.TenantID, WorkspaceID: s.b.application.WorkspaceID, ApplicationKey: s.b.application.ApplicationKey}
+	scope := sqlstore.PortableScope{WorkspaceID: s.b.application.WorkspaceID, ApplicationKey: s.b.application.ApplicationKey}
 	status, err := s.b.store.MigrationStatus(ctx, s.b.application.WorkspaceID)
 	if err != nil {
 		return contract.NotificationPortableImportReceipt{}, err

@@ -20,7 +20,7 @@ func TestPortableMigrationFiltersWorkspaceImportsOwnershipAndReconciles(t *testi
 	insertPortableArchive(t, source, "workspace", "archive-one")
 	insertPortableArchive(t, source, "other-workspace", "archive-other")
 	sourceDialect, _ := ormdialect.ParseRenderer("sqlite", "", "")
-	scope := PortableScope{TenantID: "tenant", WorkspaceID: "workspace", ApplicationKey: "application"}
+	scope := PortableScope{WorkspaceID: "workspace", ApplicationKey: "application"}
 	bundle, inventory, err := ExportPortable(t.Context(), source, sourceDialect, scope)
 	if err != nil {
 		t.Fatal(err)
@@ -31,7 +31,7 @@ func TestPortableMigrationFiltersWorkspaceImportsOwnershipAndReconciles(t *testi
 
 	target := openPortableDatabase(t, "target")
 	prefix := "application_"
-	migrations, err := ApplicationSchemaMigrations(SQLite, "", prefix, ApplicationScope{TenantID: scope.TenantID, WorkspaceID: scope.WorkspaceID, ApplicationKey: scope.ApplicationKey})
+	migrations, err := ApplicationSchemaMigrations(SQLite, "", prefix, ApplicationScope{WorkspaceID: scope.WorkspaceID, ApplicationKey: scope.ApplicationKey})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -48,12 +48,12 @@ func TestPortableMigrationFiltersWorkspaceImportsOwnershipAndReconciles(t *testi
 	if err != nil || !repeated.AlreadyPresent || repeated.Fingerprint != receipt.Fingerprint {
 		t.Fatalf("repeated=%+v err=%v", repeated, err)
 	}
-	var tenantID, applicationKey, workspaceID string
-	if err := target.QueryRow(`SELECT tenant_id, application_key, workspace_id FROM application__notification_events WHERE id = ?`, "event-one").Scan(&tenantID, &applicationKey, &workspaceID); err != nil {
+	var applicationKey, workspaceID string
+	if err := target.QueryRow(`SELECT application_key, workspace_id FROM application__notification_events WHERE id = ?`, "event-one").Scan(&applicationKey, &workspaceID); err != nil {
 		t.Fatal(err)
 	}
-	if tenantID != scope.TenantID || applicationKey != scope.ApplicationKey || workspaceID != scope.WorkspaceID {
-		t.Fatalf("ownership=(%q,%q,%q)", tenantID, applicationKey, workspaceID)
+	if applicationKey != scope.ApplicationKey || workspaceID != scope.WorkspaceID {
+		t.Fatalf("ownership=(%q,%q)", applicationKey, workspaceID)
 	}
 	var archivedWorkspaceID string
 	if err := target.QueryRow(`SELECT workspace_id FROM application__notification_retention_archive_entries WHERE id = ?`, "archive-one").Scan(&archivedWorkspaceID); err != nil {
@@ -67,7 +67,7 @@ func TestPortableMigrationFiltersWorkspaceImportsOwnershipAndReconciles(t *testi
 func TestPortableMigrationRejectsTamperingAndNonEmptyTarget(t *testing.T) {
 	database := openPortableDatabase(t, "tamper")
 	applyPortableMigrations(t, database, mustSchemaMigrations(t, ""))
-	scope := PortableScope{TenantID: "tenant", WorkspaceID: "workspace", ApplicationKey: "application"}
+	scope := PortableScope{WorkspaceID: "workspace", ApplicationKey: "application"}
 	dialect, _ := ormdialect.ParseRenderer("sqlite", "", "")
 	bundle, _, err := ExportPortable(t.Context(), database, dialect, scope)
 	if err != nil {
@@ -90,7 +90,7 @@ func TestPortableMigrationReconcilesEachWorkspaceWithoutCrossContamination(t *te
 
 	for _, workspaceID := range []string{"workspace-a", "workspace-b"} {
 		t.Run(workspaceID, func(t *testing.T) {
-			scope := PortableScope{TenantID: "tenant", WorkspaceID: workspaceID, ApplicationKey: "application"}
+			scope := PortableScope{WorkspaceID: workspaceID, ApplicationKey: "application"}
 			bundle, inventory, err := ExportPortable(t.Context(), source, sourceDialect, scope)
 			if err != nil {
 				t.Fatal(err)

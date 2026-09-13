@@ -24,7 +24,7 @@ func TestSQLPersistencePreparesAndReopensExactApplication(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	application := notificationsdk.ApplicationRef{TenantID: "tenant-one", WorkspaceID: "workspace-one", ApplicationKey: "app-one"}
+	application := notificationsdk.ApplicationRef{WorkspaceID: "workspace-one", ApplicationKey: "app-one"}
 	first, err := persistence.PrepareApplication(t.Context(), application)
 	if err != nil {
 		t.Fatal(err)
@@ -42,8 +42,11 @@ func TestSQLPersistencePreparesAndReopensExactApplication(t *testing.T) {
 	}
 	var columns int
 	table := strings.Trim(first.Table("_notification_events"), `"`)
-	if err := db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info(?) WHERE name IN ('tenant_id', 'application_key', 'workspace_id')`, table).Scan(&columns); err != nil || columns != 3 {
+	if err := db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info(?) WHERE name IN ('application_key', 'workspace_id')`, table).Scan(&columns); err != nil || columns != 2 {
 		t.Fatalf("ownership columns=%d err=%v", columns, err)
+	}
+	if err := db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info(?) WHERE name = 'tenant_id'`, table).Scan(&columns); err != nil || columns != 0 {
+		t.Fatalf("unexpected tenant column=%d err=%v", columns, err)
 	}
 }
 
@@ -57,8 +60,8 @@ func TestSQLPersistenceRejectsASecondApplicationInStandaloneDatabase(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	left := notificationsdk.ApplicationRef{TenantID: "tenant", WorkspaceID: "workspace", ApplicationKey: "left"}
-	right := notificationsdk.ApplicationRef{TenantID: "tenant", WorkspaceID: "workspace", ApplicationKey: "right"}
+	left := notificationsdk.ApplicationRef{WorkspaceID: "workspace", ApplicationKey: "left"}
+	right := notificationsdk.ApplicationRef{WorkspaceID: "workspace", ApplicationKey: "right"}
 	leftDialect, err := persistence.PrepareApplication(t.Context(), left)
 	if err != nil {
 		t.Fatal(err)
@@ -85,7 +88,7 @@ func TestSQLPersistenceRejectsMigrationChecksumDrift(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	application := notificationsdk.ApplicationRef{TenantID: "tenant", WorkspaceID: "workspace", ApplicationKey: "application"}
+	application := notificationsdk.ApplicationRef{WorkspaceID: "workspace", ApplicationKey: "application"}
 	if _, err := persistence.PrepareApplication(t.Context(), application); err != nil {
 		t.Fatal(err)
 	}

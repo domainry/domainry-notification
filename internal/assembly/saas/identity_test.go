@@ -164,7 +164,7 @@ func (stub *permissionRegistryStub) Reconcile(_ context.Context, value identitys
 }
 
 func TestOpenRetriesLostReconcileResponseFromAuthoritativeSnapshot(t *testing.T) {
-	application := identitysdk.ApplicationRef{TenantID: "tenant-a", WorkspaceID: "workspace-a", ApplicationKey: "domainry-notification"}
+	application := identitysdk.ApplicationRef{WorkspaceID: "workspace-a", ApplicationKey: "domainry-notification"}
 	permissions := &permissionRegistryStub{loseFirstReconcileResponse: true}
 	binding := &identityBindingStub{
 		descriptor:   identitysdk.Descriptor{ProtocolVersion: identitysdk.CurrentProtocolVersion, BundleVersion: identitysdk.CurrentPolicyBundleVersion, AuthorizationVersion: identitysdk.CurrentAuthorizationContractVersion, Mode: identitysdk.DeploymentModeSaaS, Issuer: "https://identity.example", Audience: string(application.ApplicationKey)},
@@ -189,7 +189,7 @@ func TestOpenRetriesLostReconcileResponseFromAuthoritativeSnapshot(t *testing.T)
 }
 
 func TestOpenRequiresSaaSAndRegistersScopedApplicationPermissions(t *testing.T) {
-	application := identitysdk.ApplicationRef{TenantID: "tenant-a", WorkspaceID: "workspace-a", ApplicationKey: "domainry-notification"}
+	application := identitysdk.ApplicationRef{WorkspaceID: "workspace-a", ApplicationKey: "domainry-notification"}
 	previousDefinitions := []identitysdk.PermissionDefinition{{
 		PermissionKey: "notification.templates.list", ResourceKey: "notification.templates", OperationKey: "list",
 		Label: "List notification templates", Category: "Notification", SourceKind: "module_http",
@@ -227,11 +227,11 @@ func TestOpenRequiresSaaSAndRegistersScopedApplicationPermissions(t *testing.T) 
 }
 
 func sameApplication(left, right identitysdk.ApplicationRef) bool {
-	return left.TenantID == right.TenantID && left.WorkspaceID == right.WorkspaceID && left.ApplicationKey == right.ApplicationKey
+	return left.WorkspaceID == right.WorkspaceID && left.ApplicationKey == right.ApplicationKey
 }
 
 func TestOpenFailsClosedForModuleAndRegistrationFailure(t *testing.T) {
-	application := identitysdk.ApplicationRef{TenantID: "tenant-a", WorkspaceID: "workspace-a", ApplicationKey: "domainry-notification"}
+	application := identitysdk.ApplicationRef{WorkspaceID: "workspace-a", ApplicationKey: "domainry-notification"}
 	for name, binding := range map[string]*identityBindingStub{
 		"module":           {descriptor: identitysdk.Descriptor{ProtocolVersion: identitysdk.CurrentProtocolVersion, BundleVersion: identitysdk.CurrentPolicyBundleVersion, AuthorizationVersion: identitysdk.CurrentAuthorizationContractVersion, Mode: identitysdk.DeploymentModeModule, Issuer: "issuer", Audience: string(application.ApplicationKey)}, applications: &applicationRegistryStub{}, permissions: &permissionRegistryStub{}},
 		"capabilities":     {descriptor: identitysdk.Descriptor{ProtocolVersion: identitysdk.CurrentProtocolVersion, BundleVersion: identitysdk.CurrentPolicyBundleVersion, AuthorizationVersion: identitysdk.CurrentAuthorizationContractVersion, Mode: identitysdk.DeploymentModeSaaS, Issuer: "issuer", Audience: string(application.ApplicationKey)}},
@@ -259,7 +259,7 @@ func TestIdentityOptionsFromEnvironmentSelectsRemoteIdentity(t *testing.T) {
 	t.Setenv("NOTIFICATION_IDENTITY_WORKSPACE_ID", "workspace-a")
 	t.Setenv("NOTIFICATION_IDENTITY_APPLICATION_KEY", "domainry-notification")
 	options := IdentityOptionsFromEnvironment()
-	if options.Factory == nil || options.Application.TenantID != "tenant-a" || options.Application.WorkspaceID != "workspace-a" || options.Application.ApplicationKey != "domainry-notification" {
+	if options.Factory == nil || options.Application.WorkspaceID != "workspace-a" || options.Application.ApplicationKey != "domainry-notification" {
 		t.Fatalf("options=%+v", options)
 	}
 }

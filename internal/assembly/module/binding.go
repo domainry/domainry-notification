@@ -119,7 +119,7 @@ func (b *binding) authenticate(ctx context.Context, authority notificationsdk.Us
 		return identitysdk.Principal{}, err
 	}
 	if !principal.Known || strings.TrimSpace(principal.WorkspaceID) != b.application.WorkspaceID || strings.TrimSpace(principal.UserID) == "" ||
-		principal.AccessBundle == nil || strings.TrimSpace(string(principal.AccessBundle.Subject.TenantID)) != b.application.TenantID {
+		principal.AccessBundle == nil {
 		return identitysdk.Principal{}, &notificationsdk.Error{StatusCode: 403, Code: "notification.application_scope_mismatch"}
 	}
 	return principal, nil
@@ -149,7 +149,7 @@ func (b *binding) authorizeAction(ctx context.Context, authority notificationsdk
 		return principal, nil
 	}
 	facts := identitysdk.ResourceFacts{
-		"tenant_id": b.application.TenantID, "workspace_id": b.application.WorkspaceID, "application_key": b.application.ApplicationKey,
+		"workspace_id": b.application.WorkspaceID, "application_key": b.application.ApplicationKey,
 	}
 	decision, err := b.identity.Authorization().Reauthorize(ctx, identitysdk.DecisionRequest{
 		Identity: identitysdk.RequestIdentity{Principal: principal, AccessToken: authority.AccessToken},

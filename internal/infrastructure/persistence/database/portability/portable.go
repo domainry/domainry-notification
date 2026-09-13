@@ -20,7 +20,6 @@ import (
 const PortableFormatV1 = "domainry-notification-portable-v1"
 
 type PortableScope struct {
-	TenantID       string `json:"tenant_id"`
 	WorkspaceID    string `json:"workspace_id"`
 	ApplicationKey string `json:"application_key"`
 }
@@ -82,7 +81,7 @@ func (s *Store) ImportPortable(ctx context.Context, scope PortableScope, bundle 
 }
 
 func ExportPortable(ctx context.Context, database sqlhost.Queryer, dialect modulehost.Dialect, scope PortableScope) (PortableBundle, PortableInventory, error) {
-	if database == nil || dialect == nil || strings.TrimSpace(scope.TenantID) == "" || strings.TrimSpace(scope.WorkspaceID) == "" || strings.TrimSpace(scope.ApplicationKey) == "" {
+	if database == nil || dialect == nil || strings.TrimSpace(scope.WorkspaceID) == "" || strings.TrimSpace(scope.ApplicationKey) == "" {
 		return PortableBundle{}, PortableInventory{}, fmt.Errorf("notification portable export dependencies and scope are required")
 	}
 	ownership := ownershipByTable()
@@ -232,10 +231,10 @@ func ImportPortable(ctx context.Context, database sqlhost.Database, dialect modu
 }
 
 func ValidatePortable(bundle PortableBundle, target PortableScope) error {
-	if bundle.FormatVersion != PortableFormatV1 || strings.TrimSpace(bundle.Source.TenantID) == "" || strings.TrimSpace(bundle.Source.WorkspaceID) == "" || strings.TrimSpace(bundle.Source.ApplicationKey) == "" {
+	if bundle.FormatVersion != PortableFormatV1 || strings.TrimSpace(bundle.Source.WorkspaceID) == "" || strings.TrimSpace(bundle.Source.ApplicationKey) == "" {
 		return fmt.Errorf("notification portable bundle format or source scope is invalid")
 	}
-	if bundle.Source.TenantID != target.TenantID || bundle.Source.WorkspaceID != target.WorkspaceID || bundle.Source.ApplicationKey != target.ApplicationKey {
+	if bundle.Source.WorkspaceID != target.WorkspaceID || bundle.Source.ApplicationKey != target.ApplicationKey {
 		return fmt.Errorf("notification portable bundle target scope mismatch")
 	}
 	definitions := storeschema.PortableTables()

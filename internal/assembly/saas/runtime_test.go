@@ -57,15 +57,15 @@ func (f *applicationFactoryStub) OpenSaaS(_ context.Context, application notific
 }
 
 func TestRuntimeOwnsOneBindingPerExactApplicationAndClosesIdentity(t *testing.T) {
-	identityApplication := identitysdk.ApplicationRef{TenantID: "tenant-service", WorkspaceID: "workspace-service", ApplicationKey: "domainry-notification"}
+	identityApplication := identitysdk.ApplicationRef{WorkspaceID: "workspace-service", ApplicationKey: "domainry-notification"}
 	identity := &identityBindingStub{descriptor: identitysdk.Descriptor{ProtocolVersion: identitysdk.CurrentProtocolVersion, BundleVersion: identitysdk.CurrentPolicyBundleVersion, AuthorizationVersion: identitysdk.CurrentAuthorizationContractVersion, Mode: identitysdk.DeploymentModeSaaS, Issuer: "https://identity.example", Audience: string(identityApplication.ApplicationKey)}, applications: &applicationRegistryStub{}, permissions: &permissionRegistryStub{}}
 	factory := &applicationFactoryStub{}
 	runtime, err := Open(t.Context(), Options{Identity: IdentityOptions{Factory: &identityFactoryStub{binding: identity}, Application: identityApplication}, Applications: factory})
 	if err != nil {
 		t.Fatal(err)
 	}
-	first := notificationsdk.ApplicationRef{TenantID: "tenant-a", WorkspaceID: "workspace-a", ApplicationKey: "runtime-a"}
-	second := notificationsdk.ApplicationRef{TenantID: "tenant-a", WorkspaceID: "workspace-a", ApplicationKey: "runtime-b"}
+	first := notificationsdk.ApplicationRef{WorkspaceID: "workspace-a", ApplicationKey: "runtime-a"}
+	second := notificationsdk.ApplicationRef{WorkspaceID: "workspace-a", ApplicationKey: "runtime-b"}
 	firstBinding, err := runtime.Resolve(t.Context(), first)
 	if err != nil {
 		t.Fatal(err)
@@ -92,7 +92,7 @@ func TestRuntimeOwnsOneBindingPerExactApplicationAndClosesIdentity(t *testing.T)
 }
 
 func TestRuntimeOwnsSaaSWorkerLifecycleAndReadiness(t *testing.T) {
-	identityApplication := identitysdk.ApplicationRef{TenantID: "tenant-service", WorkspaceID: "workspace-service", ApplicationKey: "domainry-notification"}
+	identityApplication := identitysdk.ApplicationRef{WorkspaceID: "workspace-service", ApplicationKey: "domainry-notification"}
 	identity := &identityBindingStub{descriptor: identitysdk.Descriptor{ProtocolVersion: identitysdk.CurrentProtocolVersion, BundleVersion: identitysdk.CurrentPolicyBundleVersion, AuthorizationVersion: identitysdk.CurrentAuthorizationContractVersion, Mode: identitysdk.DeploymentModeSaaS, Issuer: "https://identity.example", Audience: string(identityApplication.ApplicationKey)}, applications: &applicationRegistryStub{}, permissions: &permissionRegistryStub{}}
 	workers := &localWorkersStub{due: make(chan struct{})}
 	runtime, err := Open(t.Context(), Options{
@@ -103,7 +103,7 @@ func TestRuntimeOwnsSaaSWorkerLifecycleAndReadiness(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := runtime.Resolve(t.Context(), notificationsdk.ApplicationRef{TenantID: "tenant", WorkspaceID: "workspace", ApplicationKey: "application"}); err != nil {
+	if _, err := runtime.Resolve(t.Context(), notificationsdk.ApplicationRef{WorkspaceID: "workspace", ApplicationKey: "application"}); err != nil {
 		t.Fatal(err)
 	}
 	select {

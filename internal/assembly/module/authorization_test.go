@@ -51,14 +51,14 @@ func authorizedPrincipal(workspaceID string, grants ...identitysdk.FunctionGrant
 	}
 	return identitysdk.Principal{
 		Known: true, WorkspaceID: workspaceID, UserID: "user-1",
-		AccessBundle: &identitysdk.AccessBundle{ContractVersion: identitysdk.CurrentPolicyBundleVersion, AuthorizationRevision: "revision-1", ExpiresAt: time.Now().Add(time.Hour), Subject: identitysdk.Subject{TenantID: "tenant-1", WorkspaceID: identitysdk.WorkspaceID(workspaceID), SubjectID: "user-1"}, FunctionGrants: grants, DataPolicies: policies},
+		AccessBundle: &identitysdk.AccessBundle{ContractVersion: identitysdk.CurrentPolicyBundleVersion, AuthorizationRevision: "revision-1", ExpiresAt: time.Now().Add(time.Hour), Subject: identitysdk.Subject{WorkspaceID: identitysdk.WorkspaceID(workspaceID), SubjectID: "user-1"}, FunctionGrants: grants, DataPolicies: policies},
 	}
 }
 
 func TestAuthorizeFailsClosedWithoutRequiredPermission(t *testing.T) {
 	capture := &authorizationCapture{decision: identitysdk.AccessDecision{Allowed: true}}
 	b := &binding{
-		application: notificationsdk.ApplicationRef{TenantID: "tenant-1", WorkspaceID: "workspace-1", ApplicationKey: "app-1"},
+		application: notificationsdk.ApplicationRef{WorkspaceID: "workspace-1", ApplicationKey: "app-1"},
 		identity:    authorizationBindingStub{authorization: capture},
 		principals: principalAuthenticatorStub{principal: authorizedPrincipal("workspace-1",
 			identitysdk.FunctionGrant{Resource: "notification_inbox", Action: "read", Effect: identitysdk.EffectAllow},
@@ -74,7 +74,7 @@ func TestAuthorizeFailsClosedWithoutRequiredPermission(t *testing.T) {
 func TestAuthorizeDoesNotExpandAnotherExactPermission(t *testing.T) {
 	capture := &authorizationCapture{decision: identitysdk.AccessDecision{Allowed: true}}
 	b := &binding{
-		application: notificationsdk.ApplicationRef{TenantID: "tenant-1", WorkspaceID: "workspace-1", ApplicationKey: "app-1"},
+		application: notificationsdk.ApplicationRef{WorkspaceID: "workspace-1", ApplicationKey: "app-1"},
 		identity:    authorizationBindingStub{authorization: capture},
 		principals: principalAuthenticatorStub{principal: authorizedPrincipal("workspace-1",
 			identitysdk.FunctionGrant{Resource: "identity.roles", Action: "list", Effect: identitysdk.EffectAllow},
@@ -90,7 +90,7 @@ func TestAuthorizeDoesNotExpandAnotherExactPermission(t *testing.T) {
 func TestAuthorizeReauthorizesMutationWithExactApplicationFacts(t *testing.T) {
 	capture := &authorizationCapture{decision: identitysdk.AccessDecision{Allowed: true, AuthorizationRevision: "revision-2"}}
 	b := &binding{
-		application: notificationsdk.ApplicationRef{TenantID: "tenant-1", WorkspaceID: "workspace-1", ApplicationKey: "app-1"},
+		application: notificationsdk.ApplicationRef{WorkspaceID: "workspace-1", ApplicationKey: "app-1"},
 		identity:    authorizationBindingStub{authorization: capture},
 		principals: principalAuthenticatorStub{principal: authorizedPrincipal("workspace-1",
 			identitysdk.FunctionGrant{Resource: "notification.templates.draft", Action: "save", Effect: identitysdk.EffectAllow},
@@ -107,7 +107,7 @@ func TestAuthorizeReauthorizesMutationWithExactApplicationFacts(t *testing.T) {
 	if request.Identity.AccessToken != "secret" || request.Access.ObjectKey != "notification.templates.draft" || request.Access.Action != "save" {
 		t.Fatalf("unexpected decision request: %#v", request)
 	}
-	if request.Facts["tenant_id"] != "tenant-1" || request.Facts["workspace_id"] != "workspace-1" || request.Facts["application_key"] != "app-1" {
+	if request.Facts["workspace_id"] != "workspace-1" || request.Facts["application_key"] != "app-1" {
 		t.Fatalf("application facts are not exact: %#v", request.Facts)
 	}
 }
@@ -128,7 +128,7 @@ func TestAuthorizeFailsClosedWhenCurrentIdentityDeniesOrIsUnavailable(t *testing
 		t.Run(test.name, func(t *testing.T) {
 			capture := &authorizationCapture{decision: test.decision, err: test.err}
 			b := &binding{
-				application: notificationsdk.ApplicationRef{TenantID: "tenant-1", WorkspaceID: "workspace-1", ApplicationKey: "app-1"},
+				application: notificationsdk.ApplicationRef{WorkspaceID: "workspace-1", ApplicationKey: "app-1"},
 				identity:    authorizationBindingStub{authorization: capture},
 				principals: principalAuthenticatorStub{principal: authorizedPrincipal("workspace-1",
 					identitysdk.FunctionGrant{Resource: "notification.publications", Action: "approve", Effect: identitysdk.EffectAllow},
@@ -144,7 +144,7 @@ func TestInboxScopeUsesAuthenticatedRelationshipFactsWithoutRolePermission(t *te
 	principal := authorizedPrincipal("workspace-1")
 	principal.ReportingScopeUserIDs = []string{"user-2", "user-3"}
 	b := &binding{
-		application: notificationsdk.ApplicationRef{TenantID: "tenant-1", WorkspaceID: "workspace-1", ApplicationKey: "app-1"},
+		application: notificationsdk.ApplicationRef{WorkspaceID: "workspace-1", ApplicationKey: "app-1"},
 		principals:  principalAuthenticatorStub{principal: principal},
 	}
 	authority := notificationsdk.UserAuthority{AccessToken: "secret"}

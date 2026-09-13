@@ -45,7 +45,7 @@ type cutoverModuleHost struct {
 func (h *cutoverModuleHost) Migrations() modulehost.MigrationRegistrar { return h.migrations }
 
 func TestModuleToSaaSCutoverPreservesStateAndMovesTheOnlyWriter(t *testing.T) {
-	application := notificationsdk.ApplicationRef{TenantID: "tenant", WorkspaceID: "workspace", ApplicationKey: "runtime"}
+	application := notificationsdk.ApplicationRef{WorkspaceID: "workspace", ApplicationKey: "runtime"}
 	catalog := modulehost.Catalog{
 		DefaultLocale: "en", TemplateCapabilities: []contract.NotificationTemplateCapability{{Channel: "in_app"}},
 		EventTypes: []contract.NotificationEventType{{Key: "report.completed", Source: "report", Category: "report", DefaultSeverity: "info", MandatoryInApp: true, TemplateKey: "report.completed", DefaultLocale: "en", Locales: map[string]contract.NotificationInboxEventTypeContent{"en": {Title: "Report ready", Body: "The report is ready."}}, Version: 1, Status: "published"}},

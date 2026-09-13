@@ -15,7 +15,7 @@ type Profile interface {
 }
 
 type ApplicationScope struct {
-	TenantID, WorkspaceID, ApplicationKey string
+	WorkspaceID, ApplicationKey string
 }
 
 // SchemaMigration is one ordered, immutable schema change. Hosts execute and
@@ -91,13 +91,12 @@ func ModuleSchemaBaseline(profile Profile, tablePrefix string) (SchemaBaseline, 
 }
 
 // ApplicationSchemaMigrations renders the standalone SaaS schema for one
-// exact application namespace. Every row carries explicit tenant and
-// application ownership, including system-scoped template/policy rows. The
-// table prefix provides an additional physical isolation boundary while all
-// application namespaces may share one service-owned database pool.
+// exact application namespace. Every row carries workspace and application
+// ownership, including system-scoped template/policy rows. Each standalone
+// database is bound to exactly one application.
 func ApplicationSchemaMigrations(profile Profile, dialect modulehost.Dialect, tablePrefix string, scope ApplicationScope) ([]SchemaMigration, error) {
-	scope.TenantID, scope.WorkspaceID, scope.ApplicationKey = strings.TrimSpace(scope.TenantID), strings.TrimSpace(scope.WorkspaceID), strings.TrimSpace(scope.ApplicationKey)
-	if scope.TenantID == "" || scope.WorkspaceID == "" || scope.ApplicationKey == "" {
+	scope.WorkspaceID, scope.ApplicationKey = strings.TrimSpace(scope.WorkspaceID), strings.TrimSpace(scope.ApplicationKey)
+	if scope.WorkspaceID == "" || scope.ApplicationKey == "" {
 		return nil, fmt.Errorf("notification SaaS application scope is incomplete")
 	}
 	statements, err := renderBaseSchema(profile, tablePrefix, dialect, &scope)
@@ -211,7 +210,6 @@ func renderSchema(profile Profile, indexPrefix string, dialect modulehost.Dialec
 		columns := append([]schemaColumn(nil), table.columns...)
 		if application != nil {
 			columns = append([]schemaColumn{
-				defaulted("tenant_id", identifierColumn, application.TenantID),
 				defaulted("application_key", identifierColumn, application.ApplicationKey),
 			}, columns...)
 		}

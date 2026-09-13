@@ -155,9 +155,9 @@ func TestModuleFactoryContractAndBorrowedDatabaseLifecycle(t *testing.T) {
 	host.database.SetMaxIdleConns(1)
 	factory := NewFactory(Options{})
 	contracttest.Run(t, func(testing.TB) (notificationsdk.Factory, notificationsdk.ApplicationRef) {
-		return moduleFactoryContractAdapter{factory: factory, host: host}, notificationsdk.ApplicationRef{TenantID: "tenant", WorkspaceID: "workspace", ApplicationKey: "runtime"}
+		return moduleFactoryContractAdapter{factory: factory, host: host}, notificationsdk.ApplicationRef{WorkspaceID: "workspace", ApplicationKey: "runtime"}
 	})
-	binding, err := factory.OpenModule(t.Context(), notificationsdk.ApplicationRef{TenantID: "tenant", WorkspaceID: "workspace", ApplicationKey: "runtime"}, host)
+	binding, err := factory.OpenModule(t.Context(), notificationsdk.ApplicationRef{WorkspaceID: "workspace", ApplicationKey: "runtime"}, host)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -237,7 +237,7 @@ func TestModuleFactoryContractAndBorrowedDatabaseLifecycle(t *testing.T) {
 
 func TestModuleSystemTemplatesSynchronizeThroughOwnedStore(t *testing.T) {
 	host := newTestHost(t)
-	binding, err := NewFactory(Options{}).OpenModule(t.Context(), notificationsdk.ApplicationRef{TenantID: "tenant", WorkspaceID: "workspace", ApplicationKey: "runtime"}, host)
+	binding, err := NewFactory(Options{}).OpenModule(t.Context(), notificationsdk.ApplicationRef{WorkspaceID: "workspace", ApplicationKey: "runtime"}, host)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -257,7 +257,7 @@ func TestModuleSystemTemplatesSynchronizeThroughOwnedStore(t *testing.T) {
 
 func TestModuleSystemMigrationExportsAndIdempotentlyReconcilesExactApplication(t *testing.T) {
 	host := newTestHost(t)
-	application := notificationsdk.ApplicationRef{TenantID: "tenant", WorkspaceID: "workspace", ApplicationKey: "runtime"}
+	application := notificationsdk.ApplicationRef{WorkspaceID: "workspace", ApplicationKey: "runtime"}
 	binding, err := NewFactory(Options{}).OpenModule(t.Context(), application, host)
 	if err != nil {
 		t.Fatal(err)
@@ -374,7 +374,7 @@ func TestModuleSystemMigrationExportsAndIdempotentlyReconcilesExactApplication(t
 	if err != nil {
 		t.Fatal(err)
 	}
-	if exported.Bundle.Source != (contract.NotificationPortableScope{TenantID: "tenant", WorkspaceID: "workspace", ApplicationKey: "runtime"}) || exported.Bundle.Fingerprint == "" || len(exported.Bundle.Tables) != 15 {
+	if exported.Bundle.Source != (contract.NotificationPortableScope{WorkspaceID: "workspace", ApplicationKey: "runtime"}) || exported.Bundle.Fingerprint == "" || len(exported.Bundle.Tables) != 15 {
 		t.Fatalf("export=%+v", exported)
 	}
 	if status, err := migration.SystemMigration().Status(t.Context()); err != nil || status.BundleFingerprint != exported.Bundle.Fingerprint || status.ActiveLeases != 0 {
@@ -412,7 +412,7 @@ func TestModuleSystemMigrationExportsAndIdempotentlyReconcilesExactApplication(t
 
 func TestMigrationFreezeWaitsForInFlightWriterAndFencesFollowingWrites(t *testing.T) {
 	host := newTestHost(t)
-	application := notificationsdk.ApplicationRef{TenantID: "tenant", WorkspaceID: "workspace", ApplicationKey: "runtime"}
+	application := notificationsdk.ApplicationRef{WorkspaceID: "workspace", ApplicationKey: "runtime"}
 	opened, err := NewFactory(Options{}).OpenModule(t.Context(), application, host)
 	if err != nil {
 		t.Fatal(err)

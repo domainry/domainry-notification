@@ -73,7 +73,7 @@ func (p *SQLPersistence) PrepareApplication(ctx context.Context, application not
 		return nil, err
 	}
 	migrations, err := sqlstore.ApplicationSchemaMigrations(p.driver, p.schema, tablePrefix, sqlstore.ApplicationScope{
-		TenantID: application.TenantID, WorkspaceID: application.WorkspaceID, ApplicationKey: application.ApplicationKey,
+		WorkspaceID: application.WorkspaceID, ApplicationKey: application.ApplicationKey,
 	})
 	if err != nil {
 		return nil, err

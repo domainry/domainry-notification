@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
 	"sort"
 	"strings"
 	"sync"
@@ -21,8 +22,8 @@ import (
 )
 
 // ApplicationFactory opens one Notification application against
-// service-owned, tenant-scoped persistence. Implementations must never borrow
-// a Runtime database and must preserve tenant/workspace/application isolation.
+// service-owned, workspace-scoped persistence. Implementations must never borrow
+// a Runtime database and must preserve workspace/application isolation.
 type ApplicationFactory interface {
 	OpenSaaS(context.Context, notificationsdk.ApplicationRef, identitysdk.Binding) (notificationsdk.Binding, error)
 }
@@ -248,5 +249,5 @@ func (r *Runtime) processDue(ctx context.Context) {
 }
 
 func applicationKey(application notificationsdk.ApplicationRef) string {
-	return strings.TrimSpace(application.TenantID) + "/" + strings.TrimSpace(application.WorkspaceID) + "/" + strings.TrimSpace(application.ApplicationKey)
+	return url.PathEscape(strings.TrimSpace(application.WorkspaceID)) + "/" + url.PathEscape(strings.TrimSpace(application.ApplicationKey))
 }

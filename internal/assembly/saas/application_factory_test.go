@@ -102,7 +102,7 @@ func TestSQLApplicationFactoryOpensSharedSaaSDomainApplication(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	application := notificationsdk.ApplicationRef{TenantID: "tenant", WorkspaceID: "workspace", ApplicationKey: "application"}
+	application := notificationsdk.ApplicationRef{WorkspaceID: "workspace", ApplicationKey: "application"}
 	binding, err := factory.OpenSaaS(t.Context(), application, applicationIdentityStub{})
 	if err != nil {
 		t.Fatal(err)
@@ -167,7 +167,7 @@ func TestRemotePublicationReconcilesResponseLossWithoutDuplicateIngest(t *testin
 	if err != nil {
 		t.Fatal(err)
 	}
-	application := notificationsdk.ApplicationRef{TenantID: "tenant", WorkspaceID: "workspace", ApplicationKey: "application"}
+	application := notificationsdk.ApplicationRef{WorkspaceID: "workspace", ApplicationKey: "application"}
 	local, err := factory.OpenSaaS(t.Context(), application, applicationIdentityStub{})
 	if err != nil {
 		t.Fatal(err)
@@ -238,7 +238,7 @@ func TestExactQueueScopeRejectsCrossWorkspaceRegistration(t *testing.T) {
 
 func TestRemoteDeliveryGatewayAdapterPreservesStablePlanIdentity(t *testing.T) {
 	remote := &remoteGatewayStub{}
-	adapter := remoteDeliveryGatewayAdapter{application: notificationsdk.ApplicationRef{TenantID: "tenant", WorkspaceID: "workspace", ApplicationKey: "application"}, gateway: remote}
+	adapter := remoteDeliveryGatewayAdapter{application: notificationsdk.ApplicationRef{WorkspaceID: "workspace", ApplicationKey: "application"}, gateway: remote}
 	receipt, err := adapter.Dispatch(t.Context(), modulehost.DeliveryRequest{WorkspaceID: "workspace", PlanID: "plan", EventID: "event", Channel: "email", ConnectorKey: "smtp", Operation: "send", CreatedAt: "now"})
 	if err != nil || receipt.MessageID != "remote-message" {
 		t.Fatalf("receipt=%+v err=%v", receipt, err)

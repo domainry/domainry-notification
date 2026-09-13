@@ -216,8 +216,8 @@ func (g *integrationGateway) snapshot() []modulehost.DeliveryRequest {
 }
 
 type integrationIdentityProfile struct {
-	tenantID, workspaceID, userID string
-	actions                       []string
+	workspaceID, userID string
+	actions             []string
 }
 
 type integrationIdentity struct {
@@ -237,7 +237,7 @@ func (v integrationTokenVerifier) Verify(_ context.Context, request identitysdk.
 	}
 	now := v.identity.clock.Now()
 	return identitysdk.VerifiedToken{
-		Issuer: "integration-identity", Audience: "runtime", SubjectID: identitysdk.SubjectID(profile.userID), TenantID: identitysdk.TenantID(profile.tenantID),
+		Issuer: "integration-identity", Audience: "runtime", SubjectID: identitysdk.SubjectID(profile.userID),
 		WorkspaceID: identitysdk.WorkspaceID(profile.workspaceID), AuthorizationRevision: "revision-1", IssuedAt: now.Add(-time.Minute).Unix(),
 		ExpiresAt: now.Add(time.Hour).Unix(), TokenID: request.AccessToken,
 	}, nil
@@ -253,7 +253,7 @@ func (a integrationAuthentication) CurrentSession(_ context.Context, request ide
 	if !found {
 		return identitysdk.SessionView{}, errors.New("unknown integration session")
 	}
-	return identitysdk.SessionView{TenantID: identitysdk.TenantID(profile.tenantID), WorkspaceID: identitysdk.WorkspaceID(profile.workspaceID), SubjectID: identitysdk.SubjectID(profile.userID), AuthorizationRevision: "revision-1", User: identitysdk.User{ID: profile.userID}}, nil
+	return identitysdk.SessionView{WorkspaceID: identitysdk.WorkspaceID(profile.workspaceID), SubjectID: identitysdk.SubjectID(profile.userID), AuthorizationRevision: "revision-1", User: identitysdk.User{ID: profile.userID}}, nil
 }
 
 type integrationAuthorization struct {
@@ -312,7 +312,7 @@ func integrationAccessBundle(profile integrationIdentityProfile, now time.Time) 
 	}
 	return identitysdk.AccessBundle{
 		ContractVersion: identitysdk.CurrentPolicyBundleVersion, AuthorizationRevision: "revision-1", ExpiresAt: now.Add(time.Hour),
-		Subject:        identitysdk.Subject{TenantID: identitysdk.TenantID(profile.tenantID), WorkspaceID: identitysdk.WorkspaceID(profile.workspaceID), SubjectID: identitysdk.SubjectID(profile.userID)},
+		Subject:        identitysdk.Subject{WorkspaceID: identitysdk.WorkspaceID(profile.workspaceID), SubjectID: identitysdk.SubjectID(profile.userID)},
 		FunctionGrants: grants, DataPolicies: policies,
 	}
 }
@@ -395,10 +395,9 @@ func newIntegrationHost(t *testing.T) *integrationHost {
 		"notification.inbox.list",
 	}
 	identity := &integrationIdentity{clock: clock, profiles: map[string]integrationIdentityProfile{
-		"full-token":      {tenantID: "tenant-a", workspaceID: "workspace-a", userID: "user-a", actions: fullActions},
-		"limited-token":   {tenantID: "tenant-a", workspaceID: "workspace-a", userID: "user-a", actions: []string{"notification.inbox.list"}},
-		"other-workspace": {tenantID: "tenant-a", workspaceID: "workspace-b", userID: "user-a", actions: fullActions},
-		"other-tenant":    {tenantID: "tenant-b", workspaceID: "workspace-a", userID: "user-a", actions: fullActions},
+		"full-token":      {workspaceID: "workspace-a", userID: "user-a", actions: fullActions},
+		"limited-token":   {workspaceID: "workspace-a", userID: "user-a", actions: []string{"notification.inbox.list"}},
+		"other-workspace": {workspaceID: "workspace-b", userID: "user-a", actions: fullActions},
 	}}
 	catalog := modulehost.Catalog{
 		DefaultLocale: "en-US", ExternalChannels: []string{"email"},
@@ -420,7 +419,7 @@ func newIntegrationHost(t *testing.T) *integrationHost {
 }
 
 func integrationApplication() notificationsdk.ApplicationRef {
-	return notificationsdk.ApplicationRef{TenantID: "tenant-a", WorkspaceID: "workspace-a", ApplicationKey: "runtime"}
+	return notificationsdk.ApplicationRef{WorkspaceID: "workspace-a", ApplicationKey: "runtime"}
 }
 
 func integrationIntent() contract.NotificationIntent {
@@ -537,7 +536,7 @@ func TestPublicBindingEnforcesTenantWorkspaceAndExactActionAuthorization(t *test
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, token := range []string{"other-workspace", "other-tenant"} {
+	for _, token := range []string{"other-workspace"} {
 		_, err := binding.Delivery().GetPolicy(t.Context(), notificationsdk.UserAuthority{AccessToken: token})
 		if !isIntegrationSDKError(err, 403, "notification.application_scope_mismatch", false) {
 			t.Fatalf("token %q scope error=%v", token, err)
@@ -558,7 +557,7 @@ func TestPublicBindingEnforcesTenantWorkspaceAndExactActionAuthorization(t *test
 	}
 	request := requests[0]
 	if request.Access.ObjectKey != "notification.delivery_policy" || request.Access.Action != "update" ||
-		request.Facts["tenant_id"] != "tenant-a" || request.Facts["workspace_id"] != "workspace-a" || request.Facts["application_key"] != "runtime" {
+		request.Facts["workspace_id"] != "workspace-a" || request.Facts["application_key"] != "runtime" {
 		t.Fatalf("reauthorization was not exact and action-scoped: %+v", request)
 	}
 }

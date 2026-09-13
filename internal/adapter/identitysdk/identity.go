@@ -26,7 +26,7 @@ func OptionsFromEnvironment() Options {
 	return Options{
 		Factory: identityremote.NewFactory(identityremote.ConfigFromEnvironment()),
 		Application: identitysdk.ApplicationRef{
-			TenantID:       identitysdk.TenantID(strings.TrimSpace(os.Getenv("NOTIFICATION_TENANT_ID"))),
+
 			WorkspaceID:    identitysdk.WorkspaceID(strings.TrimSpace(os.Getenv("NOTIFICATION_IDENTITY_WORKSPACE_ID"))),
 			ApplicationKey: identitysdk.ApplicationKey(strings.TrimSpace(os.Getenv("NOTIFICATION_IDENTITY_APPLICATION_KEY"))),
 		},
@@ -41,8 +41,8 @@ func Open(ctx context.Context, options Options) (identitysdk.Binding, error) {
 		return nil, fmt.Errorf("Notification SaaS requires an Identity SaaS Factory")
 	}
 	application := options.Application
-	if !application.TenantID.Valid() || !application.WorkspaceID.Valid() || !application.ApplicationKey.Valid() {
-		return nil, fmt.Errorf("Notification SaaS Identity tenant, workspace and application are required")
+	if !application.WorkspaceID.Valid() || !application.ApplicationKey.Valid() {
+		return nil, fmt.Errorf("Notification SaaS Identity workspace and application are required")
 	}
 	binding, err := options.Factory.Open(ctx, application)
 	if err != nil {

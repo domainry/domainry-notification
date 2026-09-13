@@ -64,7 +64,7 @@ type parityClock struct{ value time.Time }
 func (c parityClock) Now() time.Time { return c.value }
 
 func TestModuleAndRemoteSaaSPreserveBusinessAndCapabilitySemantics(t *testing.T) {
-	application := notificationsdk.ApplicationRef{TenantID: "tenant", WorkspaceID: "workspace", ApplicationKey: "runtime"}
+	application := notificationsdk.ApplicationRef{WorkspaceID: "workspace", ApplicationKey: "runtime"}
 	now := time.Date(2026, 9, 3, 12, 0, 0, 0, time.UTC)
 	catalog := modulehost.Catalog{
 		DefaultLocale: "en", TemplateCapabilities: []contract.NotificationTemplateCapability{{Channel: "in_app"}},

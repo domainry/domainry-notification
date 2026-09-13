@@ -25,7 +25,7 @@ func TestRemoteFactoryPassesDeploymentNeutralContractSuite(t *testing.T) {
 	httpServer := httptest.NewServer(handler)
 	t.Cleanup(httpServer.Close)
 	contracttest.Run(t, func(testing.TB) (notificationsdk.Factory, notificationsdk.ApplicationRef) {
-		return notificationremote.NewFactory(notificationremote.Config{BaseURL: httpServer.URL, ServiceCredential: "service-token", CapabilityContractSHA256: testCapabilitySHA256(t), HTTPClient: httpServer.Client()}), notificationsdk.ApplicationRef{TenantID: "tenant", WorkspaceID: "workspace", ApplicationKey: "runtime"}
+		return notificationremote.NewFactory(notificationremote.Config{BaseURL: httpServer.URL, ServiceCredential: "service-token", CapabilityContractSHA256: testCapabilitySHA256(t), HTTPClient: httpServer.Client()}), notificationsdk.ApplicationRef{WorkspaceID: "workspace", ApplicationKey: "runtime"}
 	})
 }
 
@@ -44,7 +44,7 @@ func TestRemoteFactoryAndPublisherUseServerWireContract(t *testing.T) {
 	httpServer := httptest.NewServer(handler)
 	t.Cleanup(httpServer.Close)
 	factory := notificationremote.NewFactory(notificationremote.Config{BaseURL: httpServer.URL, ServiceCredential: "service-token", CapabilityContractSHA256: testCapabilitySHA256(t), HTTPClient: httpServer.Client()})
-	application := notificationsdk.ApplicationRef{TenantID: "tenant-a", WorkspaceID: "workspace-a", ApplicationKey: "runtime-a"}
+	application := notificationsdk.ApplicationRef{WorkspaceID: "workspace-a", ApplicationKey: "runtime-a"}
 	binding, err := factory.Open(t.Context(), application)
 	if err != nil {
 		t.Fatal(err)
@@ -141,7 +141,7 @@ func TestHandlerSystemMigrationRejectsCrossApplicationBundleBeforeImport(t *test
 	handler, _ := NewHandler(&serviceAuthenticationStub{}, &bindingResolverStub{binding: &httpBindingStub{publisher: &httpPublisherStub{}, migration: migration}})
 	bundle := contract.NotificationPortableBundle{
 		FormatVersion: contract.NotificationPortableFormatV1,
-		Source:        contract.NotificationPortableScope{TenantID: "tenant-a", WorkspaceID: "workspace-b", ApplicationKey: "runtime-a"},
+		Source:        contract.NotificationPortableScope{WorkspaceID: "workspace-b", ApplicationKey: "runtime-a"},
 		Tables:        []contract.NotificationPortableTable{{Name: "_notification_events", Columns: []string{"id"}, Rows: [][]json.RawMessage{{json.RawMessage(`"event"`)}}}},
 		Fingerprint:   "fingerprint",
 	}
@@ -276,7 +276,7 @@ func TestHandlerAuthenticatesAndPublishesScopedIntent(t *testing.T) {
 	if response.Code != http.StatusOK || publisher.intent.ID != intent.ID {
 		t.Fatalf("status=%d body=%s intent=%+v", response.Code, response.Body.String(), publisher.intent)
 	}
-	application := notificationsdk.ApplicationRef{TenantID: "tenant-a", WorkspaceID: "workspace-a", ApplicationKey: "runtime-a"}
+	application := notificationsdk.ApplicationRef{WorkspaceID: "workspace-a", ApplicationKey: "runtime-a"}
 	if authenticator.request.Credential != "service-token" || authenticator.request.Application != application || resolver.application != application {
 		t.Fatalf("auth=%+v resolved=%+v", authenticator.request, resolver.application)
 	}

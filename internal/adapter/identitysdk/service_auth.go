@@ -48,7 +48,7 @@ func (a *ServiceAuthenticator) Authenticate(ctx context.Context, request Service
 	if err != nil {
 		return ServiceAuthority{}, &notificationsdk.Error{StatusCode: 401, Code: "notification.service_credential_invalid", Cause: err}
 	}
-	if string(verified.Application.TenantID) != request.Application.TenantID || string(verified.Application.WorkspaceID) != request.Application.WorkspaceID || string(verified.Application.ApplicationKey) != request.Application.ApplicationKey || string(verified.Audience) != descriptor.Audience || strings.TrimSpace(string(verified.SubjectID)) == "" {
+	if string(verified.Application.WorkspaceID) != request.Application.WorkspaceID || string(verified.Application.ApplicationKey) != request.Application.ApplicationKey || string(verified.Audience) != descriptor.Audience || strings.TrimSpace(string(verified.SubjectID)) == "" {
 		return ServiceAuthority{}, &notificationsdk.Error{StatusCode: 403, Code: "notification.application_scope_mismatch"}
 	}
 	return ServiceAuthority{Application: request.Application, SubjectID: string(verified.SubjectID), AuthorizationRevision: string(verified.AuthorizationRevision)}, nil

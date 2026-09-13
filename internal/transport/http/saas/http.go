@@ -41,7 +41,7 @@ func (h *Handler) ServeHTTP(response http.ResponseWriter, request *http.Request)
 		return
 	}
 	application := notificationsdk.ApplicationRef{
-		TenantID: strings.TrimSpace(request.Header.Get("X-Domainry-Tenant-ID")), WorkspaceID: strings.TrimSpace(request.Header.Get("X-Domainry-Workspace-ID")), ApplicationKey: strings.TrimSpace(request.Header.Get("X-Domainry-Application-Key")),
+		WorkspaceID: strings.TrimSpace(request.Header.Get("X-Domainry-Workspace-ID")), ApplicationKey: strings.TrimSpace(request.Header.Get("X-Domainry-Application-Key")),
 	}
 	grant, err := notificationsdk.ServiceGrantForRequest(request.Method, request.URL.Path)
 	if err != nil {
@@ -264,7 +264,7 @@ func (h *Handler) ServeHTTP(response http.ResponseWriter, request *http.Request)
 			writeHTTPError(response, err)
 			return
 		}
-		if bundle.Source.TenantID != application.TenantID || bundle.Source.WorkspaceID != application.WorkspaceID || bundle.Source.ApplicationKey != application.ApplicationKey {
+		if bundle.Source.WorkspaceID != application.WorkspaceID || bundle.Source.ApplicationKey != application.ApplicationKey {
 			writeHTTPError(response, &notificationsdk.Error{StatusCode: http.StatusForbidden, Code: "notification.application_scope_mismatch"})
 			return
 		}

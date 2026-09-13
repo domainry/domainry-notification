@@ -83,9 +83,18 @@ func (s *Store) ExportSubject(ctx context.Context, workspaceID, subjectID string
 	return json.Marshal(map[string]any{"inbox_items": items})
 }
 
-func (s *Store) EraseSubject(ctx context.Context, workspaceID, subjectID string, _ json.RawMessage) (json.RawMessage, error) {
+func (s *Store) EraseSubject(ctx context.Context, workspaceID, subjectID string, holds json.RawMessage) (json.RawMessage, error) {
 	if s == nil || s.Database == nil || strings.TrimSpace(workspaceID) == "" || strings.TrimSpace(subjectID) == "" {
 		return nil, fmt.Errorf("notification subject scope is required")
+	}
+	var activeHolds []json.RawMessage
+	if len(holds) > 0 {
+		if err := json.Unmarshal(holds, &activeHolds); err != nil {
+			return nil, fmt.Errorf("invalid notification subject legal holds: %w", err)
+		}
+	}
+	if len(activeHolds) > 0 {
+		return nil, fmt.Errorf("notification subject erasure blocked by legal hold")
 	}
 	tx, err := s.Database.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelSerializable})
 	if err != nil {

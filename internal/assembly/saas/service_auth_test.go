@@ -25,10 +25,10 @@ func (services *configuredApplicationServices) Verify(_ context.Context, request
 }
 
 func TestServiceAuthenticatorBindsShortTokenToExactApplicationScope(t *testing.T) {
-	application := notificationsdk.ApplicationRef{TenantID: "tenant-a", WorkspaceID: "workspace-a", ApplicationKey: "runtime-a"}
+	application := notificationsdk.ApplicationRef{WorkspaceID: "workspace-a", ApplicationKey: "runtime-a"}
 	services := &configuredApplicationServices{principal: identitysdk.ApplicationServicePrincipal{
 		SubjectID:   "service:runtime-a",
-		Application: identitysdk.ApplicationRef{TenantID: "tenant-a", WorkspaceID: "workspace-a", ApplicationKey: "runtime-a"},
+		Application: identitysdk.ApplicationRef{WorkspaceID: "workspace-a", ApplicationKey: "runtime-a"},
 		Audience:    "domainry-notification", AuthorizationRevision: "revision-2",
 	}}
 	binding := &identityBindingStub{descriptor: identitysdk.Descriptor{Mode: identitysdk.DeploymentModeSaaS, Issuer: "https://identity.example", Audience: "domainry-notification"}, services: services}
@@ -50,10 +50,8 @@ func TestServiceAuthenticatorBindsShortTokenToExactApplicationScope(t *testing.T
 }
 
 func TestServiceAuthenticatorFailsClosedForScopeMismatchExpiryAndIdentityOutage(t *testing.T) {
-	application := notificationsdk.ApplicationRef{TenantID: "tenant-a", WorkspaceID: "workspace-a", ApplicationKey: "runtime-a"}
-	base := identitysdk.ApplicationServicePrincipal{SubjectID: "service:runtime-a", Application: identitysdk.ApplicationRef{TenantID: "tenant-a", WorkspaceID: "workspace-a", ApplicationKey: "runtime-a"}, Audience: "domainry-notification"}
-	tenantMismatch := base
-	tenantMismatch.Application.TenantID = "tenant-b"
+	application := notificationsdk.ApplicationRef{WorkspaceID: "workspace-a", ApplicationKey: "runtime-a"}
+	base := identitysdk.ApplicationServicePrincipal{SubjectID: "service:runtime-a", Application: identitysdk.ApplicationRef{WorkspaceID: "workspace-a", ApplicationKey: "runtime-a"}, Audience: "domainry-notification"}
 	workspaceMismatch := base
 	workspaceMismatch.Application.WorkspaceID = "workspace-b"
 	applicationMismatch := base
@@ -64,7 +62,6 @@ func TestServiceAuthenticatorFailsClosedForScopeMismatchExpiryAndIdentityOutage(
 		verifyErr error
 		code      string
 	}{
-		{"tenant mismatch", tenantMismatch, nil, "notification.application_scope_mismatch"},
 		{"workspace mismatch", workspaceMismatch, nil, "notification.application_scope_mismatch"},
 		{"application mismatch", applicationMismatch, nil, "notification.application_scope_mismatch"},
 		{"expired or rotated", base, errors.New("identity.application_service_token_invalid"), "notification.service_credential_invalid"},
