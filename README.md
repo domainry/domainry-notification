@@ -1,5 +1,7 @@
 # Domainry Notification
 
+Agent-facing question index and source-owned guides: [`capability/agent/index.json`](capability/agent/index.json).
+
 `domainry-notification` is the source-owned Go module for Domainry notification
 semantics. It is extracted from Domainry Plane and can be composed into a
 Runtime without importing Plane internals.
