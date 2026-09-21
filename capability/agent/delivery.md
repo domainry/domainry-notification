@@ -8,6 +8,8 @@
 
 - Persisting an Inbox item immediately and sending the recipient's daily email digest later.
 - Retrying email, SMS, or push delivery through Integration without duplicating the original notification.
+- Enforcing a mandatory security channel even when ordinary recipient preferences would suppress it.
+- Ending one permanently rejected channel without erasing success on Inbox or other channels.
 
 ## Use when
 
@@ -32,7 +34,7 @@ Notification selects allowed channels and timing. Integration performs the exter
 
 ## Example
 
-An approver prefers Inbox plus daily email digest. Notification persists the Inbox item immediately, groups email intent, and later requests Integration delivery through the configured provider.
+Intent `approval.assigned:task-77:user-42` creates its Inbox delivery immediately. The recipient's email preference permits digest delivery in `Asia/Shanghai`, so Notification groups it under the daily digest while keeping the same logical identity. An SMS preference suppresses ordinary events, but a published mandatory policy may still require SMS for a critical security event after severity/policy evaluation. Scheduler only wakes the digest window; Notification selects members and timing; Integration invokes the chosen Provider connection. A transient timeout retries the same delivery identity, while an invalid email address ends only that channel with remediation evidence and leaves the Inbox success intact.
 
 ## Permissions and scope
 
@@ -40,4 +42,4 @@ Recipients manage only their preferences. Operators may inspect delivery evidenc
 
 ## Boundaries
 
-Integration owns credentials and provider responses; Scheduler owns the clock; Notification owns recipient/channel policy and durable delivery state.
+Integration owns credentials and provider responses; Scheduler owns the clock; Notification owns recipient/channel policy and durable delivery state. Installed dynamic keys such as `notification.channel.*` and `notification.provider.*` describe available adapters only; they do not override rule, preference, severity, or mandatory-policy selection.

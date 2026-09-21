@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/domainry/domainry-foundation/modulecapability"
-	notificationmodule "github.com/domainry/domainry-notification/internal/transport/http/module"
+	notificationcapability "github.com/domainry/domainry-notification/capability"
 )
 
 var testCapabilityState struct {
@@ -30,9 +30,7 @@ func testCapabilitySHA256(t testing.TB) string {
 
 func testCapabilityBinding() (modulecapability.Binding, error) {
 	testCapabilityState.Do(func() {
-		testCapabilityState.binding, testCapabilityState.err = notificationmodule.NewCapabilityBinding(nil, func(context.Context, modulecapability.ValidationRequest) (modulecapability.ValidationResult, error) {
-			return modulecapability.ValidationResult{Diagnostics: []modulecapability.Diagnostic{}}, nil
-		})
+		testCapabilityState.binding, testCapabilityState.err = notificationcapability.Open(notificationcapability.Inputs{})
 	})
 	return testCapabilityState.binding, testCapabilityState.err
 }

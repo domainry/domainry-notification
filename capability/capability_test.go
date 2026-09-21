@@ -31,8 +31,8 @@ func TestOpenIsTopologyNeutralAndOwnerValidated(t *testing.T) {
 	if firstSummary.Identity.ContractSHA256 != secondSummary.Identity.ContractSHA256 {
 		t.Fatalf("Notification digest changed across explicit opens: %q != %q", firstSummary.Identity.ContractSHA256, secondSummary.Identity.ContractSHA256)
 	}
-	if !contains(firstSummary.Scenarios.ProvidedCapabilities, "notification.provider.whatsapp.meta_cloud_api") {
-		t.Fatalf("official provider catalog is missing: %v", firstSummary.Scenarios.ProvidedCapabilities)
+	if !contains(firstSummary.Composition.ProvidedCapabilities, "notification.provider.whatsapp.meta_cloud_api") {
+		t.Fatalf("official provider catalog is missing: %v", firstSummary.Composition.ProvidedCapabilities)
 	}
 	candidate, _ := json.Marshal(contract.NotificationEventType{
 		Key: "ticket.assigned", Source: "project", Category: "business", DefaultSeverity: "info", MandatoryInApp: true,

@@ -1,4 +1,4 @@
-package module
+package capability
 
 import (
 	"encoding/json"
@@ -15,8 +15,40 @@ import (
 	"github.com/domainry/domainry-foundation/modulehttp"
 	notificationsdk "github.com/domainry/domainry-notification-sdk"
 	"github.com/domainry/domainry-notification-sdk/contract"
+	"github.com/domainry/domainry-notification-sdk/modulehost"
 	notificationapplication "github.com/domainry/domainry-notification/internal/application"
 )
+
+type TemplateLifecycleInput struct {
+	ExpectedUpdatedAt string `json:"expected_updated_at,omitempty"`
+}
+
+type TemplatePublicationInput struct {
+	ExpectedUpdatedAt string `json:"expected_updated_at,omitempty"`
+	ScheduledFor      string `json:"scheduled_for,omitempty"`
+}
+
+type TemplateReviewInput struct {
+	Reason string `json:"reason,omitempty"`
+}
+
+type TemplateDraftInput struct {
+	Template          contract.NotificationTemplate `json:"template"`
+	ExpectedUpdatedAt string                        `json:"expected_updated_at,omitempty"`
+}
+
+type TemplatePreviewInput struct {
+	Locale     string         `json:"locale,omitempty"`
+	Recipients []string       `json:"recipients,omitempty"`
+	Variables  map[string]any `json:"variables,omitempty"`
+}
+
+type TemplatePreviewDraftInput struct {
+	Template   contract.NotificationTemplate `json:"template"`
+	Locale     string                        `json:"locale,omitempty"`
+	Recipients []string                      `json:"recipients,omitempty"`
+	Variables  map[string]any                `json:"variables,omitempty"`
+}
 
 // ProductRoutes is the source-owned Notification product HTTP manifest. Both
 // the executable Module Adapter and the model-facing capability disclosure are
@@ -38,10 +70,17 @@ func ProductRoutes() ([]modulehttp.Route, error) {
 	return routes, nil
 }
 
-// NewCapabilityBinding builds the immutable disclosure envelope. The supplied
-// validator remains in the owning module assembly because it needs the exact
-// provider catalog opened for this application.
-func NewCapabilityBinding(templateCapabilities []contract.NotificationTemplateCapability, validator modulecapability.Validator) (*modulecapability.StaticBinding, error) {
+// openContract builds the immutable disclosure envelope from the source-owned
+// SDK catalog and topology-neutral validator.
+func openContract(_ Inputs) (*modulecapability.StaticBinding, error) {
+	validator, err := newOwnerValidator()
+	if err != nil {
+		return nil, err
+	}
+	return buildContract(modulehost.DefaultProviderCapabilities(), validator)
+}
+
+func buildContract(templateCapabilities []contract.NotificationTemplateCapability, validator modulecapability.Validator) (*modulecapability.StaticBinding, error) {
 	routes, err := ProductRoutes()
 	if err != nil {
 		return nil, err
@@ -127,16 +166,7 @@ func NewCapabilityBinding(templateCapabilities []contract.NotificationTemplateCa
 		},
 		Name:        "Notification",
 		Description: "User-facing notification inboxes, governed templates, recipient preferences, and durable channel-delivery policy.",
-		Scenarios: modulecapability.AdaptationScenarios{
-			UseWhen: []string{
-				"A PRD requires user-visible notifications, alerts, read or archive state, recipient preferences, or a durable Inbox",
-				"A PRD requires governed notification templates, publication review, digesting, or delivery through one or more channels",
-			},
-			DoNotUseWhen: []string{
-				"A workflow only changes internal state and has no user-facing message, alert, or delivery requirement",
-				"The requirement is only an external provider callback or data integration without a user notification experience",
-			},
-			RequirementSignals:   []string{"notify or alert a user", "inbox and unread state", "email, SMS, push, or in-app delivery", "notification template and preference", "delivery retry, digest, or governance"},
+		Composition: modulecapability.ModuleComposition{
 			ProvidedCapabilities: providedCapabilities,
 			RequiredModules:      []string{"identity"}, OptionalModules: []string{"integration", "scheduler"}, ConflictingModules: []string{},
 			AssemblyChains: []string{
@@ -144,9 +174,7 @@ func NewCapabilityBinding(templateCapabilities []contract.NotificationTemplateCa
 				"notification_template_publication_before_event_delivery",
 				"identity_principal_before_notification_inbox_access",
 			},
-			ValidationScopes:  []string{"notification.event_type", "notification.rule", "notification.template"},
-			SelectionExamples: []modulecapability.ScenarioExample{{Requirement: "Notify an approver, show it in their Inbox, and email them according to preferences", Reason: "Notification owns durable user Inbox state, templates, preferences, and channel delivery"}},
-			RejectionExamples: []modulecapability.ScenarioExample{{Requirement: "Call a payment provider and store its response without notifying a user", Reason: "Integration owns the provider call; Notification is unnecessary without a user-facing message"}},
+			ValidationScopes: []string{"notification.event_type", "notification.rule", "notification.template"},
 		},
 	}
 	return modulecapability.NewStaticBinding(summary, documents, validator)
@@ -215,7 +243,7 @@ func notificationCategoryMetadata(key string) (string, string, []string, []strin
 	}
 }
 
-func notificationOpenAPIOperations(routes []modulehttp.Route) map[string]map[string]any {
+func OpenAPIOperations(routes []modulehttp.Route) map[string]map[string]any {
 	result := make(map[string]map[string]any, len(routes))
 	for _, route := range routes {
 		pattern := route.Pattern()
@@ -393,17 +421,17 @@ func notificationRequestSchema(method, path string) map[string]any {
 	case strings.Contains(path, "/delegations/"):
 		return openAPISchemaFor(reflect.TypeOf(contract.NotificationInboxDelegation{}), map[reflect.Type]bool{})
 	case path == "/notification/templates/preview":
-		return openAPISchemaFor(reflect.TypeOf(previewDraftInput{}), map[reflect.Type]bool{})
+		return openAPISchemaFor(reflect.TypeOf(TemplatePreviewDraftInput{}), map[reflect.Type]bool{})
 	case strings.HasSuffix(path, "/draft"):
-		return openAPISchemaFor(reflect.TypeOf(draftInput{}), map[reflect.Type]bool{})
+		return openAPISchemaFor(reflect.TypeOf(TemplateDraftInput{}), map[reflect.Type]bool{})
 	case strings.HasSuffix(path, "/publication-requests"):
-		return openAPISchemaFor(reflect.TypeOf(publicationInput{}), map[reflect.Type]bool{})
+		return openAPISchemaFor(reflect.TypeOf(TemplatePublicationInput{}), map[reflect.Type]bool{})
 	case strings.HasSuffix(path, "/disable"), strings.HasSuffix(path, "/restore-draft"):
-		return openAPISchemaFor(reflect.TypeOf(lifecycleInput{}), map[reflect.Type]bool{})
+		return openAPISchemaFor(reflect.TypeOf(TemplateLifecycleInput{}), map[reflect.Type]bool{})
 	case strings.HasSuffix(path, "/preview"):
-		return openAPISchemaFor(reflect.TypeOf(previewInput{}), map[reflect.Type]bool{})
+		return openAPISchemaFor(reflect.TypeOf(TemplatePreviewInput{}), map[reflect.Type]bool{})
 	case strings.HasSuffix(path, "/reject"):
-		return openAPISchemaFor(reflect.TypeOf(reviewInput{}), map[reflect.Type]bool{})
+		return openAPISchemaFor(reflect.TypeOf(TemplateReviewInput{}), map[reflect.Type]bool{})
 	case path == "/notification/policy":
 		return openAPISchemaFor(reflect.TypeOf(contract.NotificationDeliveryPolicy{}), map[reflect.Type]bool{})
 	case strings.HasPrefix(path, "/notification/preferences/"):
@@ -569,5 +597,3 @@ func openAPISchemaFor(value reflect.Type, stack map[reflect.Type]bool) map[strin
 		return map[string]any{}
 	}
 }
-
-var _ modulehttp.OpenAPIProvider = (*adapter)(nil)

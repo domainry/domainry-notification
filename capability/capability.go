@@ -4,9 +4,6 @@ package capability
 
 import (
 	"github.com/domainry/domainry-foundation/modulecapability"
-	"github.com/domainry/domainry-notification-sdk/modulehost"
-	internalcapability "github.com/domainry/domainry-notification/internal/capability"
-	notificationhttp "github.com/domainry/domainry-notification/internal/transport/http/module"
 )
 
 // Inputs is intentionally empty: source-owned Notification capability truth
@@ -15,10 +12,5 @@ type Inputs struct{}
 
 // Open returns the same immutable binding used by Module and SaaS assemblies.
 func Open(inputs Inputs) (*modulecapability.StaticBinding, error) {
-	_ = inputs
-	validator, err := internalcapability.NewOwnerValidator()
-	if err != nil {
-		return nil, err
-	}
-	return notificationhttp.NewCapabilityBinding(modulehost.DefaultProviderCapabilities(), validator)
+	return openContract(inputs)
 }

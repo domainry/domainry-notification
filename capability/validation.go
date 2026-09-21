@@ -1,6 +1,3 @@
-// Package capability owns Notification's topology-neutral capability
-// candidate validator. It composes only immutable SDK/domain validation rules
-// and never opens persistence, workers, authorization, or network transports.
 package capability
 
 import (
@@ -20,10 +17,10 @@ type ownerValidator struct {
 	templates *contract.NotificationTemplateValidator
 }
 
-// NewOwnerValidator builds the exact pure validator used by the public
+// newOwnerValidator builds the exact pure validator used by the public
 // capability binding. Provider capabilities and semantic routes come from the
 // Notification SDK, not from the currently mounted Runtime topology.
-func NewOwnerValidator() (modulecapability.Validator, error) {
+func newOwnerValidator() (modulecapability.Validator, error) {
 	templateCatalog, err := modulehost.DefaultTemplateCapabilityCatalog()
 	if err != nil {
 		return nil, fmt.Errorf("build Notification template capability catalog: %w", err)
