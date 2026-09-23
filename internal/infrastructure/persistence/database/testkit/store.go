@@ -8,9 +8,8 @@ import (
 	"testing"
 	"time"
 
+	shareddefinition "github.com/domainry/domainry-foundation/definition"
 	metadatasdk "github.com/domainry/domainry-metadata-sdk"
-	metadatamodulehost "github.com/domainry/domainry-metadata-sdk/modulehost"
-	metadatamodule "github.com/domainry/domainry-metadata/module"
 	notification "github.com/domainry/domainry-notification/internal/domain/notification/model"
 	sqlstore "github.com/domainry/domainry-notification/internal/infrastructure/persistence"
 	"github.com/domainry/domainry-notification/internal/infrastructure/persistence/base"
@@ -39,22 +38,12 @@ func (*queueScopes) Workspaces(context.Context, sqlhost.Queryer, notification.Wo
 	return nil, nil
 }
 
-type metadataHost struct {
-	database  *sql.DB
-	dialect   metadatamodulehost.Dialect
-	registrar *metadataMigrationRegistrar
-}
-
-func (h metadataHost) Database() metadatamodulehost.Database             { return h.database }
-func (h metadataHost) Dialect() metadatamodulehost.Dialect               { return h.dialect }
-func (h metadataHost) Migrations() metadatamodulehost.MigrationRegistrar { return h.registrar }
-
 type metadataMigrationRegistrar struct{ database *sql.DB }
 
 func (*metadataMigrationRegistrar) Driver() string { return "sqlite" }
 func (*metadataMigrationRegistrar) Schema() string { return "" }
-func (r *metadataMigrationRegistrar) ApplyOwnedMigrations(ctx context.Context, owner string, migrations []metadatamodulehost.SchemaMigration) error {
-	if owner != "metadata" {
+func (r *metadataMigrationRegistrar) ApplyOwnedMigrations(ctx context.Context, owner string, migrations []shareddefinition.SchemaMigration) error {
+	if owner != shareddefinition.MigrationOwner {
 		return fmt.Errorf("unexpected test migration owner %q", owner)
 	}
 	for _, migration := range migrations {
@@ -131,17 +120,14 @@ func OpenMigratedWithArtifactContent(t *testing.T) (*sql.DB, *sqlstore.Store, *a
 	if err != nil {
 		t.Fatal(err)
 	}
-	metadataBinding, err := metadatamodule.NewFactory().OpenModule(t.Context(), metadatasdk.ApplicationRef{InstallationID: "notification-test:" + t.Name()}, metadataHost{
-		database: database, dialect: dialect, registrar: &metadataMigrationRegistrar{database: database},
-	})
+	definitionKernel, err := shareddefinition.Open(t.Context(), "notification-test:"+t.Name(), database, dialect, &metadataMigrationRegistrar{database: database})
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = metadataBinding.Close(context.Background()) })
 	store, err := sqlstore.New(sqlstore.Config{
 		Database: database, Dialect: dialect, WorkspaceScope: scope{}, QueueScopes: &queueScopes{},
 		Clock: clock{value: time.Date(2026, 8, 24, 2, 0, 0, 0, time.UTC)}, WorkspaceID: "workspace-1",
-		DefinitionStore: metadataBinding.DefinitionStore(), OperationStore: operations, ControlStore: operations, ArchiveStore: archives,
+		DefinitionStore: metadatasdk.AdaptDefinitionStore(definitionKernel), OperationStore: operations, ControlStore: operations, ArchiveStore: archives,
 	})
 	if err != nil {
 		t.Fatal(err)

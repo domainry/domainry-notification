@@ -8,10 +8,12 @@ import (
 	"strings"
 	"time"
 
+	shareddefinition "github.com/domainry/domainry-foundation/definition"
 	"github.com/domainry/domainry-foundation/modulehttp"
 	"github.com/domainry/domainry-foundation/requestcontext"
 	identitysdk "github.com/domainry/domainry-identity-sdk"
 	identityprincipal "github.com/domainry/domainry-identity-sdk/authorization/principal"
+	metadatasdk "github.com/domainry/domainry-metadata-sdk"
 	notificationsdk "github.com/domainry/domainry-notification-sdk"
 	"github.com/domainry/domainry-notification-sdk/contract"
 	"github.com/domainry/domainry-notification-sdk/modulehost"
@@ -56,12 +58,8 @@ func (f *Factory) openHosted(ctx context.Context, application notificationsdk.Ap
 	if mode != notificationsdk.DeploymentModeModule && mode != notificationsdk.DeploymentModeSaaS {
 		return nil, fmt.Errorf("notification deployment mode %q is unsupported", mode)
 	}
-	if host == nil || host.Database() == nil || host.Dialect() == nil || host.WorkspaceScope() == nil || host.QueueScopes() == nil || host.Identity() == nil || host.Identity().Principals() == nil || host.Clock() == nil || strings.TrimSpace(host.WorkerID()) == "" || host.WorkNotifier() == nil || host.RecipientResolver() == nil || host.DeliveryGateway() == nil {
+	if host == nil || host.Database() == nil || host.Dialect() == nil || host.Migrations() == nil || host.WorkspaceScope() == nil || host.QueueScopes() == nil || host.Identity() == nil || host.Identity().Principals() == nil || host.Clock() == nil || strings.TrimSpace(host.WorkerID()) == "" || host.WorkNotifier() == nil || host.RecipientResolver() == nil || host.DeliveryGateway() == nil {
 		return nil, fmt.Errorf("notification Module host is incomplete")
-	}
-	definitionHost, ok := host.(modulehost.DefinitionStoreHost)
-	if !ok || definitionHost.DefinitionStore() == nil {
-		return nil, fmt.Errorf("notification shared Definition store is required")
 	}
 	operationHost, ok := host.(modulehost.ManagedOperationStoreHost)
 	if !ok || operationHost.ManagedOperationStore() == nil {
@@ -76,11 +74,7 @@ func (f *Factory) openHosted(ctx context.Context, application notificationsdk.Ap
 		return nil, fmt.Errorf("notification shared Lifecycle retention archive store is required")
 	}
 	if mode == notificationsdk.DeploymentModeModule {
-		migrationHost, ok := host.(modulehost.MigrationHost)
-		if !ok || migrationHost.Migrations() == nil {
-			return nil, fmt.Errorf("notification Module migration host is required")
-		}
-		registrar := migrationHost.Migrations()
+		registrar := host.Migrations()
 		migrations, err := sqlstore.SchemaMigrations(sqlstore.Driver(registrar.Driver()), registrar.Schema(), "")
 		if err != nil {
 			return nil, err
@@ -112,7 +106,16 @@ func (f *Factory) openHosted(ctx context.Context, application notificationsdk.Ap
 			return nil, fmt.Errorf("apply Notification Module migrations: %w", err)
 		}
 	}
-	store, err := sqlstore.New(sqlstore.Config{Database: host.Database(), Dialect: host.Dialect(), WorkspaceScope: workspaceScopeAdapter{host.WorkspaceScope()}, QueueScopes: queueScopeAdapter{host.QueueScopes()}, Clock: host.Clock(), WorkspaceID: notification.WorkspaceID(application.WorkspaceID), DefinitionStore: definitionHost.DefinitionStore(), OperationStore: operationHost.ManagedOperationStore(), ControlStore: controlHost.OperationControlStore(), ArchiveStore: archiveHost.RetentionArchiveStore()})
+	installationID := strings.TrimSpace(application.ApplicationKey)
+	if mode == notificationsdk.DeploymentModeSaaS {
+		installationID = "notification-saas:" + strings.TrimSpace(application.WorkspaceID) + ":" + installationID
+	}
+	definitionKernel, err := shareddefinition.Open(ctx, installationID, host.Database(), host.Dialect(), host.Migrations())
+	if err != nil {
+		return nil, fmt.Errorf("open Notification Definition persistence: %w", err)
+	}
+	definitions := metadatasdk.AdaptDefinitionStore(definitionKernel)
+	store, err := sqlstore.New(sqlstore.Config{Database: host.Database(), Dialect: host.Dialect(), WorkspaceScope: workspaceScopeAdapter{host.WorkspaceScope()}, QueueScopes: queueScopeAdapter{host.QueueScopes()}, Clock: host.Clock(), WorkspaceID: notification.WorkspaceID(application.WorkspaceID), DefinitionStore: definitions, OperationStore: operationHost.ManagedOperationStore(), ControlStore: controlHost.OperationControlStore(), ArchiveStore: archiveHost.RetentionArchiveStore()})
 	if err != nil {
 		return nil, err
 	}

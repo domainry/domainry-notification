@@ -9,7 +9,6 @@ import (
 	sharedartifact "github.com/domainry/domainry-foundation/artifact"
 	"github.com/domainry/domainry-foundation/requestcontext"
 	identitysdk "github.com/domainry/domainry-identity-sdk"
-	metadatasdk "github.com/domainry/domainry-metadata-sdk"
 	notificationsdk "github.com/domainry/domainry-notification-sdk"
 	"github.com/domainry/domainry-notification-sdk/contract"
 	"github.com/domainry/domainry-notification-sdk/deliverygateway"
@@ -40,7 +39,6 @@ type SQLApplicationFactoryOptions struct {
 	RemoteDeliveryGateway     deliverygateway.Gateway
 	DeliveryMetrics           modulehost.DeliveryMetrics
 	ProviderTemplateValidator modulehost.ProviderTemplateValidator
-	DefinitionStore           metadatasdk.DefinitionStore
 	ManagedOperationStore     modulehost.ManagedOperationStore
 	OperationControlStore     modulehost.OperationControlStore
 	RetentionArchiveStore     modulehost.RetentionArchiveStore
@@ -89,13 +87,6 @@ func (f *SQLApplicationFactory) OpenSaaS(ctx context.Context, application notifi
 	if err != nil {
 		return nil, err
 	}
-	definitions := f.options.DefinitionStore
-	if definitions == nil {
-		definitions, err = f.persistence.PrepareDefinitionStore(ctx, application, dialect)
-		if err != nil {
-			return nil, err
-		}
-	}
 	operations := f.options.ManagedOperationStore
 	if operations == nil {
 		operations, err = f.persistence.PrepareManagedOperationStore(ctx, dialect)
@@ -129,6 +120,7 @@ func (f *SQLApplicationFactory) OpenSaaS(ctx context.Context, application notifi
 		application: application,
 		database:    f.persistence.Database(),
 		dialect:     dialect,
+		migrations:  f.persistence.definitionMigrations(),
 		identity:    identity,
 		catalog:     f.options.Catalog,
 		clock:       f.options.Clock,
@@ -139,7 +131,6 @@ func (f *SQLApplicationFactory) OpenSaaS(ctx context.Context, application notifi
 		gateway:     gateway,
 		metrics:     f.options.DeliveryMetrics,
 		validator:   f.options.ProviderTemplateValidator,
-		definitions: definitions,
 		operations:  operations,
 		controls:    controls,
 		archives:    archives,
@@ -158,6 +149,7 @@ type saasApplicationHost struct {
 	application notificationsdk.ApplicationRef
 	database    modulehost.Database
 	dialect     modulehost.Dialect
+	migrations  modulehost.MigrationRegistrar
 	identity    identitysdk.Binding
 	catalog     modulehost.Catalog
 	clock       modulehost.Clock
@@ -168,7 +160,6 @@ type saasApplicationHost struct {
 	gateway     modulehost.DeliveryGateway
 	metrics     modulehost.DeliveryMetrics
 	validator   modulehost.ProviderTemplateValidator
-	definitions metadatasdk.DefinitionStore
 	operations  modulehost.ManagedOperationStore
 	controls    modulehost.OperationControlStore
 	archives    modulehost.RetentionArchiveStore
@@ -176,13 +167,15 @@ type saasApplicationHost struct {
 
 func (h *saasApplicationHost) Database() modulehost.Database { return h.database }
 func (h *saasApplicationHost) Dialect() modulehost.Dialect   { return h.dialect }
+func (h *saasApplicationHost) Migrations() modulehost.MigrationRegistrar {
+	return h.migrations
+}
 func (h *saasApplicationHost) WorkspaceScope() modulehost.WorkspaceScope {
 	return exactWorkspaceScope{workspaceID: h.application.WorkspaceID}
 }
 func (h *saasApplicationHost) QueueScopes() modulehost.QueueScopeIndex {
 	return exactQueueScope{workspaceID: h.application.WorkspaceID}
 }
-func (h *saasApplicationHost) DefinitionStore() metadatasdk.DefinitionStore { return h.definitions }
 func (h *saasApplicationHost) ManagedOperationStore() modulehost.ManagedOperationStore {
 	return h.operations
 }

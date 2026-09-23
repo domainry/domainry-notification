@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	shareddefinition "github.com/domainry/domainry-foundation/definition"
 	"github.com/domainry/domainry-foundation/modulehttp"
 	"github.com/domainry/domainry-foundation/requestcontext"
 	identitysdk "github.com/domainry/domainry-identity-sdk"
@@ -92,16 +93,19 @@ type testHost struct {
 
 type testMigrationRegistrar struct {
 	database *sql.DB
-	applied  bool
+	applied  map[string]bool
 }
 
 func (testMigrationRegistrar) Driver() string { return "sqlite" }
 func (testMigrationRegistrar) Schema() string { return "" }
 func (r *testMigrationRegistrar) ApplyOwnedMigrations(ctx context.Context, owner string, migrations []modulehost.SchemaMigration) error {
-	if owner != "notification" {
+	if owner != "notification" && owner != shareddefinition.MigrationOwner {
 		return context.Canceled
 	}
-	if r.applied {
+	if r.applied == nil {
+		r.applied = map[string]bool{}
+	}
+	if r.applied[owner] {
 		return nil
 	}
 	for _, migration := range migrations {
@@ -111,7 +115,7 @@ func (r *testMigrationRegistrar) ApplyOwnedMigrations(ctx context.Context, owner
 			}
 		}
 	}
-	r.applied = true
+	r.applied[owner] = true
 	return nil
 }
 

@@ -10,9 +10,8 @@ import (
 	"sync"
 	"time"
 
+	shareddefinition "github.com/domainry/domainry-foundation/definition"
 	metadatasdk "github.com/domainry/domainry-metadata-sdk"
-	metadatamodulehost "github.com/domainry/domainry-metadata-sdk/modulehost"
-	metadatamodule "github.com/domainry/domainry-metadata/module"
 	notificationsdk "github.com/domainry/domainry-notification-sdk"
 	"github.com/domainry/domainry-notification-sdk/modulehost"
 	sqlstore "github.com/domainry/domainry-notification/internal/infrastructure/persistence"
@@ -115,20 +114,18 @@ func (p *SQLPersistence) PrepareApplication(ctx context.Context, application not
 	return dialect, nil
 }
 
-// PrepareDefinitionStore opens the shared Metadata catalog over the same
+// PrepareDefinitionStore opens the Foundation Definition kernel over the same
 // physical database and migration ledger as Notification. The installation is
 // bound to the one exact SaaS application accepted by PrepareApplication.
 func (p *SQLPersistence) PrepareDefinitionStore(ctx context.Context, application notificationsdk.ApplicationRef, dialect modulehost.Dialect) (metadatasdk.DefinitionStore, error) {
 	if p == nil || p.database == nil || dialect == nil {
 		return nil, fmt.Errorf("Notification SaaS shared Definition persistence is unavailable")
 	}
-	binding, err := metadatamodule.NewFactory().OpenModule(ctx, metadatasdk.ApplicationRef{
-		InstallationID: "notification-saas:" + applicationKey(application),
-	}, notificationMetadataHost{persistence: p, dialect: dialect})
+	store, err := shareddefinition.Open(ctx, "notification-saas:"+applicationKey(application), p.database, dialect, p.definitionMigrations())
 	if err != nil {
 		return nil, fmt.Errorf("open Notification SaaS shared Definition store: %w", err)
 	}
-	return binding.DefinitionStore(), nil
+	return metadatasdk.AdaptDefinitionStore(store), nil
 }
 
 // PrepareManagedOperationStore installs the canonical shared Operations table
@@ -215,25 +212,19 @@ func (p *SQLPersistence) PrepareRetentionArchiveStore(ctx context.Context, diale
 	return retentionarchivestore.New(artifacts, content)
 }
 
-type notificationMetadataHost struct {
-	persistence *SQLPersistence
-	dialect     modulehost.Dialect
+type definitionMigrations struct{ persistence *SQLPersistence }
+
+func (p *SQLPersistence) definitionMigrations() definitionMigrations {
+	return definitionMigrations{persistence: p}
 }
 
-func (h notificationMetadataHost) Database() metadatamodulehost.Database {
-	return h.persistence.database
-}
-func (h notificationMetadataHost) Dialect() metadatamodulehost.Dialect { return h.dialect }
-func (h notificationMetadataHost) Migrations() metadatamodulehost.MigrationRegistrar {
-	return h
-}
-func (h notificationMetadataHost) Driver() string { return string(h.persistence.driver) }
-func (h notificationMetadataHost) Schema() string { return h.persistence.schema }
-func (h notificationMetadataHost) ApplyOwnedMigrations(ctx context.Context, owner string, migrations []metadatamodulehost.SchemaMigration) error {
-	if strings.TrimSpace(owner) != "metadata" {
+func (m definitionMigrations) Driver() string { return string(m.persistence.driver) }
+func (m definitionMigrations) Schema() string { return m.persistence.schema }
+func (m definitionMigrations) ApplyOwnedMigrations(ctx context.Context, owner string, migrations []shareddefinition.SchemaMigration) error {
+	if strings.TrimSpace(owner) != shareddefinition.MigrationOwner {
 		return fmt.Errorf("Notification SaaS cannot install shared migration owner %q", owner)
 	}
-	p := h.persistence
+	p := m.persistence
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	connection, err := p.database.Conn(ctx)
@@ -250,7 +241,7 @@ func (h notificationMetadataHost) ApplyOwnedMigrations(ctx context.Context, owne
 		return err
 	}
 	for _, migration := range migrations {
-		if err := p.applyMigration(ctx, connection, "shared/metadata", migration); err != nil {
+		if err := p.applyMigration(ctx, connection, shareddefinition.MigrationOwner, migration); err != nil {
 			return err
 		}
 	}

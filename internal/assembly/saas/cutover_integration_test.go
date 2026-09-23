@@ -7,7 +7,6 @@ import (
 	"testing"
 	"time"
 
-	metadatasdk "github.com/domainry/domainry-metadata-sdk"
 	notificationsdk "github.com/domainry/domainry-notification-sdk"
 	"github.com/domainry/domainry-notification-sdk/contract"
 	"github.com/domainry/domainry-notification-sdk/modulehost"
@@ -18,13 +17,16 @@ import (
 
 type cutoverMigrationRegistrar struct {
 	database *sql.DB
-	applied  bool
+	applied  map[string]bool
 }
 
 func (*cutoverMigrationRegistrar) Driver() string { return "sqlite" }
 func (*cutoverMigrationRegistrar) Schema() string { return "" }
 func (r *cutoverMigrationRegistrar) ApplyOwnedMigrations(ctx context.Context, owner string, migrations []modulehost.SchemaMigration) error {
-	if r.applied {
+	if r.applied == nil {
+		r.applied = map[string]bool{}
+	}
+	if r.applied[owner] {
 		return nil
 	}
 	for _, migration := range migrations {
@@ -34,7 +36,7 @@ func (r *cutoverMigrationRegistrar) ApplyOwnedMigrations(ctx context.Context, ow
 			}
 		}
 	}
-	r.applied = true
+	r.applied[owner] = true
 	return nil
 }
 
@@ -58,9 +60,9 @@ func TestModuleToSaaSCutoverPreservesStateAndMovesTheOnlyWriter(t *testing.T) {
 	sourceDB.SetMaxOpenConns(1)
 	t.Cleanup(func() { _ = sourceDB.Close() })
 	sourceDialect, _ := ormdialect.ParseRenderer("sqlite", "", "")
-	sourceDefinitions, sourceOperations, sourceArchives := prepareCutoverSharedStores(t, sourceDB, sourceDialect, application)
+	sourceOperations, sourceArchives := prepareCutoverSharedStores(t, sourceDB, sourceDialect)
 	sourceHost := &cutoverModuleHost{
-		saasApplicationHost: &saasApplicationHost{application: application, database: sourceDB, dialect: sourceDialect, identity: applicationIdentityStub{}, catalog: catalog, clock: wallClock{}, workerID: "module-worker", notifier: discardWorkNotifier{}, projection: identityRecipientResolver{application: application, projection: projectionStub{}}, audiences: snapshotOnlyAudienceResolver{}, gateway: applicationGatewayStub{}, definitions: sourceDefinitions, operations: sourceOperations, controls: sourceOperations.(modulehost.OperationControlStore), archives: sourceArchives},
+		saasApplicationHost: &saasApplicationHost{application: application, database: sourceDB, dialect: sourceDialect, identity: applicationIdentityStub{}, catalog: catalog, clock: wallClock{}, workerID: "module-worker", notifier: discardWorkNotifier{}, projection: identityRecipientResolver{application: application, projection: projectionStub{}}, audiences: snapshotOnlyAudienceResolver{}, gateway: applicationGatewayStub{}, operations: sourceOperations, controls: sourceOperations.(modulehost.OperationControlStore), archives: sourceArchives},
 		migrations:          &cutoverMigrationRegistrar{database: sourceDB},
 	}
 	source, err := module.NewFactory(module.Options{}).OpenModule(t.Context(), application, sourceHost)
@@ -124,13 +126,9 @@ func TestModuleToSaaSCutoverPreservesStateAndMovesTheOnlyWriter(t *testing.T) {
 	}
 }
 
-func prepareCutoverSharedStores(t *testing.T, database *sql.DB, dialect modulehost.Dialect, application notificationsdk.ApplicationRef) (metadatasdk.DefinitionStore, modulehost.ManagedOperationStore, modulehost.RetentionArchiveStore) {
+func prepareCutoverSharedStores(t *testing.T, database *sql.DB, dialect modulehost.Dialect) (modulehost.ManagedOperationStore, modulehost.RetentionArchiveStore) {
 	t.Helper()
 	persistence, err := NewSQLPersistence(SQLPersistenceOptions{Database: database, Driver: sqlstore.SQLite})
-	if err != nil {
-		t.Fatal(err)
-	}
-	definitions, err := persistence.PrepareDefinitionStore(t.Context(), application, dialect)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -142,5 +140,5 @@ func prepareCutoverSharedStores(t *testing.T, database *sql.DB, dialect moduleho
 	if err != nil {
 		t.Fatal(err)
 	}
-	return definitions, operations, archives
+	return operations, archives
 }

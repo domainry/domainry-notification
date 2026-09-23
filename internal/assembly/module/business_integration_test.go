@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	shareddefinition "github.com/domainry/domainry-foundation/definition"
 	"github.com/domainry/domainry-foundation/requestcontext"
 	identitysdk "github.com/domainry/domainry-identity-sdk"
 	metadatasdk "github.com/domainry/domainry-metadata-sdk"
@@ -106,7 +107,7 @@ type integrationMigrationRegistrar struct {
 func (*integrationMigrationRegistrar) Driver() string { return "sqlite" }
 func (*integrationMigrationRegistrar) Schema() string { return "" }
 func (r *integrationMigrationRegistrar) ApplyOwnedMigrations(ctx context.Context, owner string, migrations []modulehost.SchemaMigration) error {
-	if owner != "notification" {
+	if owner != "notification" && owner != shareddefinition.MigrationOwner {
 		return fmt.Errorf("unexpected migration owner %q", owner)
 	}
 	r.mu.Lock()
@@ -637,7 +638,8 @@ func TestModuleTransactionsShareHostDatabaseQueueAndMigrationLedger(t *testing.T
 		t.Fatal(err)
 	}
 	assertIntegrationCount(t, host.database, `SELECT COUNT(*) FROM _schema_migrations WHERE namespace = 'notification'`, 1)
-	if host.migrations.applied != 1 {
+	assertIntegrationCount(t, host.database, `SELECT COUNT(*) FROM _schema_migrations WHERE namespace = 'shared/definitions'`, 1)
+	if host.migrations.applied != 2 {
 		t.Fatalf("Module migrations replayed outside the host ledger: applied=%d", host.migrations.applied)
 	}
 }
