@@ -1,30 +1,14 @@
 package module
 
 import (
+	"github.com/domainry/domainry-foundation/schemaownership"
 	"github.com/domainry/domainry-notification-sdk/modulehost"
 	sqlstore "github.com/domainry/domainry-notification/internal/infrastructure/persistence"
 )
 
-type DataScope string
+func SchemaOwnership() []schemaownership.Table { return sqlstore.SchemaOwnership() }
 
-const (
-	SystemData    DataScope = "system"
-	WorkspaceData DataScope = "workspace"
-)
-
-type TableOwnership struct {
-	Name  string
-	Scope DataScope
-}
-
-func SchemaOwnership() []TableOwnership {
-	source := sqlstore.SchemaOwnership()
-	result := make([]TableOwnership, len(source))
-	for index, table := range source {
-		result[index] = TableOwnership{Name: table.Name, Scope: DataScope(table.Scope)}
-	}
-	return result
-}
+func OwnedTables() []string { return schemaownership.Names(SchemaOwnership()) }
 
 func SchemaMigrations(driver, schema, tablePrefix string) ([]modulehost.SchemaMigration, error) {
 	source, err := sqlstore.SchemaMigrations(sqlstore.Driver(driver), schema, tablePrefix)

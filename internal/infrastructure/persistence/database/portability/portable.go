@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/domainry/domainry-foundation/schemaownership"
 	"github.com/domainry/domainry-notification-sdk/modulehost"
 	storeschema "github.com/domainry/domainry-notification/internal/infrastructure/persistence/database/schema"
 	"github.com/domainry/domainry-orm/query"
@@ -94,7 +95,7 @@ func ExportPortable(ctx context.Context, database sqlhost.Queryer, dialect modul
 			columns[index] = column.Name
 		}
 		selectBuilder := query.NewSelectBuilder(dialect, definition.Name).Columns(columns...)
-		if ownership[definition.Name] == storeschema.WorkspaceData {
+		if ownership[definition.Name] == schemaownership.ScopeWorkspace {
 			selectBuilder = query.NewWorkspaceSelectBuilder(dialect, definition.Name, scope.WorkspaceID).Columns(columns...)
 		}
 		statement, args, err := selectBuilder.Build()
@@ -193,7 +194,7 @@ func ImportPortable(ctx context.Context, database sqlhost.Database, dialect modu
 			}
 			columns := append([]string(nil), table.Columns...)
 			insertBuilder := query.NewInsertBuilder(dialect, table.Name)
-			if ownershipByTable()[table.Name] == storeschema.WorkspaceData {
+			if ownershipByTable()[table.Name] == schemaownership.ScopeWorkspace {
 				workspaceIndex := slices.Index(columns, query.WorkspaceIDColumn)
 				if workspaceIndex < 0 || strings.TrimSpace(fmt.Sprint(values[workspaceIndex])) != target.WorkspaceID {
 					return PortableImportReceipt{}, fmt.Errorf("notification portable table %s contains an invalid workspace row", table.Name)
@@ -255,7 +256,7 @@ func ValidatePortable(bundle PortableBundle, target PortableScope) error {
 			if len(row) != len(table.Columns) {
 				return fmt.Errorf("notification portable table %s row width mismatch", table.Name)
 			}
-			if ownershipByTable()[table.Name] == storeschema.WorkspaceData {
+			if ownershipByTable()[table.Name] == schemaownership.ScopeWorkspace {
 				workspaceIndex := slices.Index(table.Columns, "workspace_id")
 				var workspaceID string
 				if workspaceIndex < 0 || json.Unmarshal(row[workspaceIndex], &workspaceID) != nil || workspaceID != target.WorkspaceID {
@@ -310,11 +311,11 @@ func decodePortableCell(raw json.RawMessage, kind storeschema.PortableColumnKind
 	}
 }
 
-func ownershipByTable() map[string]storeschema.DataScope {
+func ownershipByTable() map[string]schemaownership.WorkspaceScope {
 	ownership := storeschema.SchemaOwnership()
-	result := make(map[string]storeschema.DataScope, len(ownership))
+	result := make(map[string]schemaownership.WorkspaceScope, len(ownership))
 	for _, table := range ownership {
-		result[table.Name] = table.Scope
+		result[table.Name] = table.WorkspaceScope
 	}
 	return result
 }

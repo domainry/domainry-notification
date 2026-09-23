@@ -13,6 +13,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/domainry/domainry-foundation/schemaownership"
 	storeschema "github.com/domainry/domainry-notification/internal/infrastructure/persistence/database/schema"
 )
 
@@ -79,7 +80,7 @@ func TestModuleUsesTaggedDependencies(t *testing.T) {
 func TestWorkspaceTablesCannotUseSystemBuilders(t *testing.T) {
 	workspaceTables := map[string]bool{}
 	for _, table := range storeschema.SchemaOwnership() {
-		workspaceTables[table.Name] = table.Scope == storeschema.WorkspaceData
+		workspaceTables[table.Name] = table.WorkspaceScope == schemaownership.ScopeWorkspace
 	}
 	files, err := filepath.Glob("internal/infrastructure/persistence/database/**/*.go")
 	if err != nil {

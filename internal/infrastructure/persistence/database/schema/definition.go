@@ -18,12 +18,12 @@ func primary(name string, kind schemaColumnKind) schemaColumn {
 
 var baseSchemaTables = []schemaTable{
 	{name: "_notification_user_settings", columns: []schemaColumn{
-		required("workspace_id", identifierColumn), required("recipient_user_id", indexedTextColumn), required("setting_kind", indexedTextColumn),
-		required("setting_key", indexedTextColumn), required("payload_json", documentColumn), required("updated_by", identifierColumn),
+		primary("workspace_id", identifierColumn), primary("recipient_user_id", indexedTextColumn), primary("setting_kind", indexedTextColumn),
+		primary("setting_key", indexedTextColumn), required("payload_json", documentColumn), required("updated_by", identifierColumn),
 		required("created_at", indexedTextColumn), required("updated_at", indexedTextColumn),
 	}},
 	{name: "_notification_deliveries", columns: []schemaColumn{
-		required("id", identifierColumn), required("workspace_id", identifierColumn), required("row_kind", indexedTextColumn),
+		primary("id", identifierColumn), primary("workspace_id", identifierColumn), required("row_kind", indexedTextColumn),
 		defaulted("event_id", indexedTextColumn, ""), defaulted("recipient_key", indexedTextColumn, ""), defaulted("template_key", indexedTextColumn, ""),
 		required("channel", indexedTextColumn), defaulted("dedupe_key", indexedTextColumn, ""), required("status", indexedTextColumn),
 		required("payload_json", documentColumn), defaulted("attempt_count", integerColumn, 0), defaulted("next_attempt_at", indexedTextColumn, ""),
@@ -32,21 +32,21 @@ var baseSchemaTables = []schemaTable{
 		required("created_at", indexedTextColumn), required("updated_at", indexedTextColumn),
 	}},
 	{name: "_notification_events", columns: []schemaColumn{
-		required("id", identifierColumn), required("workspace_id", identifierColumn), required("source", indexedTextColumn), required("source_event_id", indexedTextColumn),
+		primary("id", identifierColumn), primary("workspace_id", identifierColumn), required("source", indexedTextColumn), required("source_event_id", indexedTextColumn),
 		required("status", indexedTextColumn), required("payload_json", documentColumn), defaulted("attempt_count", integerColumn, 0),
 		defaulted("next_attempt_at", indexedTextColumn, ""), defaulted("last_error_code", indexedTextColumn, ""), defaulted("lease_owner", indexedTextColumn, ""),
 		defaulted("lease_expires_at", indexedTextColumn, ""), defaulted("fencing_token", bigIntegerColumn, 0), required("occurred_at", indexedTextColumn),
 		required("created_at", indexedTextColumn), required("updated_at", indexedTextColumn),
 	}},
 	{name: "_notification_delivery_attempts", columns: []schemaColumn{
-		required("id", identifierColumn), required("workspace_id", identifierColumn), required("attempt_kind", indexedTextColumn), required("event_id", indexedTextColumn),
+		primary("id", identifierColumn), primary("workspace_id", identifierColumn), required("attempt_kind", indexedTextColumn), required("event_id", indexedTextColumn),
 		defaulted("delivery_id", indexedTextColumn, ""), defaulted("event_type", indexedTextColumn, ""), defaulted("source", indexedTextColumn, ""),
 		defaulted("source_event_id", indexedTextColumn, ""), defaulted("channel", indexedTextColumn, ""), required("stage", indexedTextColumn), required("error_code", indexedTextColumn),
 		required("attempt", integerColumn), required("disposition", indexedTextColumn), defaulted("retryable", integerColumn, 0),
 		defaulted("next_attempt_at", indexedTextColumn, ""), required("fencing_token", bigIntegerColumn), required("occurred_at", indexedTextColumn),
 	}},
 	{name: "_notification_inbox_items", columns: []schemaColumn{
-		required("id", identifierColumn), required("workspace_id", identifierColumn), required("recipient_user_id", indexedTextColumn),
+		primary("id", identifierColumn), primary("workspace_id", identifierColumn), required("recipient_user_id", indexedTextColumn),
 		required("event_id", indexedTextColumn), required("event_type", indexedTextColumn), required("source", indexedTextColumn), required("category", indexedTextColumn),
 		required("severity", indexedTextColumn), required("title", documentColumn), required("body", documentColumn), required("search_text", documentColumn),
 		required("payload_json", documentColumn), defaulted("subject_type", indexedTextColumn, ""), defaulted("subject_id", indexedTextColumn, ""),
@@ -56,12 +56,12 @@ var baseSchemaTables = []schemaTable{
 		required("created_at", indexedTextColumn), required("updated_at", indexedTextColumn),
 	}},
 	{name: "_notification_inbox_delegations", columns: []schemaColumn{
-		required("id", identifierColumn), required("workspace_id", identifierColumn), required("owner_user_id", indexedTextColumn), required("delegate_user_id", indexedTextColumn),
+		primary("id", identifierColumn), primary("workspace_id", identifierColumn), required("owner_user_id", indexedTextColumn), required("delegate_user_id", indexedTextColumn),
 		defaulted("starts_at", indexedTextColumn, ""), defaulted("ends_at", indexedTextColumn, ""),
 		defaulted("enabled", booleanColumn, true), required("created_at", indexedTextColumn), required("updated_at", indexedTextColumn),
 	}},
 	{name: "_notification_alert_groups", columns: []schemaColumn{
-		required("workspace_id", identifierColumn), required("recipient_user_id", indexedTextColumn), required("group_key", indexedTextColumn),
+		primary("workspace_id", identifierColumn), primary("recipient_user_id", indexedTextColumn), primary("group_key", indexedTextColumn),
 		required("state", indexedTextColumn), defaulted("occurrence_count", integerColumn, 1), required("first_occurred_at", indexedTextColumn),
 		required("last_occurred_at", indexedTextColumn), defaulted("acknowledged_at", indexedTextColumn, ""), defaulted("acknowledged_by", indexedTextColumn, ""),
 		defaulted("resolved_at", indexedTextColumn, ""), required("last_event_id", indexedTextColumn), required("updated_at", indexedTextColumn),
@@ -69,26 +69,19 @@ var baseSchemaTables = []schemaTable{
 }
 
 var baseSchemaIndexes = []schemaIndex{
-	{name: "uniq_notification_user_setting", table: "_notification_user_settings", unique: true, columns: []string{"workspace_id", "recipient_user_id", "setting_kind", "setting_key"}},
 	{name: "idx_notification_user_setting_list", table: "_notification_user_settings", columns: []string{"workspace_id", "setting_kind", "recipient_user_id", "setting_key"}},
-	{name: "uniq_notification_delivery_workspace_identity", table: "_notification_deliveries", unique: true, columns: []string{"workspace_id", "id"}},
 	{name: "idx_notification_delivery_frequency", table: "_notification_deliveries", columns: []string{"workspace_id", "row_kind", "recipient_key", "channel", "created_at"}},
 	{name: "idx_notification_delivery_dedupe", table: "_notification_deliveries", columns: []string{"workspace_id", "row_kind", "recipient_key", "template_key", "channel", "dedupe_key"}},
 	{name: "idx_notification_delivery_due", table: "_notification_deliveries", columns: []string{"row_kind", "status", "next_attempt_at", "lease_expires_at", "created_at"}},
-	{name: "uniq_notification_event_workspace_identity", table: "_notification_events", unique: true, columns: []string{"workspace_id", "id"}},
 	{name: "uniq_notification_event_source_identity", table: "_notification_events", unique: true, columns: []string{"workspace_id", "source", "source_event_id"}},
 	{name: "idx_notification_event_due", table: "_notification_events", columns: []string{"status", "next_attempt_at", "lease_expires_at"}},
-	{name: "uniq_notification_delivery_attempt_identity", table: "_notification_delivery_attempts", unique: true, columns: []string{"workspace_id", "id"}},
 	{name: "uniq_notification_delivery_attempt_fence", table: "_notification_delivery_attempts", unique: true, columns: []string{"workspace_id", "attempt_kind", "event_id", "delivery_id", "fencing_token"}},
 	{name: "idx_notification_delivery_attempt_governance", table: "_notification_delivery_attempts", columns: []string{"workspace_id", "occurred_at", "attempt_kind", "stage", "error_code"}},
-	{name: "uniq_notification_inbox_workspace_identity", table: "_notification_inbox_items", unique: true, columns: []string{"workspace_id", "id"}},
 	{name: "idx_notification_inbox_mailbox", table: "_notification_inbox_items", columns: []string{"workspace_id", "recipient_user_id", "archived_at", "updated_at", "id"}},
 	{name: "idx_notification_inbox_unread", table: "_notification_inbox_items", columns: []string{"workspace_id", "recipient_user_id", "read_at", "archived_at"}},
 	{name: "idx_notification_inbox_facets", table: "_notification_inbox_items", columns: []string{"workspace_id", "recipient_user_id", "category", "source", "severity", "archived_at"}},
 	{name: "idx_notification_inbox_group", table: "_notification_inbox_items", columns: []string{"workspace_id", "recipient_user_id", "group_key", "alert_state"}},
-	{name: "uniq_notification_inbox_delegation_identity", table: "_notification_inbox_delegations", unique: true, columns: []string{"workspace_id", "id"}},
 	{name: "idx_notification_inbox_delegation_delegate", table: "_notification_inbox_delegations", columns: []string{"workspace_id", "delegate_user_id", "enabled", "starts_at", "ends_at"}},
-	{name: "uniq_notification_alert_group", table: "_notification_alert_groups", unique: true, columns: []string{"workspace_id", "recipient_user_id", "group_key"}},
 	{name: "idx_notification_alert_group_state", table: "_notification_alert_groups", columns: []string{"workspace_id", "state", "updated_at"}},
 }
 

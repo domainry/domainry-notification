@@ -24,54 +24,14 @@ type ApplicationScope struct {
 // not create a second migration-history table inside the same database.
 type SchemaMigration = ormmigration.Migration
 
-// SchemaBaseline is the complete physical contract used only to adopt a
-// pre-extraction Module schema. It deliberately excludes database-generated
-// indexes while including every source-declared index.
-type SchemaBaseline = ormmigration.Baseline
-type SchemaBaselineTable = ormmigration.Table
-type SchemaBaselineColumn = ormmigration.Column
-type SchemaBaselineIndex = ormmigration.Index
-
-// SchemaMigrations renders the complete migration history for one physical
-// naming configuration. Existing installations must verify and baseline
-// version 1 instead of re-running it over Plane-owned legacy tables.
+// SchemaMigrations renders the canonical final Notification schema for one
+// physical naming configuration.
 func SchemaMigrations(profile Profile, dialect modulehost.Dialect, tablePrefix string) ([]SchemaMigration, error) {
 	statements, err := renderBaseSchema(profile, tablePrefix, dialect, nil)
 	if err != nil {
 		return nil, err
 	}
 	return []SchemaMigration{{Version: 1, Name: "create_notification_schema", Statements: statements}}, nil
-}
-
-// ModuleSchemaBaseline renders the exact legacy physical shape for one
-// dialect. A host must match this contract before recording migration 1 as an
-// adopted baseline.
-func ModuleSchemaBaseline(profile Profile, tablePrefix string) (SchemaBaseline, error) {
-	result := SchemaBaseline{Tables: make([]SchemaBaselineTable, len(baseSchemaTables))}
-	byName := make(map[string]*SchemaBaselineTable, len(baseSchemaTables))
-	for tableIndex, table := range baseSchemaTables {
-		value := SchemaBaselineTable{Name: tablePrefix + table.name, Columns: make([]SchemaBaselineColumn, len(table.columns))}
-		for columnIndex, column := range table.columns {
-			physicalType, err := profile.ColumnType(column.kind)
-			if err != nil {
-				return SchemaBaseline{}, err
-			}
-			if separator := strings.IndexByte(physicalType, ' '); separator >= 0 {
-				physicalType = physicalType[:separator]
-			}
-			value.Columns[columnIndex] = SchemaBaselineColumn{Name: column.name, Type: physicalType, Nullable: column.nullable, PrimaryKey: column.primaryKey}
-		}
-		result.Tables[tableIndex] = value
-		byName[table.name] = &result.Tables[tableIndex]
-	}
-	for _, index := range baseSchemaIndexes {
-		table := byName[index.table]
-		if table == nil {
-			return SchemaBaseline{}, fmt.Errorf("notification schema index %q references unknown table %q", index.name, index.table)
-		}
-		table.Indexes = append(table.Indexes, SchemaBaselineIndex{Name: tablePrefix + index.name, Unique: index.unique, Columns: append([]string(nil), index.columns...)})
-	}
-	return result, nil
 }
 
 // ApplicationSchemaMigrations renders the standalone SaaS schema for one
@@ -169,6 +129,7 @@ func renderSchema(profile Profile, indexPrefix string, dialect modulehost.Dialec
 			}
 			definitions[index] = definition
 		}
+		primaryColumns = workspaceFirstPrimaryKey(primaryColumns)
 		create := ormschema.NewTable(dialect, table.name).Columns(definitions...)
 		if len(primaryColumns) > 0 {
 			create.PrimaryKey(primaryColumns...)
@@ -191,4 +152,18 @@ func renderSchema(profile Profile, indexPrefix string, dialect modulehost.Dialec
 		statements = append(statements, statement)
 	}
 	return statements, nil
+}
+
+func workspaceFirstPrimaryKey(columns []string) []string {
+	for index, column := range columns {
+		if column != "workspace_id" || index == 0 {
+			continue
+		}
+		ordered := make([]string, 0, len(columns))
+		ordered = append(ordered, "workspace_id")
+		ordered = append(ordered, columns[:index]...)
+		ordered = append(ordered, columns[index+1:]...)
+		return ordered
+	}
+	return columns
 }

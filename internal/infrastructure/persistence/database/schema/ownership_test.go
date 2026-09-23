@@ -4,36 +4,28 @@ import (
 	"slices"
 	"testing"
 
+	"github.com/domainry/domainry-foundation/schemaownership"
 	"github.com/domainry/domainry-notification/internal/infrastructure/persistence/database/schema"
 )
 
-func TestSchemaOwnershipSeparatesSystemAndWorkspaceState(t *testing.T) {
+func TestSchemaOwnershipCoversSevenWorkspaceTables(t *testing.T) {
 	ownership := schema.SchemaOwnership()
+	if err := schemaownership.ValidateAll(ownership); err != nil {
+		t.Fatal(err)
+	}
 	if len(ownership) != 7 {
 		t.Fatalf("owned table count=%d", len(ownership))
 	}
-	system := []string{}
-	workspace := []string{}
 	for _, table := range ownership {
-		switch table.Scope {
-		case schema.SystemData:
-			system = append(system, table.Name)
-		case schema.WorkspaceData:
-			workspace = append(workspace, table.Name)
-		default:
-			t.Fatalf("table %q has unknown scope %q", table.Name, table.Scope)
+		if table.WorkspaceScope != schemaownership.ScopeWorkspace {
+			t.Fatalf("table %q has scope %q", table.Name, table.WorkspaceScope)
 		}
 	}
-	wantSystem := []string{}
-	if !slices.Equal(system, wantSystem) {
-		t.Fatalf("system tables=%v", system)
+	if !slices.Equal(schema.OwnedTables(), schemaownership.Names(ownership)) {
+		t.Fatalf("owned tables=%v ownership=%+v", schema.OwnedTables(), ownership)
 	}
-	if len(workspace) != 7 || !slices.Contains(workspace, "_notification_user_settings") || !slices.Contains(workspace, "_notification_deliveries") {
-		t.Fatalf("workspace tables=%v", workspace)
-	}
-	flat := schema.OwnedTables()
-	flat[0] = "mutated"
-	if schema.OwnedTables()[0] == "mutated" {
-		t.Fatal("owned table inventory leaked mutable state")
+	ownership[0].PrimaryKey[0] = "mutated"
+	if schema.SchemaOwnership()[0].PrimaryKey[0] == "mutated" {
+		t.Fatal("schema ownership leaked mutable state")
 	}
 }

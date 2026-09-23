@@ -9,17 +9,14 @@ import (
 type Driver = ormdialect.Name
 
 const (
-	SQLite   = ormdialect.SQLite
-	Postgres = ormdialect.Postgres
-	MySQL    = ormdialect.MySQL
+	SQLite         = ormdialect.SQLite
+	Postgres       = ormdialect.Postgres
+	MySQL          = ormdialect.MySQL
+	MigrationOwner = storeschema.MigrationOwner
 )
 
 type ApplicationScope = storeschema.ApplicationScope
 type SchemaMigration = storeschema.SchemaMigration
-type SchemaBaseline = storeschema.SchemaBaseline
-type SchemaBaselineTable = storeschema.SchemaBaselineTable
-type SchemaBaselineColumn = storeschema.SchemaBaselineColumn
-type SchemaBaselineIndex = storeschema.SchemaBaselineIndex
 
 func schemaProfile(driver Driver) (DatabaseEngine, error) {
 	return NewEngine(driver)
@@ -35,14 +32,6 @@ func SchemaMigrations(driver Driver, schemaName, tablePrefix string) ([]SchemaMi
 		return nil, err
 	}
 	return storeschema.SchemaMigrations(profile, renderer, tablePrefix)
-}
-
-func ModuleSchemaBaseline(driver Driver, tablePrefix string) (SchemaBaseline, error) {
-	profile, err := schemaProfile(driver)
-	if err != nil {
-		return SchemaBaseline{}, err
-	}
-	return storeschema.ModuleSchemaBaseline(profile, tablePrefix)
 }
 
 func ApplicationSchemaMigrations(driver Driver, schemaName, tablePrefix string, scope ApplicationScope) ([]SchemaMigration, error) {

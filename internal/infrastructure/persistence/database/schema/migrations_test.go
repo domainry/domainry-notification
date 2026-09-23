@@ -71,9 +71,6 @@ func testSchemaMigrations(driver, schemaName, prefix string) ([]SchemaMigration,
 	}
 	return SchemaMigrations(testSchemaProfile{driver: driver}, renderer, prefix)
 }
-func testModuleSchemaBaseline(driver, prefix string) (SchemaBaseline, error) {
-	return ModuleSchemaBaseline(testSchemaProfile{driver: driver}, prefix)
-}
 func testApplicationSchemaMigrations(driver, schemaName, prefix string, scope ApplicationScope) ([]SchemaMigration, error) {
 	renderer, err := ormdialect.ParseRenderer(driver, schemaName, prefix)
 	if err != nil {
@@ -137,6 +134,25 @@ func TestBaseSchemaMatchesOwnershipAndRunsOnSQLite(t *testing.T) {
 		var count int
 		if err := db.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = ?`, table).Scan(&count); err != nil || count != 1 {
 			t.Fatalf("table %q count=%d err=%v", table, count, err)
+		}
+	}
+	for _, table := range SchemaOwnership() {
+		statement := ""
+		for _, candidate := range migrations[0].Statements {
+			if strings.HasPrefix(candidate, `CREATE TABLE "`+table.Name+`"`) {
+				statement = candidate
+				break
+			}
+		}
+		if statement == "" {
+			t.Fatalf("owned table %s has no canonical DDL", table.Name)
+		}
+		quoted := make([]string, len(table.PrimaryKey))
+		for index, column := range table.PrimaryKey {
+			quoted[index] = `"` + column + `"`
+		}
+		if primaryKey := "PRIMARY KEY (" + strings.Join(quoted, ", ") + ")"; !strings.Contains(statement, primaryKey) {
+			t.Fatalf("table %s primary key %v does not match DDL: %s", table.Name, table.PrimaryKey, statement)
 		}
 	}
 	for _, table := range []string{"_notification_migration_controls", "_notification_retention_archive_entries"} {
@@ -205,7 +221,7 @@ func TestSchemaMigrationsRenderPhysicalNamesAndMySQLTypes(t *testing.T) {
 	joined := strings.Join(migrations[0].Statements, "\n")
 	for _, fragment := range []string{
 		"`tenant`.`domainry__notification_events`",
-		"`domainry_uniq_notification_event_workspace_identity`",
+		"PRIMARY KEY (`workspace_id`, `id`)",
 		"VARCHAR(191) CHARACTER SET ascii COLLATE ascii_bin",
 		"LONGTEXT",
 	} {
@@ -227,34 +243,6 @@ func TestSchemaMigrationStatementsDoNotLeakMutableState(t *testing.T) {
 	}
 	if second[0].Statements[0] == "mutated" {
 		t.Fatal("schema migration leaked mutable state")
-	}
-}
-
-func TestModuleSchemaBaselineCoversEveryColumnAndDeclaredIndex(t *testing.T) {
-	baseline, err := testModuleSchemaBaseline("mysql", "")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(baseline.Tables) != len(baseSchemaTables) {
-		t.Fatalf("baseline tables=%d want=%d", len(baseline.Tables), len(baseSchemaTables))
-	}
-	for tableIndex, table := range baseline.Tables {
-		definition := baseSchemaTables[tableIndex]
-		if table.Name != definition.name || len(table.Columns) != len(definition.columns) {
-			t.Fatalf("baseline table[%d]=%+v", tableIndex, table)
-		}
-		for columnIndex, column := range table.Columns {
-			if column.Name != definition.columns[columnIndex].name || strings.Contains(column.Type, " ") {
-				t.Fatalf("baseline column %s.%s=%+v", table.Name, column.Name, column)
-			}
-		}
-	}
-	indexes := 0
-	for _, table := range baseline.Tables {
-		indexes += len(table.Indexes)
-	}
-	if indexes != len(baseSchemaIndexes) {
-		t.Fatalf("baseline indexes=%d want=%d", indexes, len(baseSchemaIndexes))
 	}
 }
 
