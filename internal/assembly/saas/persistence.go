@@ -11,11 +11,11 @@ import (
 	"time"
 
 	shareddefinition "github.com/domainry/domainry-foundation/definition"
+	sharedoperation "github.com/domainry/domainry-foundation/operation"
 	metadatasdk "github.com/domainry/domainry-metadata-sdk"
 	notificationsdk "github.com/domainry/domainry-notification-sdk"
 	"github.com/domainry/domainry-notification-sdk/modulehost"
 	sqlstore "github.com/domainry/domainry-notification/internal/infrastructure/persistence"
-	"github.com/domainry/domainry-notification/internal/infrastructure/persistence/base"
 	"github.com/domainry/domainry-notification/internal/infrastructure/persistence/database/artifactkernel"
 	storemigration "github.com/domainry/domainry-notification/internal/infrastructure/persistence/database/migration"
 	operationstore "github.com/domainry/domainry-notification/internal/infrastructure/persistence/database/operation"
@@ -150,31 +150,11 @@ func (p *SQLPersistence) prepareOperationStore(ctx context.Context, dialect modu
 	if p == nil || p.database == nil || dialect == nil {
 		return nil, fmt.Errorf("Notification SaaS shared Operation persistence is unavailable")
 	}
-	migrations, err := sqlstore.SharedOperationSchemaMigrations(p.driver, p.schema)
+	kernel, err := sharedoperation.Open(ctx, p.database, dialect, p.definitionMigrations())
 	if err != nil {
 		return nil, err
 	}
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	connection, err := p.database.Conn(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("open Notification SaaS shared Operation migration connection: %w", err)
-	}
-	defer connection.Close()
-	release, err := p.engine.Acquire(ctx, connection, "notification-saas-schema")
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = release(context.Background()) }()
-	if err := p.ensureLedger(ctx, connection); err != nil {
-		return nil, err
-	}
-	for _, migration := range migrations {
-		if err := p.applyMigration(ctx, connection, "shared/operations", migration); err != nil {
-			return nil, err
-		}
-	}
-	return operationstore.New(base.NewSQLStore(p.database, dialect))
+	return operationstore.New(kernel)
 }
 
 func (p *SQLPersistence) PrepareRetentionArchiveStore(ctx context.Context, dialect modulehost.Dialect, content retentionarchivestore.Content) (modulehost.RetentionArchiveStore, error) {
@@ -221,7 +201,8 @@ func (p *SQLPersistence) definitionMigrations() definitionMigrations {
 func (m definitionMigrations) Driver() string { return string(m.persistence.driver) }
 func (m definitionMigrations) Schema() string { return m.persistence.schema }
 func (m definitionMigrations) ApplyOwnedMigrations(ctx context.Context, owner string, migrations []shareddefinition.SchemaMigration) error {
-	if strings.TrimSpace(owner) != shareddefinition.MigrationOwner {
+	owner = strings.TrimSpace(owner)
+	if owner != shareddefinition.MigrationOwner && owner != sharedoperation.MigrationOwner {
 		return fmt.Errorf("Notification SaaS cannot install shared migration owner %q", owner)
 	}
 	p := m.persistence
@@ -241,7 +222,7 @@ func (m definitionMigrations) ApplyOwnedMigrations(ctx context.Context, owner st
 		return err
 	}
 	for _, migration := range migrations {
-		if err := p.applyMigration(ctx, connection, shareddefinition.MigrationOwner, migration); err != nil {
+		if err := p.applyMigration(ctx, connection, owner, migration); err != nil {
 			return err
 		}
 	}

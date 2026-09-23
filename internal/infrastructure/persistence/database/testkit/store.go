@@ -9,10 +9,10 @@ import (
 	"time"
 
 	shareddefinition "github.com/domainry/domainry-foundation/definition"
+	sharedoperation "github.com/domainry/domainry-foundation/operation"
 	metadatasdk "github.com/domainry/domainry-metadata-sdk"
 	notification "github.com/domainry/domainry-notification/internal/domain/notification/model"
 	sqlstore "github.com/domainry/domainry-notification/internal/infrastructure/persistence"
-	"github.com/domainry/domainry-notification/internal/infrastructure/persistence/base"
 	"github.com/domainry/domainry-notification/internal/infrastructure/persistence/database/artifactkernel"
 	operationstore "github.com/domainry/domainry-notification/internal/infrastructure/persistence/database/operation"
 	retentionarchivestore "github.com/domainry/domainry-notification/internal/infrastructure/persistence/database/retentionarchive"
@@ -92,7 +92,7 @@ func OpenMigratedWithArtifactContent(t *testing.T) (*sql.DB, *sqlstore.Store, *a
 			}
 		}
 	}
-	operations, err := operationstore.New(base.NewSQLStore(database, dialect))
+	operations, err := operationstore.New(sharedoperation.NewSQLStore(database, dialect))
 	if err != nil {
 		t.Fatal(err)
 	}

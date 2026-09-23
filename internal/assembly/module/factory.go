@@ -10,6 +10,7 @@ import (
 
 	shareddefinition "github.com/domainry/domainry-foundation/definition"
 	"github.com/domainry/domainry-foundation/modulehttp"
+	sharedoperation "github.com/domainry/domainry-foundation/operation"
 	"github.com/domainry/domainry-foundation/requestcontext"
 	identitysdk "github.com/domainry/domainry-identity-sdk"
 	identityprincipal "github.com/domainry/domainry-identity-sdk/authorization/principal"
@@ -26,6 +27,7 @@ import (
 	notification "github.com/domainry/domainry-notification/internal/domain/notification/model"
 	"github.com/domainry/domainry-notification/internal/domain/template/service"
 	sqlstore "github.com/domainry/domainry-notification/internal/infrastructure/persistence"
+	operationstore "github.com/domainry/domainry-notification/internal/infrastructure/persistence/database/operation"
 	notificationhttp "github.com/domainry/domainry-notification/internal/transport/http/module"
 )
 
@@ -60,14 +62,6 @@ func (f *Factory) openHosted(ctx context.Context, application notificationsdk.Ap
 	}
 	if host == nil || host.Database() == nil || host.Dialect() == nil || host.Migrations() == nil || host.WorkspaceScope() == nil || host.QueueScopes() == nil || host.Identity() == nil || host.Identity().Principals() == nil || host.Clock() == nil || strings.TrimSpace(host.WorkerID()) == "" || host.WorkNotifier() == nil || host.RecipientResolver() == nil || host.DeliveryGateway() == nil {
 		return nil, fmt.Errorf("notification Module host is incomplete")
-	}
-	operationHost, ok := host.(modulehost.ManagedOperationStoreHost)
-	if !ok || operationHost.ManagedOperationStore() == nil {
-		return nil, fmt.Errorf("notification shared managed Operation store is required")
-	}
-	controlHost, ok := host.(modulehost.OperationControlStoreHost)
-	if !ok || controlHost.OperationControlStore() == nil {
-		return nil, fmt.Errorf("notification shared Operation Control store is required")
 	}
 	archiveHost, ok := host.(modulehost.RetentionArchiveStoreHost)
 	if !ok || archiveHost.RetentionArchiveStore() == nil {
@@ -115,7 +109,15 @@ func (f *Factory) openHosted(ctx context.Context, application notificationsdk.Ap
 		return nil, fmt.Errorf("open Notification Definition persistence: %w", err)
 	}
 	definitions := metadatasdk.AdaptDefinitionStore(definitionKernel)
-	store, err := sqlstore.New(sqlstore.Config{Database: host.Database(), Dialect: host.Dialect(), WorkspaceScope: workspaceScopeAdapter{host.WorkspaceScope()}, QueueScopes: queueScopeAdapter{host.QueueScopes()}, Clock: host.Clock(), WorkspaceID: notification.WorkspaceID(application.WorkspaceID), DefinitionStore: definitions, OperationStore: operationHost.ManagedOperationStore(), ControlStore: controlHost.OperationControlStore(), ArchiveStore: archiveHost.RetentionArchiveStore()})
+	operationKernel, err := sharedoperation.Open(ctx, host.Database(), host.Dialect(), host.Migrations())
+	if err != nil {
+		return nil, fmt.Errorf("open Notification Operations persistence: %w", err)
+	}
+	operations, err := operationstore.New(operationKernel)
+	if err != nil {
+		return nil, err
+	}
+	store, err := sqlstore.New(sqlstore.Config{Database: host.Database(), Dialect: host.Dialect(), WorkspaceScope: workspaceScopeAdapter{host.WorkspaceScope()}, QueueScopes: queueScopeAdapter{host.QueueScopes()}, Clock: host.Clock(), WorkspaceID: notification.WorkspaceID(application.WorkspaceID), DefinitionStore: definitions, OperationStore: operations, ControlStore: operations, ArchiveStore: archiveHost.RetentionArchiveStore()})
 	if err != nil {
 		return nil, err
 	}

@@ -92,37 +92,6 @@ var baseSchemaIndexes = []schemaIndex{
 	{name: "idx_notification_alert_group_state", table: "_notification_alert_groups", columns: []string{"workspace_id", "state", "updated_at"}},
 }
 
-// sharedOperationTables is installed only by standalone SaaS composition.
-// Embedded Module mode receives the same canonical table through its host.
-var sharedOperationTables = []schemaTable{
-	{name: "_operations", columns: []schemaColumn{
-		primary("id", identifierColumn), required("workspace_id", indexedTextColumn), defaulted("system_purpose", indexedTextColumn, ""),
-		required("owner", indexedTextColumn), required("kind", indexedTextColumn), required("action_key", identifierColumn), defaulted("parent_id", identifierColumn, ""),
-		required("resource_type", identifierColumn), defaulted("resource_id", identifierColumn, ""), required("idempotency_key", indexedTextColumn),
-		required("request_fingerprint", identifierColumn), required("requested_by", identifierColumn), required("reason", documentColumn), defaulted("reference", identifierColumn, ""),
-		required("status", indexedTextColumn), required("status_url", documentColumn), required("result_json", documentColumn), required("metadata_json", documentColumn),
-		defaulted("error_code", identifierColumn, ""), defaulted("failure_class", identifierColumn, ""), defaulted("next_action", documentColumn, ""),
-		required("related_ids_json", documentColumn), defaulted("correlation", identifierColumn, ""), required("evidence_json", documentColumn),
-		defaulted("lease_owner", identifierColumn, ""), defaulted("lease_expires_at", indexedTextColumn, ""), defaulted("fencing_token", bigIntegerColumn, 0),
-		defaulted("expires_at", indexedTextColumn, ""), required("created_at", indexedTextColumn), defaulted("started_at", identifierColumn, ""),
-		defaulted("finished_at", identifierColumn, ""), required("updated_at", indexedTextColumn),
-	}},
-	{name: "_operation_controls", columns: []schemaColumn{
-		required("system_purpose", identifierColumn), required("control_kind", identifierColumn), required("owner", identifierColumn),
-		required("state", indexedTextColumn), required("reason", plainTextColumn), defaulted("reference", plainTextColumn, ""),
-		required("updated_by", plainTextColumn), required("revision", bigIntegerColumn), required("updated_at", plainTextColumn),
-	}},
-}
-
-var sharedOperationIndexes = []schemaIndex{
-	{name: "uniq_runtime_operation_key", table: "_operations", unique: true, columns: []string{"workspace_id", "system_purpose", "owner", "kind", "idempotency_key"}},
-	{name: "idx_runtime_operation_status", table: "_operations", columns: []string{"workspace_id", "owner", "status", "created_at"}},
-	{name: "idx_runtime_operation_parent", table: "_operations", columns: []string{"workspace_id", "parent_id", "created_at"}},
-	{name: "idx_runtime_operation_lease", table: "_operations", columns: []string{"owner", "status", "lease_expires_at"}},
-	{name: "uniq_runtime_operation_control", table: "_operation_controls", unique: true, columns: []string{"system_purpose", "control_kind", "owner"}},
-	{name: "idx_runtime_operation_control_state", table: "_operation_controls", columns: []string{"system_purpose", "control_kind", "state"}},
-}
-
 func ownedSchemaTables() []schemaTable {
 	tables := make([]schemaTable, 0, len(baseSchemaTables))
 	tables = append(tables, baseSchemaTables...)

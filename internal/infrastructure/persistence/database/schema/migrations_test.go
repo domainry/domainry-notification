@@ -149,7 +149,7 @@ func TestBaseSchemaMatchesOwnershipAndRunsOnSQLite(t *testing.T) {
 
 func TestSharedOperationSchemaOwnsMigrationControlRegistry(t *testing.T) {
 	migrations, err := testSharedOperationSchemaMigrations("sqlite", "")
-	if err != nil || len(migrations) != 1 || migrations[0].Name != "create_shared_operations" {
+	if err != nil || len(migrations) != 1 || migrations[0].Name != "shared_operations" {
 		t.Fatalf("migrations=%+v err=%v", migrations, err)
 	}
 	db, err := sql.Open("sqlite", "file:"+t.Name()+"?mode=memory&cache=shared")

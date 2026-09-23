@@ -10,10 +10,10 @@ import (
 	"sync"
 	"testing"
 
+	sharedoperation "github.com/domainry/domainry-foundation/operation"
 	metadatasdk "github.com/domainry/domainry-metadata-sdk"
 	"github.com/domainry/domainry-notification-sdk/modulehost"
 	sqlstore "github.com/domainry/domainry-notification/internal/infrastructure/persistence"
-	"github.com/domainry/domainry-notification/internal/infrastructure/persistence/base"
 	"github.com/domainry/domainry-notification/internal/infrastructure/persistence/database/artifactkernel"
 	operationstore "github.com/domainry/domainry-notification/internal/infrastructure/persistence/database/operation"
 	retentionarchivestore "github.com/domainry/domainry-notification/internal/infrastructure/persistence/database/retentionarchive"
@@ -106,7 +106,7 @@ func newTestManagedOperationStore(t *testing.T, database *sql.DB, dialect module
 			}
 		}
 	}
-	store, err := operationstore.New(base.NewSQLStore(database, dialect))
+	store, err := operationstore.New(sharedoperation.NewSQLStore(database, dialect))
 	if err != nil {
 		t.Fatal(err)
 	}

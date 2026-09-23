@@ -10,9 +10,9 @@ import (
 
 	shareddefinition "github.com/domainry/domainry-foundation/definition"
 	"github.com/domainry/domainry-foundation/modulehttp"
+	sharedoperation "github.com/domainry/domainry-foundation/operation"
 	"github.com/domainry/domainry-foundation/requestcontext"
 	identitysdk "github.com/domainry/domainry-identity-sdk"
-	metadatasdk "github.com/domainry/domainry-metadata-sdk"
 	notificationsdk "github.com/domainry/domainry-notification-sdk"
 	"github.com/domainry/domainry-notification-sdk/contract"
 	"github.com/domainry/domainry-notification-sdk/contracttest"
@@ -83,12 +83,10 @@ func (principalResolverStub) Resolve(ctx context.Context, request identitysdk.Pr
 }
 
 type testHost struct {
-	database    *sql.DB
-	dialect     modulehost.Dialect
-	migrations  *testMigrationRegistrar
-	definitions metadatasdk.DefinitionStore
-	operations  modulehost.ManagedOperationStore
-	archives    modulehost.RetentionArchiveStore
+	database   *sql.DB
+	dialect    modulehost.Dialect
+	migrations *testMigrationRegistrar
+	archives   modulehost.RetentionArchiveStore
 }
 
 type testMigrationRegistrar struct {
@@ -99,7 +97,7 @@ type testMigrationRegistrar struct {
 func (testMigrationRegistrar) Driver() string { return "sqlite" }
 func (testMigrationRegistrar) Schema() string { return "" }
 func (r *testMigrationRegistrar) ApplyOwnedMigrations(ctx context.Context, owner string, migrations []modulehost.SchemaMigration) error {
-	if owner != "notification" && owner != shareddefinition.MigrationOwner {
+	if owner != "notification" && owner != shareddefinition.MigrationOwner && owner != sharedoperation.MigrationOwner {
 		return context.Canceled
 	}
 	if r.applied == nil {
@@ -119,18 +117,10 @@ func (r *testMigrationRegistrar) ApplyOwnedMigrations(ctx context.Context, owner
 	return nil
 }
 
-func (h testHost) Database() modulehost.Database                { return h.database }
-func (h testHost) Dialect() modulehost.Dialect                  { return h.dialect }
-func (testHost) WorkspaceScope() modulehost.WorkspaceScope      { return testWorkspaceScope{} }
-func (testHost) QueueScopes() modulehost.QueueScopeIndex        { return testQueueScopes{} }
-func (h testHost) DefinitionStore() metadatasdk.DefinitionStore { return h.definitions }
-func (h testHost) ManagedOperationStore() modulehost.ManagedOperationStore {
-	return h.operations
-}
-func (h testHost) OperationControlStore() modulehost.OperationControlStore {
-	controls, _ := h.operations.(modulehost.OperationControlStore)
-	return controls
-}
+func (h testHost) Database() modulehost.Database                           { return h.database }
+func (h testHost) Dialect() modulehost.Dialect                             { return h.dialect }
+func (testHost) WorkspaceScope() modulehost.WorkspaceScope                 { return testWorkspaceScope{} }
+func (testHost) QueueScopes() modulehost.QueueScopeIndex                   { return testQueueScopes{} }
 func (h testHost) RetentionArchiveStore() modulehost.RetentionArchiveStore { return h.archives }
 func (testHost) Identity() identitysdk.Binding                             { return identityBindingStub{} }
 func (testHost) Clock() modulehost.Clock                                   { return testClock{} }
@@ -160,7 +150,7 @@ func newTestHost(t *testing.T) testHost {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = database.Close() })
-	return testHost{database: database, dialect: dialect, migrations: &testMigrationRegistrar{database: database}, definitions: newTestDefinitionStore(), operations: newTestManagedOperationStore(t, database, dialect), archives: newTestRetentionArchiveStore(t, database, dialect)}
+	return testHost{database: database, dialect: dialect, migrations: &testMigrationRegistrar{database: database}, archives: newTestRetentionArchiveStore(t, database, dialect)}
 }
 
 func TestModuleFactoryContractAndBorrowedDatabaseLifecycle(t *testing.T) {

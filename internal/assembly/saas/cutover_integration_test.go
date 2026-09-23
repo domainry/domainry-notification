@@ -60,9 +60,9 @@ func TestModuleToSaaSCutoverPreservesStateAndMovesTheOnlyWriter(t *testing.T) {
 	sourceDB.SetMaxOpenConns(1)
 	t.Cleanup(func() { _ = sourceDB.Close() })
 	sourceDialect, _ := ormdialect.ParseRenderer("sqlite", "", "")
-	sourceOperations, sourceArchives := prepareCutoverSharedStores(t, sourceDB, sourceDialect)
+	sourceArchives := prepareCutoverSharedStores(t, sourceDB, sourceDialect)
 	sourceHost := &cutoverModuleHost{
-		saasApplicationHost: &saasApplicationHost{application: application, database: sourceDB, dialect: sourceDialect, identity: applicationIdentityStub{}, catalog: catalog, clock: wallClock{}, workerID: "module-worker", notifier: discardWorkNotifier{}, projection: identityRecipientResolver{application: application, projection: projectionStub{}}, audiences: snapshotOnlyAudienceResolver{}, gateway: applicationGatewayStub{}, operations: sourceOperations, controls: sourceOperations.(modulehost.OperationControlStore), archives: sourceArchives},
+		saasApplicationHost: &saasApplicationHost{application: application, database: sourceDB, dialect: sourceDialect, identity: applicationIdentityStub{}, catalog: catalog, clock: wallClock{}, workerID: "module-worker", notifier: discardWorkNotifier{}, projection: identityRecipientResolver{application: application, projection: projectionStub{}}, audiences: snapshotOnlyAudienceResolver{}, gateway: applicationGatewayStub{}, archives: sourceArchives},
 		migrations:          &cutoverMigrationRegistrar{database: sourceDB},
 	}
 	source, err := module.NewFactory(module.Options{}).OpenModule(t.Context(), application, sourceHost)
@@ -126,13 +126,9 @@ func TestModuleToSaaSCutoverPreservesStateAndMovesTheOnlyWriter(t *testing.T) {
 	}
 }
 
-func prepareCutoverSharedStores(t *testing.T, database *sql.DB, dialect modulehost.Dialect) (modulehost.ManagedOperationStore, modulehost.RetentionArchiveStore) {
+func prepareCutoverSharedStores(t *testing.T, database *sql.DB, dialect modulehost.Dialect) modulehost.RetentionArchiveStore {
 	t.Helper()
 	persistence, err := NewSQLPersistence(SQLPersistenceOptions{Database: database, Driver: sqlstore.SQLite})
-	if err != nil {
-		t.Fatal(err)
-	}
-	operations, err := persistence.PrepareManagedOperationStore(t.Context(), dialect)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -140,5 +136,5 @@ func prepareCutoverSharedStores(t *testing.T, database *sql.DB, dialect moduleho
 	if err != nil {
 		t.Fatal(err)
 	}
-	return operations, archives
+	return archives
 }

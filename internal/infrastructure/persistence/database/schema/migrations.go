@@ -2,11 +2,12 @@ package schema
 
 import (
 	"fmt"
-	ormschema "github.com/domainry/domainry-orm/schema"
 	"strings"
 
+	sharedoperation "github.com/domainry/domainry-foundation/operation"
 	"github.com/domainry/domainry-notification-sdk/modulehost"
 	ormmigration "github.com/domainry/domainry-orm/migration"
+	ormschema "github.com/domainry/domainry-orm/schema"
 )
 
 type Profile interface {
@@ -89,12 +90,8 @@ func ApplicationSchemaMigrations(profile Profile, dialect modulehost.Dialect, ta
 	return []SchemaMigration{{Version: 1, Name: "create_application_schema", Statements: statements}}, nil
 }
 
-func SharedOperationSchemaMigrations(profile Profile, dialect modulehost.Dialect) ([]SchemaMigration, error) {
-	statements, err := renderSchema(profile, "", dialect, nil, sharedOperationTables, sharedOperationIndexes)
-	if err != nil {
-		return nil, err
-	}
-	return []SchemaMigration{{Version: 1, Name: "create_shared_operations", Statements: statements}}, nil
+func SharedOperationSchemaMigrations(_ Profile, dialect modulehost.Dialect) ([]SchemaMigration, error) {
+	return sharedoperation.SchemaMigrationsForDialect(dialect)
 }
 
 type schemaColumn struct {

@@ -76,11 +76,11 @@ func TestModuleAndRemoteSaaSPreserveBusinessAndCapabilitySemantics(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	moduleOperations, moduleArchives := prepareCutoverSharedStores(t, moduleDB, moduleDialect)
+	moduleArchives := prepareCutoverSharedStores(t, moduleDB, moduleDialect)
 	moduleHost := &cutoverModuleHost{
 		saasApplicationHost: &saasApplicationHost{
 			application: application, database: moduleDB, dialect: moduleDialect, identity: applicationIdentityStub{}, catalog: catalog, clock: parityClock{value: now}, workerID: "module-worker",
-			notifier: discardWorkNotifier{}, projection: identityRecipientResolver{application: application, projection: projectionStub{}}, audiences: snapshotOnlyAudienceResolver{}, gateway: applicationGatewayStub{}, operations: moduleOperations, controls: moduleOperations.(modulehost.OperationControlStore), archives: moduleArchives,
+			notifier: discardWorkNotifier{}, projection: identityRecipientResolver{application: application, projection: projectionStub{}}, audiences: snapshotOnlyAudienceResolver{}, gateway: applicationGatewayStub{}, archives: moduleArchives,
 		},
 		migrations: &cutoverMigrationRegistrar{database: moduleDB},
 	}

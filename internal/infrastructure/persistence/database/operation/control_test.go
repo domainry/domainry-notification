@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
+	sharedoperation "github.com/domainry/domainry-foundation/operation"
 	"github.com/domainry/domainry-notification-sdk/modulehost"
-	"github.com/domainry/domainry-notification/internal/infrastructure/persistence/base"
 	operationstore "github.com/domainry/domainry-notification/internal/infrastructure/persistence/database/operation"
 	storeschema "github.com/domainry/domainry-notification/internal/infrastructure/persistence/database/schema"
 	sqliteschema "github.com/domainry/domainry-notification/internal/infrastructure/persistence/sqlite/schema"
@@ -36,7 +36,7 @@ func TestOperationControlStorePersistsAndFencesRevision(t *testing.T) {
 			}
 		}
 	}
-	store, err := operationstore.New(base.NewSQLStore(database, dialect))
+	store, err := operationstore.New(sharedoperation.NewSQLStore(database, dialect))
 	if err != nil {
 		t.Fatal(err)
 	}

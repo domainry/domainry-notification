@@ -13,6 +13,7 @@ import (
 	"time"
 
 	shareddefinition "github.com/domainry/domainry-foundation/definition"
+	sharedoperation "github.com/domainry/domainry-foundation/operation"
 	"github.com/domainry/domainry-foundation/requestcontext"
 	identitysdk "github.com/domainry/domainry-identity-sdk"
 	metadatasdk "github.com/domainry/domainry-metadata-sdk"
@@ -107,7 +108,7 @@ type integrationMigrationRegistrar struct {
 func (*integrationMigrationRegistrar) Driver() string { return "sqlite" }
 func (*integrationMigrationRegistrar) Schema() string { return "" }
 func (r *integrationMigrationRegistrar) ApplyOwnedMigrations(ctx context.Context, owner string, migrations []modulehost.SchemaMigration) error {
-	if owner != "notification" && owner != shareddefinition.MigrationOwner {
+	if owner != "notification" && owner != shareddefinition.MigrationOwner && owner != sharedoperation.MigrationOwner {
 		return fmt.Errorf("unexpected migration owner %q", owner)
 	}
 	r.mu.Lock()
@@ -335,33 +336,23 @@ func (i *integrationIdentity) reauthorizationRequests() []identitysdk.DecisionRe
 }
 
 type integrationHost struct {
-	database    *sql.DB
-	dialect     modulehost.Dialect
-	clock       *integrationClock
-	scope       *integrationWorkspaceScope
-	queues      integrationQueueScopes
-	identity    *integrationIdentity
-	migrations  *integrationMigrationRegistrar
-	notifier    *integrationNotifier
-	gateway     *integrationGateway
-	catalog     modulehost.Catalog
-	definitions metadatasdk.DefinitionStore
-	operations  modulehost.ManagedOperationStore
-	archives    modulehost.RetentionArchiveStore
+	database   *sql.DB
+	dialect    modulehost.Dialect
+	clock      *integrationClock
+	scope      *integrationWorkspaceScope
+	queues     integrationQueueScopes
+	identity   *integrationIdentity
+	migrations *integrationMigrationRegistrar
+	notifier   *integrationNotifier
+	gateway    *integrationGateway
+	catalog    modulehost.Catalog
+	archives   modulehost.RetentionArchiveStore
 }
 
-func (h *integrationHost) Database() modulehost.Database                { return h.database }
-func (h *integrationHost) Dialect() modulehost.Dialect                  { return h.dialect }
-func (h *integrationHost) WorkspaceScope() modulehost.WorkspaceScope    { return h.scope }
-func (h *integrationHost) QueueScopes() modulehost.QueueScopeIndex      { return h.queues }
-func (h *integrationHost) DefinitionStore() metadatasdk.DefinitionStore { return h.definitions }
-func (h *integrationHost) ManagedOperationStore() modulehost.ManagedOperationStore {
-	return h.operations
-}
-func (h *integrationHost) OperationControlStore() modulehost.OperationControlStore {
-	controls, _ := h.operations.(modulehost.OperationControlStore)
-	return controls
-}
+func (h *integrationHost) Database() modulehost.Database             { return h.database }
+func (h *integrationHost) Dialect() modulehost.Dialect               { return h.dialect }
+func (h *integrationHost) WorkspaceScope() modulehost.WorkspaceScope { return h.scope }
+func (h *integrationHost) QueueScopes() modulehost.QueueScopeIndex   { return h.queues }
 func (h *integrationHost) RetentionArchiveStore() modulehost.RetentionArchiveStore {
 	return h.archives
 }
@@ -431,7 +422,7 @@ func newIntegrationHost(t *testing.T) *integrationHost {
 	return &integrationHost{
 		database: database, dialect: dialect, clock: clock, scope: &integrationWorkspaceScope{expected: "workspace-a"}, queues: integrationQueueScopes{}, identity: identity,
 		migrations: &integrationMigrationRegistrar{database: database}, notifier: &integrationNotifier{}, gateway: &integrationGateway{failuresBefore: 1}, catalog: catalog,
-		definitions: newTestDefinitionStore(), operations: newTestManagedOperationStore(t, database, dialect), archives: newTestRetentionArchiveStore(t, database, dialect),
+		archives: newTestRetentionArchiveStore(t, database, dialect),
 	}
 }
 
@@ -639,7 +630,8 @@ func TestModuleTransactionsShareHostDatabaseQueueAndMigrationLedger(t *testing.T
 	}
 	assertIntegrationCount(t, host.database, `SELECT COUNT(*) FROM _schema_migrations WHERE namespace = 'notification'`, 1)
 	assertIntegrationCount(t, host.database, `SELECT COUNT(*) FROM _schema_migrations WHERE namespace = 'shared/definitions'`, 1)
-	if host.migrations.applied != 2 {
+	assertIntegrationCount(t, host.database, `SELECT COUNT(*) FROM _schema_migrations WHERE namespace = 'shared/operations'`, 1)
+	if host.migrations.applied != 3 {
 		t.Fatalf("Module migrations replayed outside the host ledger: applied=%d", host.migrations.applied)
 	}
 }
