@@ -49,25 +49,25 @@ func (s *Store) eventFailureMetrics(ctx context.Context, workspaceID notificatio
 		query.Project(query.Coalesce(query.Sum(query.CaseWhen(query.Equal("disposition", "retry_scheduled"), 1).Else(0)), query.Value(0))),
 		query.Project(query.Coalesce(query.Sum(query.CaseWhen(query.Equal("disposition", "dead_letter"), 1).Else(0)), query.Value(0))),
 	}
-	statement, args, err := query.NewWorkspaceSelectBuilder(s.Renderer, "_notification_event_failures", workspaceID.String()).Projections(projections...).Where(predicate).Build()
+	statement, args, err := query.NewWorkspaceSelectBuilder(s.Renderer, "_notification_delivery_attempts", workspaceID.String()).Projections(projections...).Where(predicate).Build()
 	if err != nil {
 		return result, err
 	}
 	if err := s.Database.QueryRowContext(ctx, statement, args...).Scan(&result.Total, &result.RetryScheduled, &result.DeadLetter); err != nil {
-		return result, fmt.Errorf("aggregate notification event failures: %w", err)
+		return result, fmt.Errorf("aggregate notification delivery attempts: %w", err)
 	}
 	dimensions := []struct {
 		column string
 		value  *[]inbox.FailureAggregate
 	}{{"stage", &result.ByStage}, {"error_code", &result.ByErrorCode}}
 	for _, dimension := range dimensions {
-		statement, args, err := query.NewWorkspaceSelectBuilder(s.Renderer, "_notification_event_failures", workspaceID.String()).Projections(query.Project(query.Column(dimension.column)), query.Project(query.CountAll())).Where(predicate).GroupBy(query.Column(dimension.column)).OrderBy(query.DescendingExpression(query.CountAll()), query.Ascending(dimension.column)).Build()
+		statement, args, err := query.NewWorkspaceSelectBuilder(s.Renderer, "_notification_delivery_attempts", workspaceID.String()).Projections(query.Project(query.Column(dimension.column)), query.Project(query.CountAll())).Where(predicate).GroupBy(query.Column(dimension.column)).OrderBy(query.DescendingExpression(query.CountAll()), query.Ascending(dimension.column)).Build()
 		if err != nil {
 			return result, err
 		}
 		rows, err := s.Database.QueryContext(ctx, statement, args...)
 		if err != nil {
-			return result, fmt.Errorf("aggregate notification event failures by %s: %w", dimension.column, err)
+			return result, fmt.Errorf("aggregate notification delivery attempts by %s: %w", dimension.column, err)
 		}
 		values := []inbox.FailureAggregate{}
 		for rows.Next() {

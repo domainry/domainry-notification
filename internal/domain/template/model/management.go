@@ -9,6 +9,7 @@ type Record struct {
 	UpdatedBy        string    `json:"updated_by,omitempty"`
 	CreatedAt        string    `json:"created_at,omitempty"`
 	UpdatedAt        string    `json:"updated_at,omitempty"`
+	PublicationID    string    `json:"publication_id,omitempty"`
 }
 
 type Version struct {

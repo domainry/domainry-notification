@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/domainry/domainry-foundation/modulecapability"
 	notificationsdk "github.com/domainry/domainry-notification-sdk"
 	"github.com/domainry/domainry-notification-sdk/contract"
 	"github.com/domainry/domainry-notification/internal/application/authentication"
@@ -59,15 +58,6 @@ func (h *Handler) ServeHTTP(response http.ResponseWriter, request *http.Request)
 	}
 	if binding == nil {
 		writeHTTPError(response, &notificationsdk.Error{StatusCode: http.StatusServiceUnavailable, Code: "notification.binding_unavailable", Retryable: true})
-		return
-	}
-	if strings.HasPrefix(request.URL.Path, modulecapability.HTTPPrefix+"/") {
-		handler, handlerErr := modulecapability.NewHTTPHandler(binding, func(*http.Request) error { return nil })
-		if handlerErr != nil {
-			writeHTTPError(response, &notificationsdk.Error{StatusCode: http.StatusInternalServerError, Code: "notification.capability_handler_invalid", Cause: handlerErr})
-			return
-		}
-		handler.ServeHTTP(response, request)
 		return
 	}
 	switch request.URL.Path {

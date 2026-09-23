@@ -5,6 +5,7 @@ import (
 	"time"
 
 	identitysdk "github.com/domainry/domainry-identity-sdk"
+	metadatasdk "github.com/domainry/domainry-metadata-sdk"
 	"github.com/domainry/domainry-notification-sdk/modulehost"
 	notification "github.com/domainry/domainry-notification/internal/domain/notification/model"
 	"github.com/domainry/domainry-notification/internal/infrastructure/persistence/base"
@@ -32,12 +33,16 @@ type QueueScopeIndex interface {
 }
 
 type Config struct {
-	Database       sqlhost.Database
-	Dialect        modulehost.Dialect
-	WorkspaceScope WorkspaceScope
-	QueueScopes    QueueScopeIndex
-	Clock          notification.Clock
-	WorkspaceID    notification.WorkspaceID
+	Database        sqlhost.Database
+	Dialect         modulehost.Dialect
+	WorkspaceScope  WorkspaceScope
+	QueueScopes     QueueScopeIndex
+	Clock           notification.Clock
+	WorkspaceID     notification.WorkspaceID
+	DefinitionStore metadatasdk.DefinitionStore
+	OperationStore  modulehost.ManagedOperationStore
+	ControlStore    modulehost.OperationControlStore
+	ArchiveStore    modulehost.RetentionArchiveStore
 }
 
 type Store struct {
@@ -59,14 +64,16 @@ func New(config Config) (*Store, error) {
 			SQLStore: sqlStore, WorkspaceScope: config.WorkspaceScope, Clock: config.Clock, WorkspaceID: config.WorkspaceID,
 		})},
 		deliveryPersistence: &deliveryPersistence{deliverystore.New(deliverystore.Config{
-			SQLStore: sqlStore, WorkspaceScope: config.WorkspaceScope, QueueScopes: config.QueueScopes, WorkspaceID: config.WorkspaceID,
+			SQLStore: sqlStore, WorkspaceScope: config.WorkspaceScope, QueueScopes: config.QueueScopes, WorkspaceID: config.WorkspaceID, DefinitionStore: config.DefinitionStore,
 		})},
 		eventPersistence: &eventPersistence{eventstore.New(eventstore.Config{
 			SQLStore: sqlStore, WorkspaceScope: config.WorkspaceScope, QueueScopes: config.QueueScopes,
 		})},
-		templatePersistence:    &templatePersistence{templatestore.New(templatestore.Config{SQLStore: sqlStore, Clock: config.Clock, WorkspaceID: config.WorkspaceID})},
-		lifecyclePersistence:   &lifecyclePersistence{lifecyclestore.New(lifecyclestore.Config{SQLStore: sqlStore})},
-		portabilityPersistence: &portabilityPersistence{portabilitystore.New(portabilitystore.Config{SQLStore: sqlStore, WorkspaceScope: config.WorkspaceScope})},
+		templatePersistence: &templatePersistence{templatestore.New(templatestore.Config{
+			SQLStore: sqlStore, Clock: config.Clock, WorkspaceID: config.WorkspaceID, DefinitionStore: config.DefinitionStore, OperationStore: config.OperationStore,
+		})},
+		lifecyclePersistence:   &lifecyclePersistence{lifecyclestore.New(lifecyclestore.Config{SQLStore: sqlStore, Archives: config.ArchiveStore})},
+		portabilityPersistence: &portabilityPersistence{portabilitystore.New(portabilitystore.Config{SQLStore: sqlStore, WorkspaceScope: config.WorkspaceScope, Controls: config.ControlStore})},
 	}, nil
 }
 

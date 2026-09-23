@@ -37,7 +37,7 @@ func TestSQLPersistencePreparesAndReopensExactApplication(t *testing.T) {
 		t.Fatalf("application namespace changed: %s != %s", first.Table("_notification_events"), second.Table("_notification_events"))
 	}
 	var migrations int
-	if err := db.QueryRow(`SELECT COUNT(*) FROM _schema_migrations WHERE namespace = ?`, applicationKey(application)).Scan(&migrations); err != nil || migrations != 4 {
+	if err := db.QueryRow(`SELECT COUNT(*) FROM _schema_migrations WHERE namespace = ?`, applicationKey(application)).Scan(&migrations); err != nil || migrations != 1 {
 		t.Fatalf("migration count=%d err=%v", migrations, err)
 	}
 	var columns int
@@ -73,7 +73,7 @@ func TestSQLPersistenceRejectsASecondApplicationInStandaloneDatabase(t *testing.
 		t.Fatalf("second application error=%v", err)
 	}
 	var migrations int
-	if err := db.QueryRow(`SELECT COUNT(*) FROM _schema_migrations`).Scan(&migrations); err != nil || migrations != 4 {
+	if err := db.QueryRow(`SELECT COUNT(*) FROM _schema_migrations`).Scan(&migrations); err != nil || migrations != 1 {
 		t.Fatalf("migration count=%d err=%v", migrations, err)
 	}
 }
@@ -97,6 +97,34 @@ func TestSQLPersistenceRejectsMigrationChecksumDrift(t *testing.T) {
 	}
 	if _, err := persistence.PrepareApplication(t.Context(), application); err == nil || !strings.Contains(err.Error(), "checksum mismatch") {
 		t.Fatalf("error=%v", err)
+	}
+}
+
+func TestSQLPersistenceKeepsFailedMigrationDirtyAcrossRestart(t *testing.T) {
+	db, err := sql.Open("sqlite", "file:"+t.Name()+"?mode=memory&cache=shared")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	db.SetMaxOpenConns(1)
+	persistence, err := NewSQLPersistence(SQLPersistenceOptions{Database: db, Driver: sqlstore.SQLite})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := persistence.ensureLedger(t.Context(), db); err != nil {
+		t.Fatal(err)
+	}
+	broken := sqlstore.SchemaMigration{Version: 99, Name: "broken", Statements: []string{"CREATE TABLE"}}
+	if err := persistence.applyMigration(t.Context(), db, "workspace/app", broken); err == nil {
+		t.Fatal("broken migration unexpectedly succeeded")
+	}
+	var dirty bool
+	if err := db.QueryRowContext(t.Context(), `SELECT dirty FROM _schema_migrations WHERE namespace=? AND version=?`, "workspace/app", 99).Scan(&dirty); err != nil || !dirty {
+		t.Fatalf("dirty=%v err=%v", dirty, err)
+	}
+	repaired := sqlstore.SchemaMigration{Version: 99, Name: "broken", Statements: []string{"CREATE TABLE repaired_probe (id TEXT PRIMARY KEY)"}}
+	if err := persistence.applyMigration(t.Context(), db, "workspace/app", repaired); err == nil || !strings.Contains(err.Error(), "is dirty") {
+		t.Fatalf("dirty restart error=%v", err)
 	}
 }
 

@@ -21,6 +21,10 @@ func TestChannelPlanClaimAndRetryAreFenced(t *testing.T) {
 	if err := store.RetryPlan(t.Context(), claimed, "connector.unavailable", "2026-08-24T01:02:00.000000000Z", "2026-08-24T01:01:01.000000000Z"); err != nil {
 		t.Fatal(err)
 	}
+	var attemptKind, deliveryID, stage, disposition string
+	if err := db.QueryRow(`SELECT attempt_kind, delivery_id, stage, disposition FROM _notification_delivery_attempts WHERE workspace_id = ? AND event_id = ?`, plan.WorkspaceID.String(), plan.EventID).Scan(&attemptKind, &deliveryID, &stage, &disposition); err != nil || attemptKind != "channel" || deliveryID != plan.ID || stage != "channel_dispatch" || disposition != "retry_scheduled" {
+		t.Fatalf("attempt kind=%q delivery=%q stage=%q disposition=%q err=%v", attemptKind, deliveryID, stage, disposition, err)
+	}
 	stored, found, err := store.GetPlan(t.Context(), plan.WorkspaceID, plan.ID)
 	if err != nil || !found || stored.Status != "queued" || stored.AttemptCount != 1 || stored.LeaseOwner != "" {
 		t.Fatalf("stored=%+v found=%v err=%v", stored, found, err)
@@ -47,7 +51,7 @@ func insertPlan(t *testing.T, executor *sql.DB, plan delivery.Plan) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = executor.Exec(`INSERT INTO _notification_channel_plans VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, plan.ID, plan.WorkspaceID.String(), plan.EventID, plan.Channel,
+	_, err = executor.Exec(`INSERT INTO _notification_deliveries VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, plan.ID, plan.WorkspaceID.String(), "delivery", plan.EventID, "", plan.TemplateKey, plan.Channel, plan.DedupeKey,
 		plan.Status, string(raw), plan.AttemptCount, plan.NextAttemptAt, plan.LastErrorCode, plan.OutboxMessageID, plan.LeaseOwner, plan.LeaseExpiresAt, plan.FencingToken, plan.CreatedAt, plan.UpdatedAt)
 	if err != nil {
 		t.Fatal(err)

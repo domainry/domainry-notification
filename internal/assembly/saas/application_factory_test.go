@@ -6,11 +6,11 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"path/filepath"
 	"reflect"
 	"testing"
 
 	actioncontract "github.com/domainry/domainry-foundation/action"
-	capabilitycontracttest "github.com/domainry/domainry-foundation/modulecapability/contracttest"
 	"github.com/domainry/domainry-foundation/modulehttp"
 	"github.com/domainry/domainry-foundation/requestcontext"
 	identitysdk "github.com/domainry/domainry-identity-sdk"
@@ -21,6 +21,7 @@ import (
 	notificationremote "github.com/domainry/domainry-notification-sdk/remote"
 	notificationapplication "github.com/domainry/domainry-notification/internal/application"
 	sqlstore "github.com/domainry/domainry-notification/internal/infrastructure/persistence"
+	"github.com/domainry/domainry-notification/internal/infrastructure/persistence/database/artifactkernel"
 
 	_ "modernc.org/sqlite"
 )
@@ -75,6 +76,16 @@ func (applicationGatewayStub) Dispatch(context.Context, modulehost.DeliveryReque
 
 type remoteGatewayStub struct{ request deliverygateway.Request }
 
+func newTestArtifactContent(t *testing.T) *artifactkernel.ContentFiles {
+	t.Helper()
+	content, err := artifactkernel.NewContentFiles(filepath.Join(t.TempDir(), "artifacts"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = content.Close() })
+	return content
+}
+
 func (g *remoteGatewayStub) Dispatch(_ context.Context, _ notificationsdk.ApplicationRef, request deliverygateway.Request) (deliverygateway.Receipt, error) {
 	g.request = request
 	return deliverygateway.Receipt{RequestID: request.RequestID, MessageID: "remote-message"}, nil
@@ -98,6 +109,7 @@ func TestSQLApplicationFactoryOpensSharedSaaSDomainApplication(t *testing.T) {
 		},
 		WorkerID:        "notification-test",
 		DeliveryGateway: applicationGatewayStub{},
+		ArtifactContent: newTestArtifactContent(t),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -162,7 +174,7 @@ func TestRemotePublicationReconcilesResponseLossWithoutDuplicateIngest(t *testin
 			DefaultLocale: "en",
 			EventTypes:    []contract.NotificationEventType{{Key: "report.completed", Source: "report", Category: "report", DefaultSeverity: "info", MandatoryInApp: true, TemplateKey: "report.completed", DefaultLocale: "en", Locales: map[string]contract.NotificationInboxEventTypeContent{"en": {Title: "Report ready", Body: "Ready"}}, Version: 1, Status: "published"}},
 		},
-		WorkerID: "notification-reconciliation-test", DeliveryGateway: applicationGatewayStub{},
+		WorkerID: "notification-reconciliation-test", DeliveryGateway: applicationGatewayStub{}, ArtifactContent: newTestArtifactContent(t),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -172,21 +184,16 @@ func TestRemotePublicationReconcilesResponseLossWithoutDuplicateIngest(t *testin
 	if err != nil {
 		t.Fatal(err)
 	}
-	capabilitySummary, err := local.CapabilitySummary(t.Context())
-	if err != nil {
-		t.Fatal(err)
-	}
 	handler, err := NewHandler(&serviceAuthenticationStub{}, &bindingResolverStub{binding: local})
 	if err != nil {
 		t.Fatal(err)
 	}
 	handlerTransport := &inMemoryHandlerTransport{handler: handler}
 	transport := &loseFirstPublicationResponseTransport{base: handlerTransport}
-	remoteBinding, err := NewRemoteFactory(notificationremote.NewFactory(notificationremote.Config{BaseURL: "http://notification.test", ServiceCredential: "service", CapabilityContractSHA256: capabilitySummary.Identity.ContractSHA256, HTTPClient: &http.Client{Transport: transport}})).Open(t.Context(), application)
+	remoteBinding, err := NewRemoteFactory(notificationremote.NewFactory(notificationremote.Config{BaseURL: "http://notification.test", ServiceCredential: "service", HTTPClient: &http.Client{Transport: transport}})).Open(t.Context(), application)
 	if err != nil {
 		t.Fatal(err)
 	}
-	capabilitycontracttest.VerifyBinding(t, remoteBinding)
 	provider, ok := remoteBinding.(modulehttp.Provider)
 	if !ok || len(provider.HTTPAdapters()) != 1 || len(provider.HTTPAdapters()[0].Routes()) != 41 {
 		t.Fatalf("SaaS Notification HTTP adapters=%v", provider)

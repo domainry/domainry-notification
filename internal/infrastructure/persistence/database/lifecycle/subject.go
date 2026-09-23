@@ -22,10 +22,21 @@ func (s *Store) PreviewSubject(ctx context.Context, workspaceID, subjectID strin
 	}
 	counts := map[string]int64{}
 	for key, tableColumn := range map[string][2]string{
-		"inbox_items": {"_notification_inbox_items", "recipient_user_id"}, "preferences": {"_notification_recipient_preferences", "recipient_key"},
-		"delivery_reservations": {"_notification_delivery_reservations", "recipient_key"}, "saved_views": {"_notification_inbox_saved_views", "recipient_user_id"},
+		"inbox_items":           {"_notification_inbox_items", "recipient_user_id"},
+		"delivery_reservations": {"_notification_deliveries", "recipient_key"},
 	} {
 		queryValue, args, err := query.NewWorkspaceSelectBuilder(s.Renderer, tableColumn[0], workspaceID).Projections(query.Project(query.CountAll())).Where(query.Equal(tableColumn[1], subjectID)).Build()
+		if err != nil {
+			return nil, err
+		}
+		var count int64
+		if err := s.Database.QueryRowContext(ctx, queryValue, args...).Scan(&count); err != nil {
+			return nil, err
+		}
+		counts[key] = count
+	}
+	for key, kind := range map[string]string{"preferences": "delivery_preference", "saved_views": "saved_view"} {
+		queryValue, args, err := query.NewWorkspaceSelectBuilder(s.Renderer, "_notification_user_settings", workspaceID).Projections(query.Project(query.CountAll())).Where(query.And(query.Equal("recipient_user_id", subjectID), query.Equal("setting_kind", kind))).Build()
 		if err != nil {
 			return nil, err
 		}
@@ -125,7 +136,7 @@ func (s *Store) EraseSubject(ctx context.Context, workspaceID, subjectID string,
 	}); err != nil {
 		return nil, err
 	}
-	if changed["channel_plans"], err = s.rewritePayloads(ctx, tx, "_notification_channel_plans", workspaceID, func(raw []byte) ([]byte, bool, error) {
+	if changed["deliveries"], err = s.rewritePayloads(ctx, tx, "_notification_deliveries", workspaceID, func(raw []byte) ([]byte, bool, error) {
 		var plan delivery.Plan
 		if err := json.Unmarshal(raw, &plan); err != nil {
 			return nil, false, err
@@ -139,7 +150,7 @@ func (s *Store) EraseSubject(ctx context.Context, workspaceID, subjectID string,
 	}); err != nil {
 		return nil, err
 	}
-	for _, update := range []struct{ key, table, column string }{{"alert_groups", "_notification_alert_groups", "recipient_user_id"}, {"delivery_reservations", "_notification_delivery_reservations", "recipient_key"}} {
+	for _, update := range []struct{ key, table, column string }{{"alert_groups", "_notification_alert_groups", "recipient_user_id"}, {"delivery_reservations", "_notification_deliveries", "recipient_key"}} {
 		queryValue, args, buildErr := query.NewWorkspaceUpdateBuilder(s.Renderer, update.table, workspaceID).Set(update.column, anonymous).Where(query.Equal(update.column, subjectID)).Build()
 		if buildErr != nil {
 			return nil, buildErr
@@ -159,12 +170,9 @@ func (s *Store) EraseSubject(ctx context.Context, workspaceID, subjectID string,
 		return nil, err
 	}
 	changed["alert_acknowledgements"], _ = result.RowsAffected()
-	for key, tableColumn := range map[string][2]string{"preferences": {"_notification_recipient_preferences", "recipient_key"}, "saved_views": {"_notification_inbox_saved_views", "recipient_user_id"}, "delegations": {"_notification_inbox_delegations", "owner_user_id"}} {
-		predicate := query.Predicate(query.Equal(tableColumn[1], subjectID))
-		if key == "delegations" {
-			predicate = query.Or(predicate, query.Equal("delegate_user_id", subjectID))
-		}
-		statement, deleteArgs, buildErr := query.NewWorkspaceDeleteBuilder(s.Renderer, tableColumn[0], workspaceID).Where(predicate).Build()
+	for key, kind := range map[string]string{"preferences": "delivery_preference", "saved_views": "saved_view"} {
+		predicate := query.And(query.Equal("recipient_user_id", subjectID), query.Equal("setting_kind", kind))
+		statement, deleteArgs, buildErr := query.NewWorkspaceDeleteBuilder(s.Renderer, "_notification_user_settings", workspaceID).Where(predicate).Build()
 		if buildErr != nil {
 			return nil, buildErr
 		}
@@ -174,6 +182,16 @@ func (s *Store) EraseSubject(ctx context.Context, workspaceID, subjectID string,
 		}
 		changed[key], _ = result.RowsAffected()
 	}
+	delegationPredicate := query.Or(query.Equal("owner_user_id", subjectID), query.Equal("delegate_user_id", subjectID))
+	statement, deleteArgs, err := query.NewWorkspaceDeleteBuilder(s.Renderer, "_notification_inbox_delegations", workspaceID).Where(delegationPredicate).Build()
+	if err != nil {
+		return nil, err
+	}
+	result, err = tx.ExecContext(ctx, statement, deleteArgs...)
+	if err != nil {
+		return nil, err
+	}
+	changed["delegations"], _ = result.RowsAffected()
 	if err := tx.Commit(); err != nil {
 		return nil, err
 	}

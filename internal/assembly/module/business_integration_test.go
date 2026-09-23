@@ -14,6 +14,7 @@ import (
 
 	"github.com/domainry/domainry-foundation/requestcontext"
 	identitysdk "github.com/domainry/domainry-identity-sdk"
+	metadatasdk "github.com/domainry/domainry-metadata-sdk"
 	notificationsdk "github.com/domainry/domainry-notification-sdk"
 	"github.com/domainry/domainry-notification-sdk/contract"
 	"github.com/domainry/domainry-notification-sdk/modulehost"
@@ -333,27 +334,41 @@ func (i *integrationIdentity) reauthorizationRequests() []identitysdk.DecisionRe
 }
 
 type integrationHost struct {
-	database   *sql.DB
-	dialect    modulehost.Dialect
-	clock      *integrationClock
-	scope      *integrationWorkspaceScope
-	queues     integrationQueueScopes
-	identity   *integrationIdentity
-	migrations *integrationMigrationRegistrar
-	notifier   *integrationNotifier
-	gateway    *integrationGateway
-	catalog    modulehost.Catalog
+	database    *sql.DB
+	dialect     modulehost.Dialect
+	clock       *integrationClock
+	scope       *integrationWorkspaceScope
+	queues      integrationQueueScopes
+	identity    *integrationIdentity
+	migrations  *integrationMigrationRegistrar
+	notifier    *integrationNotifier
+	gateway     *integrationGateway
+	catalog     modulehost.Catalog
+	definitions metadatasdk.DefinitionStore
+	operations  modulehost.ManagedOperationStore
+	archives    modulehost.RetentionArchiveStore
 }
 
-func (h *integrationHost) Database() modulehost.Database             { return h.database }
-func (h *integrationHost) Dialect() modulehost.Dialect               { return h.dialect }
-func (h *integrationHost) WorkspaceScope() modulehost.WorkspaceScope { return h.scope }
-func (h *integrationHost) QueueScopes() modulehost.QueueScopeIndex   { return h.queues }
-func (h *integrationHost) Identity() identitysdk.Binding             { return h.identity }
-func (h *integrationHost) Clock() modulehost.Clock                   { return h.clock }
-func (*integrationHost) WorkerID() string                            { return "integration-worker" }
-func (h *integrationHost) Catalog() modulehost.Catalog               { return h.catalog }
-func (h *integrationHost) WorkNotifier() modulehost.WorkNotifier     { return h.notifier }
+func (h *integrationHost) Database() modulehost.Database                { return h.database }
+func (h *integrationHost) Dialect() modulehost.Dialect                  { return h.dialect }
+func (h *integrationHost) WorkspaceScope() modulehost.WorkspaceScope    { return h.scope }
+func (h *integrationHost) QueueScopes() modulehost.QueueScopeIndex      { return h.queues }
+func (h *integrationHost) DefinitionStore() metadatasdk.DefinitionStore { return h.definitions }
+func (h *integrationHost) ManagedOperationStore() modulehost.ManagedOperationStore {
+	return h.operations
+}
+func (h *integrationHost) OperationControlStore() modulehost.OperationControlStore {
+	controls, _ := h.operations.(modulehost.OperationControlStore)
+	return controls
+}
+func (h *integrationHost) RetentionArchiveStore() modulehost.RetentionArchiveStore {
+	return h.archives
+}
+func (h *integrationHost) Identity() identitysdk.Binding         { return h.identity }
+func (h *integrationHost) Clock() modulehost.Clock               { return h.clock }
+func (*integrationHost) WorkerID() string                        { return "integration-worker" }
+func (h *integrationHost) Catalog() modulehost.Catalog           { return h.catalog }
+func (h *integrationHost) WorkNotifier() modulehost.WorkNotifier { return h.notifier }
 func (*integrationHost) RecipientResolver() modulehost.RecipientResolver {
 	return integrationRecipientResolver{}
 }
@@ -415,6 +430,7 @@ func newIntegrationHost(t *testing.T) *integrationHost {
 	return &integrationHost{
 		database: database, dialect: dialect, clock: clock, scope: &integrationWorkspaceScope{expected: "workspace-a"}, queues: integrationQueueScopes{}, identity: identity,
 		migrations: &integrationMigrationRegistrar{database: database}, notifier: &integrationNotifier{}, gateway: &integrationGateway{failuresBefore: 1}, catalog: catalog,
+		definitions: newTestDefinitionStore(), operations: newTestManagedOperationStore(t, database, dialect), archives: newTestRetentionArchiveStore(t, database, dialect),
 	}
 }
 
@@ -445,7 +461,7 @@ func TestPublicBindingRunsDurableNotificationLifecycleWithRetryRecovery(t *testi
 		t.Fatal(err)
 	}
 	authority := notificationsdk.UserAuthority{AccessToken: "full-token"}
-	policy := contract.NotificationDeliveryPolicy{Enabled: true, QuietStart: "22:00", QuietEnd: "08:00", Timezone: "UTC", MaxPerRecipientPerHour: 20, DedupeWindowSeconds: 300, FallbackChannels: []string{"email"}}
+	policy := contract.NotificationDeliveryPolicy{Revision: metadatasdk.DefinitionNoCurrentVersion, Enabled: true, QuietStart: "22:00", QuietEnd: "08:00", Timezone: "UTC", MaxPerRecipientPerHour: 20, DedupeWindowSeconds: 300, FallbackChannels: []string{"email"}}
 	if stored, err := binding.Delivery().SavePolicy(t.Context(), authority, policy); err != nil || stored.UpdatedBy != "user-a" {
 		t.Fatalf("stored policy=%+v err=%v", stored, err)
 	}
@@ -512,7 +528,7 @@ func TestPublicBindingRunsDurableNotificationLifecycleWithRetryRecovery(t *testi
 		t.Fatal("completed plan crossed the gateway more than once")
 	}
 	var reservations int
-	if err := host.database.QueryRow(`SELECT COUNT(*) FROM _notification_delivery_reservations WHERE workspace_id = ?`, "workspace-a").Scan(&reservations); err != nil || reservations != 1 {
+	if err := host.database.QueryRow(`SELECT COUNT(*) FROM _notification_deliveries WHERE workspace_id = ? AND row_kind = 'reservation'`, "workspace-a").Scan(&reservations); err != nil || reservations != 1 {
 		t.Fatalf("delivery reservations=%d err=%v", reservations, err)
 	}
 
@@ -542,7 +558,7 @@ func TestPublicBindingEnforcesTenantWorkspaceAndExactActionAuthorization(t *test
 			t.Fatalf("token %q scope error=%v", token, err)
 		}
 	}
-	policy := contract.NotificationDeliveryPolicy{Enabled: true, QuietStart: "22:00", QuietEnd: "08:00", Timezone: "UTC", MaxPerRecipientPerHour: 20, DedupeWindowSeconds: 300}
+	policy := contract.NotificationDeliveryPolicy{Revision: metadatasdk.DefinitionNoCurrentVersion, Enabled: true, QuietStart: "22:00", QuietEnd: "08:00", Timezone: "UTC", MaxPerRecipientPerHour: 20, DedupeWindowSeconds: 300}
 	_, err = binding.Delivery().SavePolicy(t.Context(), notificationsdk.UserAuthority{AccessToken: "limited-token"}, policy)
 	if !isIntegrationSDKError(err, 403, "notification.permission_denied", false) {
 		t.Fatalf("limited token error=%v", err)
@@ -620,8 +636,8 @@ func TestModuleTransactionsShareHostDatabaseQueueAndMigrationLedger(t *testing.T
 	if _, err := factory.OpenModule(t.Context(), integrationApplication(), host); err != nil {
 		t.Fatal(err)
 	}
-	assertIntegrationCount(t, host.database, `SELECT COUNT(*) FROM _schema_migrations WHERE namespace = 'notification'`, 4)
-	if host.migrations.applied != 4 {
+	assertIntegrationCount(t, host.database, `SELECT COUNT(*) FROM _schema_migrations WHERE namespace = 'notification'`, 1)
+	if host.migrations.applied != 1 {
 		t.Fatalf("Module migrations replayed outside the host ledger: applied=%d", host.migrations.applied)
 	}
 }
@@ -630,7 +646,7 @@ func assertIntegrationPlanState(t *testing.T, database *sql.DB, planID, wantStat
 	t.Helper()
 	var status, code, messageID string
 	var attempts int
-	if err := database.QueryRow(`SELECT status, attempt_count, last_error_code, outbox_message_id FROM _notification_channel_plans WHERE workspace_id = ? AND id = ?`, "workspace-a", planID).Scan(&status, &attempts, &code, &messageID); err != nil {
+	if err := database.QueryRow(`SELECT status, attempt_count, last_error_code, outbox_message_id FROM _notification_deliveries WHERE workspace_id = ? AND row_kind = 'delivery' AND id = ?`, "workspace-a", planID).Scan(&status, &attempts, &code, &messageID); err != nil {
 		t.Fatal(err)
 	}
 	if status != wantStatus || attempts != wantAttempts || code != wantCode || messageID != wantMessageID {

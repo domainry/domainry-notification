@@ -15,8 +15,8 @@ func TestGovernanceMetricsAggregateInboxAndFailureEvidence(t *testing.T) {
 	if err := store.Materialize(t.Context(), event, items); err != nil {
 		t.Fatal(err)
 	}
-	_, err := db.Exec(`INSERT INTO _notification_event_failures (id, workspace_id, event_id, event_type, source, source_event_id, stage, error_code, attempt, disposition, retryable, next_attempt_at, fencing_token, occurred_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		"failure-1", "workspace-1", event.ID, event.EventType, event.Source, event.SourceEventID, "materialization", "backend.notification.failed", 1, "dead_letter", 0, "", 1, event.OccurredAt)
+	_, err := db.Exec(`INSERT INTO _notification_delivery_attempts (id, workspace_id, attempt_kind, event_id, delivery_id, event_type, source, source_event_id, channel, stage, error_code, attempt, disposition, retryable, next_attempt_at, fencing_token, occurred_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		"failure-1", "workspace-1", "event", event.ID, "", event.EventType, event.Source, event.SourceEventID, "", "materialization", "backend.notification.failed", 1, "dead_letter", 0, "", 1, event.OccurredAt)
 	if err != nil {
 		t.Fatal(err)
 	}

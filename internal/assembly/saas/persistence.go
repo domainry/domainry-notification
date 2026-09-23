@@ -10,10 +10,17 @@ import (
 	"sync"
 	"time"
 
+	metadatasdk "github.com/domainry/domainry-metadata-sdk"
+	metadatamodulehost "github.com/domainry/domainry-metadata-sdk/modulehost"
+	metadatamodule "github.com/domainry/domainry-metadata/module"
 	notificationsdk "github.com/domainry/domainry-notification-sdk"
 	"github.com/domainry/domainry-notification-sdk/modulehost"
 	sqlstore "github.com/domainry/domainry-notification/internal/infrastructure/persistence"
+	"github.com/domainry/domainry-notification/internal/infrastructure/persistence/base"
+	"github.com/domainry/domainry-notification/internal/infrastructure/persistence/database/artifactkernel"
 	storemigration "github.com/domainry/domainry-notification/internal/infrastructure/persistence/database/migration"
+	operationstore "github.com/domainry/domainry-notification/internal/infrastructure/persistence/database/operation"
+	retentionarchivestore "github.com/domainry/domainry-notification/internal/infrastructure/persistence/database/retentionarchive"
 	"github.com/domainry/domainry-orm/sqlhost"
 )
 
@@ -108,6 +115,148 @@ func (p *SQLPersistence) PrepareApplication(ctx context.Context, application not
 	return dialect, nil
 }
 
+// PrepareDefinitionStore opens the shared Metadata catalog over the same
+// physical database and migration ledger as Notification. The installation is
+// bound to the one exact SaaS application accepted by PrepareApplication.
+func (p *SQLPersistence) PrepareDefinitionStore(ctx context.Context, application notificationsdk.ApplicationRef, dialect modulehost.Dialect) (metadatasdk.DefinitionStore, error) {
+	if p == nil || p.database == nil || dialect == nil {
+		return nil, fmt.Errorf("Notification SaaS shared Definition persistence is unavailable")
+	}
+	binding, err := metadatamodule.NewFactory().OpenModule(ctx, metadatasdk.ApplicationRef{
+		InstallationID: "notification-saas:" + applicationKey(application),
+	}, notificationMetadataHost{persistence: p, dialect: dialect})
+	if err != nil {
+		return nil, fmt.Errorf("open Notification SaaS shared Definition store: %w", err)
+	}
+	return binding.DefinitionStore(), nil
+}
+
+// PrepareManagedOperationStore installs the canonical shared Operations table
+// for standalone SaaS. Module mode receives this store from the Runtime host.
+func (p *SQLPersistence) PrepareManagedOperationStore(ctx context.Context, dialect modulehost.Dialect) (modulehost.ManagedOperationStore, error) {
+	store, err := p.prepareOperationStore(ctx, dialect)
+	if err != nil {
+		return nil, err
+	}
+	return store, nil
+}
+
+func (p *SQLPersistence) PrepareOperationControlStore(ctx context.Context, dialect modulehost.Dialect) (modulehost.OperationControlStore, error) {
+	store, err := p.prepareOperationStore(ctx, dialect)
+	if err != nil {
+		return nil, err
+	}
+	return store, nil
+}
+
+func (p *SQLPersistence) prepareOperationStore(ctx context.Context, dialect modulehost.Dialect) (*operationstore.Store, error) {
+	if p == nil || p.database == nil || dialect == nil {
+		return nil, fmt.Errorf("Notification SaaS shared Operation persistence is unavailable")
+	}
+	migrations, err := sqlstore.SharedOperationSchemaMigrations(p.driver, p.schema)
+	if err != nil {
+		return nil, err
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	connection, err := p.database.Conn(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("open Notification SaaS shared Operation migration connection: %w", err)
+	}
+	defer connection.Close()
+	release, err := p.engine.Acquire(ctx, connection, "notification-saas-schema")
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = release(context.Background()) }()
+	if err := p.ensureLedger(ctx, connection); err != nil {
+		return nil, err
+	}
+	for _, migration := range migrations {
+		if err := p.applyMigration(ctx, connection, "shared/operations", migration); err != nil {
+			return nil, err
+		}
+	}
+	return operationstore.New(base.NewSQLStore(p.database, dialect))
+}
+
+func (p *SQLPersistence) PrepareRetentionArchiveStore(ctx context.Context, dialect modulehost.Dialect, content retentionarchivestore.Content) (modulehost.RetentionArchiveStore, error) {
+	if p == nil || p.database == nil || dialect == nil || content == nil {
+		return nil, fmt.Errorf("Notification SaaS shared Lifecycle archive persistence is unavailable")
+	}
+	migrations, err := sqlstore.SharedArtifactSchemaMigrations(p.driver, p.schema)
+	if err != nil {
+		return nil, err
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	connection, err := p.database.Conn(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("open Notification SaaS shared Lifecycle migration connection: %w", err)
+	}
+	defer connection.Close()
+	release, err := p.engine.Acquire(ctx, connection, "notification-saas-schema")
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = release(context.Background()) }()
+	if err := p.ensureLedger(ctx, connection); err != nil {
+		return nil, err
+	}
+	for _, migration := range migrations {
+		if err := p.applyMigration(ctx, connection, "shared/artifacts", migration); err != nil {
+			return nil, err
+		}
+	}
+	artifacts, err := artifactkernel.NewStore(p.database, dialect)
+	if err != nil {
+		return nil, err
+	}
+	return retentionarchivestore.New(artifacts, content)
+}
+
+type notificationMetadataHost struct {
+	persistence *SQLPersistence
+	dialect     modulehost.Dialect
+}
+
+func (h notificationMetadataHost) Database() metadatamodulehost.Database {
+	return h.persistence.database
+}
+func (h notificationMetadataHost) Dialect() metadatamodulehost.Dialect { return h.dialect }
+func (h notificationMetadataHost) Migrations() metadatamodulehost.MigrationRegistrar {
+	return h
+}
+func (h notificationMetadataHost) Driver() string { return string(h.persistence.driver) }
+func (h notificationMetadataHost) Schema() string { return h.persistence.schema }
+func (h notificationMetadataHost) ApplyOwnedMigrations(ctx context.Context, owner string, migrations []metadatamodulehost.SchemaMigration) error {
+	if strings.TrimSpace(owner) != "metadata" {
+		return fmt.Errorf("Notification SaaS cannot install shared migration owner %q", owner)
+	}
+	p := h.persistence
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	connection, err := p.database.Conn(ctx)
+	if err != nil {
+		return fmt.Errorf("open Notification SaaS shared migration connection: %w", err)
+	}
+	defer connection.Close()
+	release, err := p.engine.Acquire(ctx, connection, "notification-saas-schema")
+	if err != nil {
+		return err
+	}
+	defer func() { _ = release(context.Background()) }()
+	if err := p.ensureLedger(ctx, connection); err != nil {
+		return err
+	}
+	for _, migration := range migrations {
+		if err := p.applyMigration(ctx, connection, "shared/metadata", migration); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (p *SQLPersistence) ensureApplicationBinding(ctx context.Context, connection migrationQueryer, namespace string) error {
 	renderer, err := p.engine.Renderer(p.schema, "")
 	if err != nil {
@@ -135,42 +284,38 @@ func (p *SQLPersistence) ensureLedger(ctx context.Context, connection sqlhost.Da
 
 func (p *SQLPersistence) applyMigration(ctx context.Context, connection sqlhost.Database, namespace string, migration sqlstore.SchemaMigration) error {
 	checksum := migrationChecksum(migration)
-	existing, found, err := p.migrationChecksum(ctx, connection, namespace, migration.Version)
+	existing, dirty, found, err := p.migrationState(ctx, connection, namespace, migration.Version)
 	if err != nil {
 		return err
 	}
 	if found {
+		if dirty {
+			return fmt.Errorf("Notification SaaS migration %s/%d is dirty", namespace, migration.Version)
+		}
 		if existing != checksum {
 			return fmt.Errorf("Notification SaaS migration %s/%d checksum mismatch", namespace, migration.Version)
 		}
 		return nil
+	}
+	renderer, err := p.engine.Renderer(p.schema, "")
+	if err != nil {
+		return err
+	}
+	ledger := storemigration.NewLedger(renderer)
+	if err := ledger.RecordDirty(ctx, connection, namespace, migration.Version, strings.TrimSpace(migration.Name), checksum); err != nil {
+		return fmt.Errorf("record dirty Notification SaaS migration %s/%d: %w", namespace, migration.Version, err)
 	}
 	tx, err := connection.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("begin Notification SaaS migration %s/%d: %w", namespace, migration.Version, err)
 	}
 	defer func() { _ = tx.Rollback() }()
-	// Recheck inside the transaction so repeated opens never replay DDL.
-	existing, found, err = p.migrationChecksum(ctx, tx, namespace, migration.Version)
-	if err != nil {
-		return err
-	}
-	if found {
-		if existing != checksum {
-			return fmt.Errorf("Notification SaaS migration %s/%d checksum mismatch", namespace, migration.Version)
-		}
-		return tx.Commit()
-	}
 	for _, statement := range migration.Statements {
 		if _, err := tx.ExecContext(ctx, statement); err != nil {
 			return fmt.Errorf("apply Notification SaaS migration %s/%d (%s): %w", namespace, migration.Version, migration.Name, err)
 		}
 	}
-	renderer, err := p.engine.Renderer(p.schema, "")
-	if err != nil {
-		return err
-	}
-	if err := storemigration.NewLedger(renderer).Record(ctx, tx, namespace, migration.Version, checksum, time.Now().UTC().Format(time.RFC3339Nano)); err != nil {
+	if err := ledger.Complete(ctx, tx, namespace, migration.Version, checksum, time.Now().UTC().Format(time.RFC3339Nano)); err != nil {
 		return fmt.Errorf("record Notification SaaS migration %s/%d: %w", namespace, migration.Version, err)
 	}
 	if err := tx.Commit(); err != nil {
@@ -183,12 +328,12 @@ type migrationQueryer interface {
 	QueryRowContext(context.Context, string, ...any) *sql.Row
 }
 
-func (p *SQLPersistence) migrationChecksum(ctx context.Context, queryer migrationQueryer, namespace string, version uint) (string, bool, error) {
+func (p *SQLPersistence) migrationState(ctx context.Context, queryer migrationQueryer, namespace string, version uint) (string, bool, bool, error) {
 	renderer, err := p.engine.Renderer(p.schema, "")
 	if err != nil {
-		return "", false, err
+		return "", false, false, err
 	}
-	return storemigration.NewLedger(renderer).Checksum(ctx, queryer, namespace, version)
+	return storemigration.NewLedger(renderer).State(ctx, queryer, namespace, version)
 }
 
 func migrationChecksum(migration sqlstore.SchemaMigration) string {

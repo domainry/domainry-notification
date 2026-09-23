@@ -1,6 +1,7 @@
 package persistence
 
 import (
+	"github.com/domainry/domainry-notification/internal/infrastructure/persistence/database/artifactkernel"
 	storeschema "github.com/domainry/domainry-notification/internal/infrastructure/persistence/database/schema"
 	ormdialect "github.com/domainry/domainry-orm/dialect"
 )
@@ -54,6 +55,30 @@ func ApplicationSchemaMigrations(driver Driver, schemaName, tablePrefix string, 
 		return nil, err
 	}
 	return storeschema.ApplicationSchemaMigrations(profile, renderer, tablePrefix, scope)
+}
+
+func SharedOperationSchemaMigrations(driver Driver, schemaName string) ([]SchemaMigration, error) {
+	profile, err := schemaProfile(driver)
+	if err != nil {
+		return nil, err
+	}
+	renderer, err := profile.Renderer(schemaName, "")
+	if err != nil {
+		return nil, err
+	}
+	return storeschema.SharedOperationSchemaMigrations(profile, renderer)
+}
+
+func SharedArtifactSchemaMigrations(driver Driver, schemaName string) ([]SchemaMigration, error) {
+	profile, err := schemaProfile(driver)
+	if err != nil {
+		return nil, err
+	}
+	renderer, err := profile.Renderer(schemaName, "")
+	if err != nil {
+		return nil, err
+	}
+	return artifactkernel.SchemaMigrations(renderer)
 }
 
 var SchemaOwnership = storeschema.SchemaOwnership

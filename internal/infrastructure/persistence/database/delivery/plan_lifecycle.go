@@ -2,7 +2,9 @@ package deliverystore
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -58,7 +60,7 @@ func (s *Store) listDuePlansForWorkspace(ctx context.Context, workspaceID notifi
 		query.And(query.Equal("status", "queued"), query.Or(query.Equal("next_attempt_at", ""), query.LessThanOrEqual("next_attempt_at", now))),
 		query.And(query.Equal("status", "processing"), query.LessThanOrEqual("lease_expires_at", now)),
 	)
-	queryValue, args, err := query.NewWorkspaceSelectBuilder(s.Renderer, "_notification_channel_plans", workspaceID.String()).Columns(channelPlanColumns...).Where(due).OrderBy(query.Ascending("created_at")).Limit(limit).Build()
+	queryValue, args, err := query.NewWorkspaceSelectBuilder(s.Renderer, notificationDeliveriesTable, workspaceID.String()).Columns(channelPlanColumns...).Where(query.And(query.Equal("row_kind", deliveryRowKind), due)).OrderBy(query.Ascending("created_at")).Limit(limit).Build()
 	if err != nil {
 		return nil, err
 	}
@@ -85,7 +87,7 @@ func (s *Store) ClaimPlan(ctx context.Context, workspaceID notification.Workspac
 	}
 	ctx = s.workspaceScope.Context(ctx, workspaceID)
 	due := query.Or(query.And(query.Equal("status", "queued"), query.Or(query.Equal("next_attempt_at", ""), query.LessThanOrEqual("next_attempt_at", now))), query.And(query.Equal("status", "processing"), query.LessThanOrEqual("lease_expires_at", now)))
-	queryValue, args, err := query.NewWorkspaceUpdateBuilder(s.Renderer, "_notification_channel_plans", workspaceID.String()).Set("status", "processing").Set("lease_owner", owner).Set("lease_expires_at", expiresAt).SetExpression("fencing_token", query.Add(query.Column("fencing_token"), query.Value(1))).Set("updated_at", now).Where(query.And(query.Equal("id", planID), due)).Build()
+	queryValue, args, err := query.NewWorkspaceUpdateBuilder(s.Renderer, notificationDeliveriesTable, workspaceID.String()).Set("status", "processing").Set("lease_owner", owner).Set("lease_expires_at", expiresAt).SetExpression("fencing_token", query.Add(query.Column("fencing_token"), query.Value(1))).Set("updated_at", now).Where(query.And(query.Equal("id", planID), query.Equal("row_kind", deliveryRowKind), due)).Build()
 	if err != nil {
 		return delivery.Plan{}, false, err
 	}
@@ -122,11 +124,11 @@ func (s *Store) CompletePlan(ctx context.Context, plan delivery.Plan, outboxMess
 }
 
 func (s *Store) RetryPlan(ctx context.Context, plan delivery.Plan, errorCode, nextAttemptAt, updatedAt string) error {
-	return s.transitionPlan(ctx, plan, "queued", 1, errorCode, "", nextAttemptAt, updatedAt)
+	return s.transitionPlanFailure(ctx, plan, "queued", errorCode, nextAttemptAt, updatedAt, "retry_scheduled", 1)
 }
 
 func (s *Store) FailPlan(ctx context.Context, plan delivery.Plan, errorCode, updatedAt string) error {
-	return s.transitionPlan(ctx, plan, "failed", 1, errorCode, "", "", updatedAt)
+	return s.transitionPlanFailure(ctx, plan, "failed", errorCode, "", updatedAt, "dead_letter", 0)
 }
 
 func (s *Store) CompletePlanBatch(ctx context.Context, plans []delivery.Plan, outboxMessageID, updatedAt string) error {
@@ -157,12 +159,32 @@ func (s *Store) transitionPlan(ctx context.Context, plan delivery.Plan, status s
 	return s.transitionPlanWith(s.workspaceScope.Context(ctx, plan.WorkspaceID), s.Database, plan, status, attemptIncrement, errorCode, outboxMessageID, nextAttemptAt, updatedAt)
 }
 
+func (s *Store) transitionPlanFailure(ctx context.Context, plan delivery.Plan, status, errorCode, nextAttemptAt, updatedAt, disposition string, retryable int) error {
+	ctx = s.workspaceScope.Context(ctx, plan.WorkspaceID)
+	tx, err := s.Database.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelSerializable})
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if err := s.transitionPlanWith(ctx, tx, plan, status, 1, errorCode, "", nextAttemptAt, updatedAt); err != nil {
+		return err
+	}
+	columns := []string{"id", "workspace_id", "attempt_kind", "event_id", "delivery_id", "event_type", "source", "source_event_id", "channel", "stage", "error_code", "attempt", "disposition", "retryable", "next_attempt_at", "fencing_token", "occurred_at"}
+	_, err = s.WorkspaceInsert(ctx, tx, plan.WorkspaceID.String(), "_notification_delivery_attempts", columns,
+		deliveryAttemptID(plan), plan.WorkspaceID.String(), "channel", plan.EventID, plan.ID, "", "", "", plan.Channel, "channel_dispatch",
+		strings.TrimSpace(errorCode), plan.AttemptCount+1, disposition, retryable, strings.TrimSpace(nextAttemptAt), plan.FencingToken, strings.TrimSpace(updatedAt))
+	if err != nil {
+		return fmt.Errorf("record notification channel delivery attempt: %w", err)
+	}
+	return tx.Commit()
+}
+
 func (s *Store) transitionPlanWith(ctx context.Context, executor sqlhost.Executor, plan delivery.Plan, status string, attemptIncrement int, errorCode, outboxMessageID, nextAttemptAt, updatedAt string) error {
 	errorCode, outboxMessageID, nextAttemptAt, updatedAt = strings.TrimSpace(errorCode), strings.TrimSpace(outboxMessageID), strings.TrimSpace(nextAttemptAt), strings.TrimSpace(updatedAt)
 	if errorCode != "" && !failureCodePattern.MatchString(errorCode) {
 		return fmt.Errorf("notification channel plan error code is invalid")
 	}
-	queryValue, args, err := query.NewWorkspaceUpdateBuilder(s.Renderer, "_notification_channel_plans", plan.WorkspaceID.String()).Set("status", status).SetExpression("attempt_count", query.Add(query.Column("attempt_count"), query.Value(attemptIncrement))).Set("next_attempt_at", nextAttemptAt).Set("last_error_code", errorCode).Set("outbox_message_id", outboxMessageID).Set("lease_owner", "").Set("lease_expires_at", "").Set("updated_at", updatedAt).Where(query.And(query.Equal("id", plan.ID), query.Equal("status", "processing"), query.Equal("lease_owner", plan.LeaseOwner), query.Equal("fencing_token", plan.FencingToken))).Build()
+	queryValue, args, err := query.NewWorkspaceUpdateBuilder(s.Renderer, notificationDeliveriesTable, plan.WorkspaceID.String()).Set("status", status).SetExpression("attempt_count", query.Add(query.Column("attempt_count"), query.Value(attemptIncrement))).Set("next_attempt_at", nextAttemptAt).Set("last_error_code", errorCode).Set("outbox_message_id", outboxMessageID).Set("lease_owner", "").Set("lease_expires_at", "").Set("updated_at", updatedAt).Where(query.And(query.Equal("id", plan.ID), query.Equal("row_kind", deliveryRowKind), query.Equal("status", "processing"), query.Equal("lease_owner", plan.LeaseOwner), query.Equal("fencing_token", plan.FencingToken))).Build()
 	if err != nil {
 		return err
 	}
@@ -181,7 +203,7 @@ func (s *Store) transitionPlanWith(ctx context.Context, executor sqlhost.Executo
 }
 
 func (s *Store) planByID(ctx context.Context, workspaceID notification.WorkspaceID, planID string) (delivery.Plan, bool, error) {
-	queryValue, args, err := query.NewWorkspaceSelectBuilder(s.Renderer, "_notification_channel_plans", workspaceID.String()).Columns(channelPlanColumns...).Where(query.Equal("id", planID)).Build()
+	queryValue, args, err := query.NewWorkspaceSelectBuilder(s.Renderer, notificationDeliveriesTable, workspaceID.String()).Columns(channelPlanColumns...).Where(query.And(query.Equal("id", planID), query.Equal("row_kind", deliveryRowKind))).Build()
 	if err != nil {
 		return delivery.Plan{}, false, err
 	}
@@ -208,4 +230,9 @@ func scanPlan(row scanner) (delivery.Plan, error) {
 	plan.LeaseOwner, plan.LeaseExpiresAt, plan.FencingToken = leaseOwner, leaseExpiresAt, fencingToken
 	plan.CreatedAt, plan.UpdatedAt = createdAt, updatedAt
 	return plan, nil
+}
+
+func deliveryAttemptID(plan delivery.Plan) string {
+	digest := sha256.Sum256([]byte(strings.Join([]string{plan.WorkspaceID.String(), plan.EventID, plan.ID, fmt.Sprint(plan.FencingToken), "channel_attempt"}, "\x00")))
+	return "notification_attempt_" + hex.EncodeToString(digest[:16])
 }

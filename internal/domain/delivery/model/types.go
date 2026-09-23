@@ -6,6 +6,7 @@ import notification "github.com/domainry/domainry-notification/internal/domain/n
 // preferences are workspace-scoped overrides; a future workspace policy would
 // require an explicit workspace identity and schema migration.
 type Policy struct {
+	Revision               string   `json:"revision,omitempty"`
 	Enabled                bool     `json:"enabled"`
 	QuietHoursEnabled      bool     `json:"quiet_hours_enabled"`
 	QuietStart             string   `json:"quiet_start"`

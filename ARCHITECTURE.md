@@ -67,14 +67,22 @@ transaction or worker packages.
 
 ## Schema tenancy
 
-All notification-owned durable tables are workspace scoped. Template records,
-versions, publication requests, publication locks, and the default delivery
-policy are user-reachable workspace resources. Notification accepts only an
-exact same-key Identity `data_scope=all`, which deliberately adds no row-level
-data predicate; every durable access still uses the bound workspace predicate.
-Events, failures, channel plans, recipient preferences, delivery reservations,
-inbox items, alert groups, delegations, saved views, retention archives, and
-migration controls use the same workspace boundary.
+All seven notification-owned durable tables are workspace scoped: events,
+deliveries, delivery attempts, inbox items, alert groups, delegations and typed
+user settings. Notification accepts only an exact same-key Identity
+`data_scope=all`, which deliberately adds no row-level data predicate; every
+durable access still uses the bound workspace predicate. Templates and delivery
+policies use shared Definitions, publication requests use shared Operations,
+cutover state uses shared Operation Controls, and retention payloads use the
+Lifecycle ArchiveStore. Embedded mode borrows that Artifact-backed port from
+the host. Standalone SaaS installs the same canonical `_artifacts` and
+`_artifact_bindings` tables through its one migration ledger and writes the
+immutable JSON payload to the private BlobStore configured by
+`NOTIFICATION_ARTIFACT_STORAGE_PATH`; SQL contains only the opaque storage
+reference, hash, size, state, metadata and job/source bindings. There is no
+standalone `_lifecycle_archive_entries` or database payload column. None of
+those shared records appears as a Notification-owned table or in its portable
+bundle.
 
 `module.SchemaOwnership` is the public authoritative machine-readable inventory;
 its implementation delegates to the internal SQL adapter.

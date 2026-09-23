@@ -11,7 +11,7 @@ import (
 )
 
 func TestConfigurationRequiresStandaloneSaaSDependencies(t *testing.T) {
-	for _, key := range []string{"NOTIFICATION_DATABASE_DRIVER", "NOTIFICATION_DATABASE_DSN", "NOTIFICATION_DELIVERY_GATEWAY_URL", "NOTIFICATION_DELIVERY_GATEWAY_SERVICE_CREDENTIAL", "NOTIFICATION_WORKER_ID", "NOTIFICATION_CATALOG_FILE"} {
+	for _, key := range []string{"NOTIFICATION_DATABASE_DRIVER", "NOTIFICATION_DATABASE_DSN", "NOTIFICATION_ARTIFACT_STORAGE_PATH", "NOTIFICATION_DELIVERY_GATEWAY_URL", "NOTIFICATION_DELIVERY_GATEWAY_SERVICE_CREDENTIAL", "NOTIFICATION_WORKER_ID", "NOTIFICATION_CATALOG_FILE"} {
 		t.Setenv(key, "")
 	}
 	if _, err := configurationFromEnvironment(); err == nil {
@@ -70,6 +70,7 @@ func TestConfigurationSelectsPostgresAndLoadsCatalog(t *testing.T) {
 	}
 	t.Setenv("NOTIFICATION_DATABASE_DRIVER", "postgres")
 	t.Setenv("NOTIFICATION_DATABASE_DSN", "postgres://notification@example/notification")
+	t.Setenv("NOTIFICATION_ARTIFACT_STORAGE_PATH", filepath.Join(t.TempDir(), "artifacts"))
 	t.Setenv("NOTIFICATION_DELIVERY_GATEWAY_URL", "https://runtime.example")
 	t.Setenv("NOTIFICATION_DELIVERY_GATEWAY_SERVICE_CREDENTIAL", "credential")
 	t.Setenv("NOTIFICATION_WORKER_ID", "worker")
@@ -96,6 +97,7 @@ func TestConfigurationDefaultsStandaloneSQLiteToRuntimeDatabase(t *testing.T) {
 		t.Setenv(key, "")
 	}
 	t.Setenv("NOTIFICATION_DELIVERY_GATEWAY_URL", "https://runtime.example")
+	t.Setenv("NOTIFICATION_ARTIFACT_STORAGE_PATH", filepath.Join(t.TempDir(), "artifacts"))
 	t.Setenv("NOTIFICATION_DELIVERY_GATEWAY_SERVICE_CREDENTIAL", "credential")
 	t.Setenv("NOTIFICATION_WORKER_ID", "worker")
 	t.Setenv("NOTIFICATION_CATALOG_FILE", catalogFile)

@@ -2,17 +2,14 @@ package saas
 
 import (
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
-	"strings"
 	"sync"
 	"testing"
 	"time"
 
-	"github.com/domainry/domainry-foundation/modulecapability"
 	identitysdk "github.com/domainry/domainry-identity-sdk"
 	notificationsdk "github.com/domainry/domainry-notification-sdk"
 	"github.com/domainry/domainry-notification-sdk/contract"
@@ -79,10 +76,11 @@ func TestModuleAndRemoteSaaSPreserveBusinessAndCapabilitySemantics(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
+	moduleDefinitions, moduleOperations, moduleArchives := prepareCutoverSharedStores(t, moduleDB, moduleDialect, application)
 	moduleHost := &cutoverModuleHost{
 		saasApplicationHost: &saasApplicationHost{
 			application: application, database: moduleDB, dialect: moduleDialect, identity: applicationIdentityStub{}, catalog: catalog, clock: parityClock{value: now}, workerID: "module-worker",
-			notifier: discardWorkNotifier{}, projection: identityRecipientResolver{application: application, projection: projectionStub{}}, audiences: snapshotOnlyAudienceResolver{}, gateway: applicationGatewayStub{},
+			notifier: discardWorkNotifier{}, projection: identityRecipientResolver{application: application, projection: projectionStub{}}, audiences: snapshotOnlyAudienceResolver{}, gateway: applicationGatewayStub{}, definitions: moduleDefinitions, operations: moduleOperations, controls: moduleOperations.(modulehost.OperationControlStore), archives: moduleArchives,
 		},
 		migrations: &cutoverMigrationRegistrar{database: moduleDB},
 	}
@@ -96,7 +94,7 @@ func TestModuleAndRemoteSaaSPreserveBusinessAndCapabilitySemantics(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	saasFactory, err := NewSQLApplicationFactory(SQLApplicationFactoryOptions{Persistence: persistence, Catalog: catalog, Clock: parityClock{value: now}, WorkerID: "saas-worker", DeliveryGateway: applicationGatewayStub{}})
+	saasFactory, err := NewSQLApplicationFactory(SQLApplicationFactoryOptions{Persistence: persistence, Catalog: catalog, Clock: parityClock{value: now}, WorkerID: "saas-worker", DeliveryGateway: applicationGatewayStub{}, ArtifactContent: newTestArtifactContent(t)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -109,13 +107,8 @@ func TestModuleAndRemoteSaaSPreserveBusinessAndCapabilitySemantics(t *testing.T)
 		t.Fatal(err)
 	}
 	transport := &inMemoryHandlerTransport{handler: handler}
-	moduleCapability := moduleBinding.(modulecapability.Binding)
-	moduleSummary, err := moduleCapability.CapabilitySummary(t.Context())
-	if err != nil {
-		t.Fatal(err)
-	}
 	remoteBinding, err := NewRemoteFactory(notificationremote.NewFactory(notificationremote.Config{
-		BaseURL: "http://notification.test", ServiceCredential: "service", CapabilityContractSHA256: moduleSummary.Identity.ContractSHA256,
+		BaseURL: "http://notification.test", ServiceCredential: "service",
 		HTTPClient: &http.Client{Transport: transport}, Retry: notificationremote.RetryPolicy{MaxAttempts: 1},
 	})).Open(t.Context(), application)
 	if err != nil {
@@ -149,38 +142,6 @@ func TestModuleAndRemoteSaaSPreserveBusinessAndCapabilitySemantics(t *testing.T)
 	_, _, moduleErr = moduleBinding.Publisher().PublishIntent(t.Context(), crossWorkspace)
 	_, _, remoteErr = remoteBinding.Publisher().PublishIntent(t.Context(), crossWorkspace)
 	assertSaaSIntegrationErrorParity(t, moduleErr, remoteErr, http.StatusForbidden, "notification.application_scope_mismatch", false)
-
-	remoteCapability, ok := remoteBinding.(modulecapability.Binding)
-	if !ok {
-		t.Fatal("Remote SaaS binding did not expose capability contract")
-	}
-	remoteSummary, err := remoteCapability.CapabilitySummary(t.Context())
-	if err != nil || !reflect.DeepEqual(moduleSummary, remoteSummary) {
-		t.Fatalf("capability summaries module=%+v remote=%+v err=%v", moduleSummary, remoteSummary, err)
-	}
-	for _, category := range moduleSummary.Categories {
-		direct, directErr := moduleCapability.CapabilityCategory(t.Context(), category.Key)
-		remote, remoteErr := remoteCapability.CapabilityCategory(t.Context(), category.Key)
-		if directErr != nil || remoteErr != nil || !reflect.DeepEqual(direct, remote) {
-			t.Fatalf("capability category %q direct=%+v err=%v remote=%+v err=%v", category.Key, direct, directErr, remote, remoteErr)
-		}
-	}
-	invalidTemplate, _ := json.Marshal(contract.NotificationTemplate{Key: "Invalid Key", Status: "draft"})
-	validation := modulecapability.ValidationRequest{
-		ContractVersion: modulecapability.ValidationContractVersion, ModuleKey: "notification", CategoryKey: "notification.templates", ContractSHA256: moduleSummary.Identity.ContractSHA256,
-		Kind: "notification.template", Candidate: modulecapability.AuthoringFragment{Collection: "notification_templates", Key: "invalid", Value: invalidTemplate},
-	}
-	directValidation, directErr := moduleCapability.ValidateCapabilityCandidate(t.Context(), validation)
-	remoteValidation, remoteErr := remoteCapability.ValidateCapabilityCandidate(t.Context(), validation)
-	if directErr != nil || remoteErr != nil || !reflect.DeepEqual(directValidation, remoteValidation) || len(remoteValidation.Diagnostics) == 0 {
-		t.Fatalf("validation parity direct=%+v err=%v remote=%+v err=%v", directValidation, directErr, remoteValidation, remoteErr)
-	}
-	_, err = notificationremote.NewFactory(notificationremote.Config{
-		BaseURL: "http://notification.test", ServiceCredential: "service", CapabilityContractSHA256: strings.Repeat("0", 64), HTTPClient: &http.Client{Transport: transport},
-	}).Open(t.Context(), application)
-	if err == nil || !strings.Contains(err.Error(), "notification.capability_contract_mismatch") {
-		t.Fatalf("Remote SaaS accepted a stale capability digest: %v", err)
-	}
 
 	transport.fail("/notification/v1/events:publish", errors.New("transport disconnected"))
 	uncommitted := intent

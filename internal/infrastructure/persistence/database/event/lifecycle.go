@@ -202,8 +202,8 @@ func (s *Store) transitionFailure(ctx context.Context, event inbox.Event, status
 		Stage: stage, ErrorCode: errorCode, Attempt: event.AttemptCount + 1, Disposition: disposition, Retryable: retryable == 1,
 		NextAttemptAt: strings.TrimSpace(nextAttemptAt), FencingToken: event.FencingToken, OccurredAt: strings.TrimSpace(updatedAt),
 	}
-	columns := []string{"id", "workspace_id", "event_id", "event_type", "source", "source_event_id", "stage", "error_code", "attempt", "disposition", "retryable", "next_attempt_at", "fencing_token", "occurred_at"}
-	_, err = s.WorkspaceInsert(ctx, tx, failure.WorkspaceID.String(), "_notification_event_failures", columns, failure.ID, failure.WorkspaceID.String(), failure.EventID, failure.EventType, failure.Source, failure.SourceEventID, failure.Stage, failure.ErrorCode, failure.Attempt, failure.Disposition, retryable, failure.NextAttemptAt, failure.FencingToken, failure.OccurredAt)
+	columns := []string{"id", "workspace_id", "attempt_kind", "event_id", "delivery_id", "event_type", "source", "source_event_id", "channel", "stage", "error_code", "attempt", "disposition", "retryable", "next_attempt_at", "fencing_token", "occurred_at"}
+	_, err = s.WorkspaceInsert(ctx, tx, failure.WorkspaceID.String(), "_notification_delivery_attempts", columns, failure.ID, failure.WorkspaceID.String(), "event", failure.EventID, "", failure.EventType, failure.Source, failure.SourceEventID, "", failure.Stage, failure.ErrorCode, failure.Attempt, failure.Disposition, retryable, failure.NextAttemptAt, failure.FencingToken, failure.OccurredAt)
 	if err != nil {
 		return fmt.Errorf("record notification event failure: %w", err)
 	}

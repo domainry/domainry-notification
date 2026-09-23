@@ -14,7 +14,6 @@ import (
 	identitysdk "github.com/domainry/domainry-identity-sdk"
 	notificationsdk "github.com/domainry/domainry-notification-sdk"
 	"github.com/domainry/domainry-notification-sdk/contract"
-	notificationcapability "github.com/domainry/domainry-notification/capability"
 	notificationapplication "github.com/domainry/domainry-notification/internal/application"
 )
 
@@ -32,15 +31,11 @@ func (s *adapter) Routes() []modulehttp.Route {
 	return append([]modulehttp.Route(nil), s.routes...)
 }
 
-func (s *adapter) OpenAPIOperations() map[string]map[string]any {
-	return notificationcapability.OpenAPIOperations(s.routes)
-}
-
 func NewAdapter(binding notificationsdk.Binding) (modulehttp.Adapter, error) {
 	if binding == nil || binding.Templates() == nil {
 		return nil, errors.New("Notification template binding is unavailable")
 	}
-	routes, err := notificationcapability.ProductRoutes()
+	routes, err := notificationRoutes()
 	if err != nil {
 		return nil, err
 	}
@@ -71,8 +66,6 @@ func NewAdapter(binding notificationsdk.Binding) (modulehttp.Adapter, error) {
 	}
 	return s, nil
 }
-
-var _ modulehttp.OpenAPIProvider = (*adapter)(nil)
 
 func (s *adapter) actionHandlers() map[string]http.HandlerFunc {
 	return map[string]http.HandlerFunc{
@@ -227,7 +220,7 @@ func (s *adapter) rejectPublication(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	var input notificationcapability.TemplateReviewInput
+	var input templateReviewInput
 	if !decode(w, r, &input) {
 		return
 	}
@@ -255,7 +248,7 @@ func (s *adapter) previewDraft(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	var input notificationcapability.TemplatePreviewDraftInput
+	var input templatePreviewDraftInput
 	if !decode(w, r, &input) {
 		return
 	}
@@ -271,7 +264,7 @@ func (s *adapter) saveDraft(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	var input notificationcapability.TemplateDraftInput
+	var input templateDraftInput
 	if !decode(w, r, &input) {
 		return
 	}
@@ -287,7 +280,7 @@ func (s *adapter) requestPublication(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	var input notificationcapability.TemplatePublicationInput
+	var input templatePublicationInput
 	if !decode(w, r, &input) {
 		return
 	}
@@ -303,7 +296,7 @@ func (s *adapter) disable(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	var input notificationcapability.TemplateLifecycleInput
+	var input templateLifecycleInput
 	if !decode(w, r, &input) {
 		return
 	}
@@ -319,7 +312,7 @@ func (s *adapter) preview(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	var input notificationcapability.TemplatePreviewInput
+	var input templatePreviewInput
 	if !decode(w, r, &input) {
 		return
 	}
@@ -347,7 +340,7 @@ func (s *adapter) restoreVersion(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	var input notificationcapability.TemplateLifecycleInput
+	var input templateLifecycleInput
 	if !decode(w, r, &input) {
 		return
 	}

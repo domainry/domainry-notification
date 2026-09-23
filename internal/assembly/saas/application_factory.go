@@ -6,8 +6,10 @@ import (
 	"strings"
 	"time"
 
+	sharedartifact "github.com/domainry/domainry-foundation/artifact"
 	"github.com/domainry/domainry-foundation/requestcontext"
 	identitysdk "github.com/domainry/domainry-identity-sdk"
+	metadatasdk "github.com/domainry/domainry-metadata-sdk"
 	notificationsdk "github.com/domainry/domainry-notification-sdk"
 	"github.com/domainry/domainry-notification-sdk/contract"
 	"github.com/domainry/domainry-notification-sdk/deliverygateway"
@@ -22,6 +24,11 @@ type SQLApplicationFactory struct {
 	options     SQLApplicationFactoryOptions
 }
 
+type ArtifactContent interface {
+	sharedartifact.ContentStore
+	sharedartifact.ContentWriter
+}
+
 type SQLApplicationFactoryOptions struct {
 	Persistence               *SQLPersistence
 	Catalog                   modulehost.Catalog
@@ -33,6 +40,11 @@ type SQLApplicationFactoryOptions struct {
 	RemoteDeliveryGateway     deliverygateway.Gateway
 	DeliveryMetrics           modulehost.DeliveryMetrics
 	ProviderTemplateValidator modulehost.ProviderTemplateValidator
+	DefinitionStore           metadatasdk.DefinitionStore
+	ManagedOperationStore     modulehost.ManagedOperationStore
+	OperationControlStore     modulehost.OperationControlStore
+	RetentionArchiveStore     modulehost.RetentionArchiveStore
+	ArtifactContent           ArtifactContent
 }
 
 func NewSQLApplicationFactory(options SQLApplicationFactoryOptions) (*SQLApplicationFactory, error) {
@@ -47,6 +59,9 @@ func NewSQLApplicationFactory(options SQLApplicationFactoryOptions) (*SQLApplica
 	}
 	if options.DeliveryGateway != nil && options.RemoteDeliveryGateway != nil {
 		return nil, fmt.Errorf("Notification SaaS Delivery Gateway configuration is ambiguous")
+	}
+	if options.RetentionArchiveStore == nil && options.ArtifactContent == nil {
+		return nil, fmt.Errorf("Notification SaaS shared Artifact content storage is required")
 	}
 	if options.Clock == nil {
 		options.Clock = wallClock{}
@@ -74,6 +89,38 @@ func (f *SQLApplicationFactory) OpenSaaS(ctx context.Context, application notifi
 	if err != nil {
 		return nil, err
 	}
+	definitions := f.options.DefinitionStore
+	if definitions == nil {
+		definitions, err = f.persistence.PrepareDefinitionStore(ctx, application, dialect)
+		if err != nil {
+			return nil, err
+		}
+	}
+	operations := f.options.ManagedOperationStore
+	if operations == nil {
+		operations, err = f.persistence.PrepareManagedOperationStore(ctx, dialect)
+		if err != nil {
+			return nil, err
+		}
+	}
+	controls := f.options.OperationControlStore
+	if controls == nil {
+		if shared, ok := operations.(modulehost.OperationControlStore); ok {
+			controls = shared
+		} else {
+			controls, err = f.persistence.PrepareOperationControlStore(ctx, dialect)
+			if err != nil {
+				return nil, err
+			}
+		}
+	}
+	archives := f.options.RetentionArchiveStore
+	if archives == nil {
+		archives, err = f.persistence.PrepareRetentionArchiveStore(ctx, dialect, f.options.ArtifactContent)
+		if err != nil {
+			return nil, err
+		}
+	}
 	gateway := f.options.DeliveryGateway
 	if gateway == nil {
 		gateway = remoteDeliveryGatewayAdapter{application: application, gateway: f.options.RemoteDeliveryGateway}
@@ -92,6 +139,10 @@ func (f *SQLApplicationFactory) OpenSaaS(ctx context.Context, application notifi
 		gateway:     gateway,
 		metrics:     f.options.DeliveryMetrics,
 		validator:   f.options.ProviderTemplateValidator,
+		definitions: definitions,
+		operations:  operations,
+		controls:    controls,
+		archives:    archives,
 	}
 	return module.NewFactory(module.Options{}).OpenSaaSApplication(ctx, application, host)
 }
@@ -117,6 +168,10 @@ type saasApplicationHost struct {
 	gateway     modulehost.DeliveryGateway
 	metrics     modulehost.DeliveryMetrics
 	validator   modulehost.ProviderTemplateValidator
+	definitions metadatasdk.DefinitionStore
+	operations  modulehost.ManagedOperationStore
+	controls    modulehost.OperationControlStore
+	archives    modulehost.RetentionArchiveStore
 }
 
 func (h *saasApplicationHost) Database() modulehost.Database { return h.database }
@@ -126,6 +181,16 @@ func (h *saasApplicationHost) WorkspaceScope() modulehost.WorkspaceScope {
 }
 func (h *saasApplicationHost) QueueScopes() modulehost.QueueScopeIndex {
 	return exactQueueScope{workspaceID: h.application.WorkspaceID}
+}
+func (h *saasApplicationHost) DefinitionStore() metadatasdk.DefinitionStore { return h.definitions }
+func (h *saasApplicationHost) ManagedOperationStore() modulehost.ManagedOperationStore {
+	return h.operations
+}
+func (h *saasApplicationHost) OperationControlStore() modulehost.OperationControlStore {
+	return h.controls
+}
+func (h *saasApplicationHost) RetentionArchiveStore() modulehost.RetentionArchiveStore {
+	return h.archives
 }
 func (h *saasApplicationHost) Identity() identitysdk.Binding                   { return h.identity }
 func (h *saasApplicationHost) Clock() modulehost.Clock                         { return h.clock }

@@ -4,11 +4,12 @@ import (
 	"errors"
 	"testing"
 
+	metadatasdk "github.com/domainry/domainry-metadata-sdk"
 	"github.com/domainry/domainry-notification/internal/domain/template/service"
 )
 
 func TestTemplateRecordDraftPublishVersionAndDisableLifecycle(t *testing.T) {
-	_, store := migratedStore(t)
+	database, store := migratedStore(t)
 	draft := template.Template{Key: "workflow.failed", Name: "Workflow failed", Channel: "email", Status: "draft", Version: 1,
 		DefaultLocale: "en", Locales: map[string]template.Content{"en": {Subject: "Failed", Text: "Run failed"}}}
 	record, err := store.SaveDraft(t.Context(), draft, "", "admin-1")
@@ -32,6 +33,27 @@ func TestTemplateRecordDraftPublishVersionAndDisableLifecycle(t *testing.T) {
 	disabled, err := store.Disable(t.Context(), draft.Key, published.UpdatedAt, "admin-2")
 	if err != nil || disabled.Status != "disabled" {
 		t.Fatalf("disabled=%+v err=%v", disabled, err)
+	}
+	version, found, err := store.GetVersion(t.Context(), draft.Key, 1)
+	if err != nil || !found || version.ContentHash != published.Published.ContentHash {
+		t.Fatalf("version=%+v found=%v err=%v", version, found, err)
+	}
+	var privateTables int
+	if err := database.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name IN ('_notification_templates', '_notification_template_versions')`).Scan(&privateTables); err != nil || privateTables != 0 {
+		t.Fatalf("private template tables=%d err=%v", privateTables, err)
+	}
+	var roots, publishedVersions, history int
+	if err := database.QueryRow(`SELECT COUNT(*) FROM _definitions WHERE owner = ? AND kind = ?`, metadatasdk.DefinitionOwnerNotification, "notification_template").Scan(&roots); err != nil {
+		t.Fatal(err)
+	}
+	if err := database.QueryRow(`SELECT COUNT(*) FROM _definitions WHERE owner = ? AND kind = ?`, metadatasdk.DefinitionOwnerNotification, "notification_template_version").Scan(&publishedVersions); err != nil {
+		t.Fatal(err)
+	}
+	if err := database.QueryRow(`SELECT COUNT(*) FROM _definition_versions WHERE owner = ?`, metadatasdk.DefinitionOwnerNotification).Scan(&history); err != nil {
+		t.Fatal(err)
+	}
+	if roots != 1 || publishedVersions != 1 || history != 4 {
+		t.Fatalf("shared definitions roots=%d published_versions=%d history=%d", roots, publishedVersions, history)
 	}
 }
 

@@ -6,49 +6,45 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
+	"time"
 
-	"github.com/domainry/domainry-notification/internal/domain/template/service"
-	"github.com/domainry/domainry-orm/query"
-	"github.com/domainry/domainry-orm/sqlhost"
+	metadatamodulehost "github.com/domainry/domainry-metadata-sdk/modulehost"
+	notificationmodulehost "github.com/domainry/domainry-notification-sdk/modulehost"
+	template "github.com/domainry/domainry-notification/internal/domain/template/service"
+)
+
+const (
+	templatePublicationOperationOwner = "notification"
+	templatePublicationOperationKind  = "template_publication"
+	templatePublicationActionKey      = "notification.templates.publish"
+	templatePublicationResourceType   = "notification_template"
 )
 
 var _ template.Store = (*Store)(nil)
 var _ template.RevisionStore = (*Store)(nil)
 
-var publicationRequestColumns = []string{
-	"id", "template_key", "snapshot_json", "candidate_hash", "draft_updated_at", "status", "scheduled_for", "requested_by", "requested_at",
-	"reviewed_by", "reviewed_at", "published_version", "failure", "lease_owner", "lease_expires_at", "fencing_token", "updated_at",
-}
-var publicationRequestInsertColumns = append(append([]string(nil), publicationRequestColumns...), "workspace_id")
-
 func (s *Store) ListPublicationRequests(ctx context.Context, templateKey string) ([]template.PublicationRequest, error) {
-	predicates := []query.Predicate{}
-	if templateKey = strings.TrimSpace(templateKey); templateKey != "" {
-		predicates = append(predicates, query.Equal("template_key", templateKey))
+	if s.operations == nil {
+		return nil, fmt.Errorf("notification shared managed Operation store is unavailable")
 	}
-	selectBuilder := query.NewWorkspaceSelectBuilder(s.Renderer, "_notification_template_publication_requests", s.workspaceID.String()).Columns(publicationRequestColumns...).OrderBy(query.Descending("requested_at"))
-	if len(predicates) != 0 {
-		selectBuilder.Where(query.And(predicates...))
-	}
-	queryValue, args, err := selectBuilder.Build()
+	operations, err := s.operations.List(ctx, notificationmodulehost.ManagedOperationQuery{
+		Scope: notificationmodulehost.OperationScope{WorkspaceID: s.workspaceID.String()}, Owner: templatePublicationOperationOwner,
+		Kind: templatePublicationOperationKind, ResourceID: strings.TrimSpace(templateKey), Limit: 1000,
+	})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("list notification publication Operations: %w", err)
 	}
-	rows, err := s.Database.QueryContext(ctx, queryValue, args...)
-	if err != nil {
-		return nil, fmt.Errorf("list notification publication requests: %w", err)
-	}
-	defer rows.Close()
-	values := []template.PublicationRequest{}
-	for rows.Next() {
-		value, scanErr := scanPublicationRequest(rows)
-		if scanErr != nil {
-			return nil, scanErr
+	values := make([]template.PublicationRequest, 0, len(operations))
+	for _, operation := range operations {
+		value, decodeErr := publicationRequestFromOperation(operation)
+		if decodeErr != nil {
+			return nil, decodeErr
 		}
 		values = append(values, value)
 	}
-	return values, rows.Err()
+	return values, nil
 }
 
 func (s *Store) GetPublicationRequest(ctx context.Context, requestID string) (template.PublicationRequest, bool, error) {
@@ -56,7 +52,15 @@ func (s *Store) GetPublicationRequest(ctx context.Context, requestID string) (te
 	if requestID == "" {
 		return template.PublicationRequest{}, false, fmt.Errorf("notification publication request id is required")
 	}
-	return s.publicationRequestByID(ctx, s.Database, requestID)
+	if s.operations == nil {
+		return template.PublicationRequest{}, false, fmt.Errorf("notification shared managed Operation store is unavailable")
+	}
+	operation, found, err := s.operations.Get(ctx, s.publicationOperationIdentity(requestID))
+	if err != nil || !found {
+		return template.PublicationRequest{}, found, err
+	}
+	value, err := publicationRequestFromOperation(operation)
+	return value, err == nil, err
 }
 
 func (s *Store) CreatePublicationRequest(ctx context.Context, request template.PublicationRequest) error {
@@ -64,30 +68,45 @@ func (s *Store) CreatePublicationRequest(ctx context.Context, request template.P
 	if request.ID == "" || request.TemplateKey == "" {
 		return fmt.Errorf("notification publication request identity is required")
 	}
-	snapshot, err := json.Marshal(request.Snapshot)
+	if s.Database == nil || s.operations == nil {
+		return fmt.Errorf("notification publication persistence is unavailable")
+	}
+	operation, err := s.publicationOperation(request)
 	if err != nil {
-		return fmt.Errorf("encode notification publication snapshot: %w", err)
+		return err
 	}
 	tx, err := s.Database.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelSerializable})
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
-	_, err = s.WorkspaceInsert(ctx, tx, s.workspaceID.String(), "_notification_template_publication_locks", []string{"template_key", "request_id", "created_at", "workspace_id"},
-		request.TemplateKey, request.ID, request.RequestedAt, s.workspaceID.String())
+	defer func() { _ = tx.Rollback() }()
+	txContext := notificationmodulehost.WithOperationExecutor(metadatamodulehost.WithExecutor(ctx, tx), tx)
+	definition, found, err := s.templateRecordDefinition(txContext, request.TemplateKey)
 	if err != nil {
-		_ = tx.Rollback()
-		open, inspectErr := s.HasOpenPublicationRequest(ctx, request.TemplateKey)
-		if inspectErr == nil && open {
+		return err
+	}
+	if !found {
+		return template.ErrRecordNotFound
+	}
+	record, err := decodeTemplateRecord(definition.Payload)
+	if err != nil {
+		return err
+	}
+	if strings.TrimSpace(record.PublicationID) != "" {
+		return template.ErrPublicationConflict
+	}
+	record.PublicationID = request.ID
+	if err := s.publishTemplateRecord(txContext, record, definition.CurrentVersionID, request.RequestedBy); err != nil {
+		if errors.Is(err, template.ErrRecordConflict) {
 			return template.ErrPublicationConflict
 		}
-		return fmt.Errorf("acquire notification publication lock: %w", err)
+		return err
 	}
-	_, err = s.WorkspaceInsert(ctx, tx, s.workspaceID.String(), "_notification_template_publication_requests", publicationRequestInsertColumns, request.ID, request.TemplateKey,
-		string(snapshot), request.CandidateHash, request.DraftUpdatedAt, string(request.Status), request.ScheduledFor, request.RequestedBy, request.RequestedAt,
-		request.ReviewedBy, request.ReviewedAt, request.PublishedVersion, request.Failure, request.LeaseOwner, request.LeaseExpiresAt, request.FencingToken, request.UpdatedAt, s.workspaceID.String())
-	if err != nil {
-		return fmt.Errorf("insert notification publication request: %w", err)
+	if err := s.operations.Create(txContext, operation); err != nil {
+		if errors.Is(err, notificationmodulehost.ErrManagedOperationIdentityConflict) {
+			return template.ErrPublicationConflict
+		}
+		return err
 	}
 	return tx.Commit()
 }
@@ -100,85 +119,112 @@ func (s *Store) TransitionPublicationRequest(ctx context.Context, requestID stri
 	if expectedStatus == template.PublicationPublishing && (strings.TrimSpace(transition.ExpectedLeaseOwner) == "" || transition.ExpectedFencingToken < 1) {
 		return template.PublicationRequest{}, fmt.Errorf("notification publication terminal transition requires lease owner and fencing token")
 	}
+	if s.Database == nil || s.operations == nil {
+		return template.PublicationRequest{}, fmt.Errorf("notification publication persistence is unavailable")
+	}
 	tx, err := s.Database.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelSerializable})
 	if err != nil {
 		return template.PublicationRequest{}, err
 	}
-	defer tx.Rollback()
-	current, found, err := s.publicationRequestByID(ctx, tx, requestID)
+	defer func() { _ = tx.Rollback() }()
+	txContext := notificationmodulehost.WithOperationExecutor(metadatamodulehost.WithExecutor(ctx, tx), tx)
+	current, found, err := s.operations.Get(txContext, s.publicationOperationIdentity(requestID))
 	if err != nil {
 		return template.PublicationRequest{}, err
 	}
 	if !found {
 		return template.PublicationRequest{}, template.ErrPublicationNotFound
 	}
-	if current.Status != expectedStatus {
-		return template.PublicationRequest{}, template.ErrPublicationConflict
-	}
-	predicate := query.And(query.Equal("id", requestID), query.Equal("status", string(expectedStatus)))
-	if transition.ExpectedLeaseOwner = strings.TrimSpace(transition.ExpectedLeaseOwner); transition.ExpectedLeaseOwner != "" && transition.ExpectedFencingToken > 0 {
-		predicate = query.And(predicate, query.Equal("lease_owner", transition.ExpectedLeaseOwner), query.Equal("fencing_token", transition.ExpectedFencingToken))
-	}
-	queryValue, args, err := query.NewWorkspaceUpdateBuilder(s.Renderer, "_notification_template_publication_requests", s.workspaceID.String()).Set("status", string(transition.Status)).Set("scheduled_for", transition.ScheduledFor).Set("reviewed_by", transition.ReviewedBy).Set("reviewed_at", transition.ReviewedAt).Set("published_version", transition.PublishedVersion).Set("failure", transition.Failure).Set("lease_owner", "").Set("lease_expires_at", "").Set("updated_at", transition.UpdatedAt).Where(predicate).Build()
+	request, err := publicationRequestFromOperation(current)
 	if err != nil {
 		return template.PublicationRequest{}, err
 	}
-	result, err := tx.ExecContext(ctx, queryValue, args...)
-	if err != nil {
-		return template.PublicationRequest{}, fmt.Errorf("transition notification publication request: %w", err)
+	if request.Status != expectedStatus {
+		return template.PublicationRequest{}, template.ErrPublicationConflict
 	}
-	count, err := result.RowsAffected()
+	request.Status, request.ScheduledFor = transition.Status, transition.ScheduledFor
+	request.ReviewedBy, request.ReviewedAt = transition.ReviewedBy, transition.ReviewedAt
+	request.PublishedVersion, request.Failure, request.UpdatedAt = transition.PublishedVersion, transition.Failure, transition.UpdatedAt
+	request.LeaseOwner, request.LeaseExpiresAt = "", ""
+	metadata, err := json.Marshal(request)
+	if err != nil {
+		return template.PublicationRequest{}, fmt.Errorf("encode notification publication Operation: %w", err)
+	}
+	result, _ := json.Marshal(map[string]any{"published_version": request.PublishedVersion, "status": request.Status})
+	updatedAt, err := publicationTimestamp(request.UpdatedAt)
 	if err != nil {
 		return template.PublicationRequest{}, err
 	}
-	if count != 1 {
+	nextAction := ""
+	if request.Status == template.PublicationScheduled || request.Status == template.PublicationPublishing {
+		nextAction = request.ScheduledFor
+	}
+	updated, changed, err := s.operations.Transition(txContext, notificationmodulehost.ManagedOperationTransition{
+		Identity: s.publicationOperationIdentity(requestID), ExpectedStatus: string(expectedStatus),
+		ExpectedLeaseOwner: transition.ExpectedLeaseOwner, ExpectedFencingToken: transition.ExpectedFencingToken,
+		Status: string(request.Status), Metadata: metadata, Result: result, ErrorCode: request.Failure,
+		NextAction: nextAction, ClearLease: true, UpdatedAt: updatedAt,
+	})
+	if err != nil {
+		return template.PublicationRequest{}, err
+	}
+	if !changed {
 		return template.PublicationRequest{}, template.ErrPublicationConflict
 	}
-	if !publicationStatusOpen(transition.Status) {
-		queryValue, args, err = query.NewWorkspaceDeleteBuilder(s.Renderer, "_notification_template_publication_locks", s.workspaceID.String()).Where(query.Equal("request_id", requestID)).Build()
-		if err != nil {
+	if !publicationStatusOpen(request.Status) {
+		if err := s.clearPublicationReservation(txContext, request); err != nil {
 			return template.PublicationRequest{}, err
 		}
-		if _, err := tx.ExecContext(ctx, queryValue, args...); err != nil {
-			return template.PublicationRequest{}, fmt.Errorf("release notification publication lock: %w", err)
-		}
-	}
-	value, found, err := s.publicationRequestByID(ctx, tx, requestID)
-	if err != nil {
-		return template.PublicationRequest{}, err
-	}
-	if !found {
-		return template.PublicationRequest{}, template.ErrPublicationNotFound
 	}
 	if err := tx.Commit(); err != nil {
 		return template.PublicationRequest{}, err
 	}
-	return value, nil
+	return publicationRequestFromOperation(updated)
 }
 
 func (s *Store) ListDuePublicationRequests(ctx context.Context, now, staleBefore string, limit int) ([]template.PublicationRequest, error) {
 	if limit <= 0 || limit > 100 {
 		limit = 25
 	}
-	due := query.Or(query.And(query.Equal("status", "scheduled"), query.LessThanOrEqual("scheduled_for", strings.TrimSpace(now))), query.And(query.Equal("status", "publishing"), query.LessThanOrEqual("lease_expires_at", strings.TrimSpace(staleBefore))))
-	queryValue, args, err := query.NewWorkspaceSelectBuilder(s.Renderer, "_notification_template_publication_requests", s.workspaceID.String()).Columns(publicationRequestColumns...).Where(due).OrderBy(query.Ascending("scheduled_for"), query.Ascending("requested_at")).Limit(limit).Build()
+	if s.operations == nil {
+		return nil, fmt.Errorf("notification shared managed Operation store is unavailable")
+	}
+	base := notificationmodulehost.ManagedOperationQuery{Scope: notificationmodulehost.OperationScope{WorkspaceID: s.workspaceID.String()}, Owner: templatePublicationOperationOwner, Kind: templatePublicationOperationKind, Limit: limit, OldestFirst: true}
+	scheduledQuery := base
+	scheduledQuery.Statuses, scheduledQuery.NextActionBefore = []string{string(template.PublicationScheduled)}, strings.TrimSpace(now)
+	scheduled, err := s.operations.List(ctx, scheduledQuery)
 	if err != nil {
 		return nil, err
 	}
-	rows, err := s.Database.QueryContext(ctx, queryValue, args...)
+	reclaimQuery := base
+	reclaimQuery.Statuses, reclaimQuery.LeaseExpiresBefore = []string{string(template.PublicationPublishing)}, strings.TrimSpace(staleBefore)
+	reclaim, err := s.operations.List(ctx, reclaimQuery)
 	if err != nil {
-		return nil, fmt.Errorf("list due notification publication requests: %w", err)
+		return nil, err
 	}
-	defer rows.Close()
-	values := []template.PublicationRequest{}
-	for rows.Next() {
-		value, scanErr := scanPublicationRequest(rows)
-		if scanErr != nil {
-			return nil, scanErr
+	byID := make(map[string]template.PublicationRequest, len(scheduled)+len(reclaim))
+	for _, operation := range append(scheduled, reclaim...) {
+		value, decodeErr := publicationRequestFromOperation(operation)
+		if decodeErr != nil {
+			return nil, decodeErr
 		}
+		byID[value.ID] = value
+	}
+	values := make([]template.PublicationRequest, 0, len(byID))
+	for _, value := range byID {
 		values = append(values, value)
 	}
-	return values, rows.Err()
+	sort.Slice(values, func(i, j int) bool {
+		left, right := values[i].ScheduledFor, values[j].ScheduledFor
+		if left == right {
+			return values[i].RequestedAt < values[j].RequestedAt
+		}
+		return left < right
+	})
+	if len(values) > limit {
+		values = values[:limit]
+	}
+	return values, nil
 }
 
 func (s *Store) ClaimPublicationRequest(ctx context.Context, requestID, owner, now, expiresAt string) (template.PublicationRequest, bool, error) {
@@ -186,59 +232,116 @@ func (s *Store) ClaimPublicationRequest(ctx context.Context, requestID, owner, n
 	if requestID == "" || owner == "" || now == "" || expiresAt == "" {
 		return template.PublicationRequest{}, false, fmt.Errorf("notification publication claim identity and lease are required")
 	}
-	due := query.Or(query.And(query.Equal("status", "scheduled"), query.LessThanOrEqual("scheduled_for", now)), query.And(query.Equal("status", "publishing"), query.LessThanOrEqual("lease_expires_at", now)))
-	queryValue, args, err := query.NewWorkspaceUpdateBuilder(s.Renderer, "_notification_template_publication_requests", s.workspaceID.String()).Set("status", "publishing").Set("lease_owner", owner).Set("lease_expires_at", expiresAt).SetExpression("fencing_token", query.Add(query.Column("fencing_token"), query.Value(1))).Set("updated_at", now).Where(query.And(query.Equal("id", requestID), due)).Build()
+	if s.operations == nil {
+		return template.PublicationRequest{}, false, fmt.Errorf("notification shared managed Operation store is unavailable")
+	}
+	updatedAt, err := publicationTimestamp(now)
 	if err != nil {
 		return template.PublicationRequest{}, false, err
 	}
-	result, err := s.Database.ExecContext(ctx, queryValue, args...)
-	if err != nil {
-		return template.PublicationRequest{}, false, fmt.Errorf("claim notification publication request: %w", err)
-	}
-	count, err := result.RowsAffected()
-	if err != nil || count != 1 {
+	operation, claimed, err := s.operations.Claim(ctx, notificationmodulehost.ManagedOperationClaim{
+		Identity: s.publicationOperationIdentity(requestID), DueStatus: string(template.PublicationScheduled), ReclaimStatus: string(template.PublicationPublishing),
+		Now: now, Status: string(template.PublicationPublishing), LeaseOwner: owner, LeaseExpiresAt: expiresAt, UpdatedAt: updatedAt,
+	})
+	if err != nil || !claimed {
 		return template.PublicationRequest{}, false, err
 	}
-	return s.GetPublicationRequest(ctx, requestID)
-}
-
-func (s *Store) HasOpenPublicationRequest(ctx context.Context, templateKey string) (bool, error) {
-	var count int
-	open := query.In("status", string(template.PublicationPending), string(template.PublicationScheduled), string(template.PublicationPublishing))
-	predicate := query.And(query.Equal("template_key", strings.TrimSpace(templateKey)), open)
-	queryValue, args, err := query.NewWorkspaceSelectBuilder(s.Renderer, "_notification_template_publication_requests", s.workspaceID.String()).Projections(query.Project(query.CountAll())).Where(predicate).Build()
-	if err != nil {
-		return false, err
-	}
-	err = s.Database.QueryRowContext(ctx, queryValue, args...).Scan(&count)
-	return count > 0, err
-}
-
-func (s *Store) publicationRequestByID(ctx context.Context, queryer sqlhost.Queryer, requestID string) (template.PublicationRequest, bool, error) {
-	predicate := query.Equal("id", requestID)
-	queryValue, args, err := query.NewWorkspaceSelectBuilder(s.Renderer, "_notification_template_publication_requests", s.workspaceID.String()).Columns(publicationRequestColumns...).Where(predicate).Build()
-	if err != nil {
-		return template.PublicationRequest{}, false, err
-	}
-	value, err := scanPublicationRequest(queryer.QueryRowContext(ctx, queryValue, args...))
-	if errors.Is(err, sql.ErrNoRows) {
-		return template.PublicationRequest{}, false, nil
-	}
+	value, err := publicationRequestFromOperation(operation)
 	return value, err == nil, err
 }
 
-func scanPublicationRequest(row scanner) (template.PublicationRequest, error) {
-	var value template.PublicationRequest
-	var snapshot string
-	if err := row.Scan(&value.ID, &value.TemplateKey, &snapshot, &value.CandidateHash, &value.DraftUpdatedAt, &value.Status, &value.ScheduledFor,
-		&value.RequestedBy, &value.RequestedAt, &value.ReviewedBy, &value.ReviewedAt, &value.PublishedVersion, &value.Failure, &value.LeaseOwner,
-		&value.LeaseExpiresAt, &value.FencingToken, &value.UpdatedAt); err != nil {
-		return value, err
+func (s *Store) HasOpenPublicationRequest(ctx context.Context, templateKey string) (bool, error) {
+	definition, found, err := s.templateRecordDefinition(ctx, strings.TrimSpace(templateKey))
+	if err != nil || !found {
+		return false, err
 	}
-	if err := json.Unmarshal([]byte(snapshot), &value.Snapshot); err != nil {
-		return value, fmt.Errorf("decode notification publication snapshot: %w", err)
+	record, err := decodeTemplateRecord(definition.Payload)
+	return strings.TrimSpace(record.PublicationID) != "", err
+}
+
+func (s *Store) publicationOperationIdentity(requestID string) notificationmodulehost.ManagedOperationIdentity {
+	return notificationmodulehost.ManagedOperationIdentity{ID: strings.TrimSpace(requestID), Scope: notificationmodulehost.OperationScope{WorkspaceID: s.workspaceID.String()}, Owner: templatePublicationOperationOwner, Kind: templatePublicationOperationKind}
+}
+
+func (s *Store) publicationOperation(request template.PublicationRequest) (notificationmodulehost.ManagedOperation, error) {
+	metadata, err := json.Marshal(request)
+	if err != nil {
+		return notificationmodulehost.ManagedOperation{}, fmt.Errorf("encode notification publication Operation: %w", err)
+	}
+	createdAt, err := publicationTimestamp(request.RequestedAt)
+	if err != nil {
+		return notificationmodulehost.ManagedOperation{}, err
+	}
+	updatedAt, err := publicationTimestamp(request.UpdatedAt)
+	if err != nil {
+		return notificationmodulehost.ManagedOperation{}, err
+	}
+	nextAction := ""
+	if request.Status == template.PublicationScheduled || request.Status == template.PublicationPublishing {
+		nextAction = request.ScheduledFor
+	}
+	return notificationmodulehost.ManagedOperation{
+		Command: notificationmodulehost.OperationCommand{
+			ID: request.ID, Scope: notificationmodulehost.OperationScope{WorkspaceID: s.workspaceID.String(), ResourceType: templatePublicationResourceType, ResourceID: request.TemplateKey},
+			Owner: templatePublicationOperationOwner, Kind: templatePublicationOperationKind, ActionKey: templatePublicationActionKey,
+			IdempotencyKey: request.ID, RequestFingerprint: request.CandidateHash, RequestedBy: request.RequestedBy,
+			Reason: "Notification template publication", Reference: request.TemplateKey, StatusURL: "/notification/publications/" + request.ID, CreatedAt: createdAt,
+		},
+		Status: string(request.Status), Metadata: metadata, Result: json.RawMessage(`{}`), ErrorCode: request.Failure,
+		NextAction: nextAction, LeaseOwner: request.LeaseOwner, LeaseExpiresAt: request.LeaseExpiresAt, FencingToken: request.FencingToken, UpdatedAt: updatedAt,
+	}, nil
+}
+
+func publicationRequestFromOperation(operation notificationmodulehost.ManagedOperation) (template.PublicationRequest, error) {
+	var value template.PublicationRequest
+	if err := json.Unmarshal(operation.Metadata, &value); err != nil {
+		return value, fmt.Errorf("decode notification publication Operation: %w", err)
+	}
+	value.ID, value.TemplateKey = operation.Command.ID, operation.Command.Scope.ResourceID
+	value.Status = template.PublicationStatus(operation.Status)
+	value.LeaseOwner, value.LeaseExpiresAt, value.FencingToken = operation.LeaseOwner, operation.LeaseExpiresAt, operation.FencingToken
+	value.UpdatedAt = operation.UpdatedAt.UTC().Format(time.RFC3339Nano)
+	if operation.ErrorCode != "" {
+		value.Failure = operation.ErrorCode
 	}
 	return value, nil
+}
+
+func (s *Store) clearPublicationReservation(ctx context.Context, request template.PublicationRequest) error {
+	definition, found, err := s.templateRecordDefinition(ctx, request.TemplateKey)
+	if err != nil {
+		return err
+	}
+	if !found {
+		return template.ErrPublicationConflict
+	}
+	record, err := decodeTemplateRecord(definition.Payload)
+	if err != nil {
+		return err
+	}
+	if record.PublicationID != request.ID {
+		return template.ErrPublicationConflict
+	}
+	record.PublicationID = ""
+	actor := strings.TrimSpace(request.ReviewedBy)
+	if actor == "" {
+		actor = strings.TrimSpace(request.RequestedBy)
+	}
+	if err := s.publishTemplateRecord(ctx, record, definition.CurrentVersionID, actor); err != nil {
+		if errors.Is(err, template.ErrRecordConflict) {
+			return template.ErrPublicationConflict
+		}
+		return err
+	}
+	return nil
+}
+
+func publicationTimestamp(value string) (time.Time, error) {
+	parsed, err := time.Parse(time.RFC3339Nano, strings.TrimSpace(value))
+	if err != nil {
+		return time.Time{}, fmt.Errorf("notification publication timestamp %q is invalid: %w", value, err)
+	}
+	return parsed.UTC(), nil
 }
 
 func publicationStatusOpen(status template.PublicationStatus) bool {

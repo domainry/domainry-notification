@@ -2,6 +2,8 @@ package deliverystore
 
 import (
 	"context"
+
+	metadatasdk "github.com/domainry/domainry-metadata-sdk"
 	notification "github.com/domainry/domainry-notification/internal/domain/notification/model"
 	"github.com/domainry/domainry-notification/internal/infrastructure/persistence/base"
 	"github.com/domainry/domainry-orm/sqlhost"
@@ -17,10 +19,11 @@ type QueueScopeIndex interface {
 }
 
 type Config struct {
-	SQLStore       *base.SQLStore
-	WorkspaceScope WorkspaceScope
-	QueueScopes    QueueScopeIndex
-	WorkspaceID    notification.WorkspaceID
+	SQLStore        *base.SQLStore
+	WorkspaceScope  WorkspaceScope
+	QueueScopes     QueueScopeIndex
+	WorkspaceID     notification.WorkspaceID
+	DefinitionStore metadatasdk.DefinitionStore
 }
 
 type Store struct {
@@ -28,10 +31,17 @@ type Store struct {
 	workspaceScope WorkspaceScope
 	queueScopes    QueueScopeIndex
 	workspaceID    notification.WorkspaceID
+	definitions    metadatasdk.DefinitionStore
 }
 
 var (
 	failureCodePattern = regexp.MustCompile(`^[a-z][a-z0-9_.-]{0,159}$`)
+)
+
+const (
+	notificationDeliveriesTable = "_notification_deliveries"
+	deliveryRowKind             = "delivery"
+	deliveryReservationRowKind  = "reservation"
 )
 
 var channelPlanColumns = []string{
@@ -40,7 +50,7 @@ var channelPlanColumns = []string{
 }
 
 func New(config Config) *Store {
-	return &Store{SQLStore: config.SQLStore, workspaceScope: config.WorkspaceScope, queueScopes: config.QueueScopes, workspaceID: config.WorkspaceID}
+	return &Store{SQLStore: config.SQLStore, workspaceScope: config.WorkspaceScope, queueScopes: config.QueueScopes, workspaceID: config.WorkspaceID, definitions: config.DefinitionStore}
 }
 
 type scanner interface{ Scan(...any) error }

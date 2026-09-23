@@ -3,17 +3,15 @@ package module
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"reflect"
 	"testing"
 	"time"
 
-	"github.com/domainry/domainry-foundation/modulecapability"
-	capabilitycontracttest "github.com/domainry/domainry-foundation/modulecapability/contracttest"
 	"github.com/domainry/domainry-foundation/modulehttp"
 	"github.com/domainry/domainry-foundation/requestcontext"
 	identitysdk "github.com/domainry/domainry-identity-sdk"
+	metadatasdk "github.com/domainry/domainry-metadata-sdk"
 	notificationsdk "github.com/domainry/domainry-notification-sdk"
 	"github.com/domainry/domainry-notification-sdk/contract"
 	"github.com/domainry/domainry-notification-sdk/contracttest"
@@ -84,9 +82,12 @@ func (principalResolverStub) Resolve(ctx context.Context, request identitysdk.Pr
 }
 
 type testHost struct {
-	database   *sql.DB
-	dialect    modulehost.Dialect
-	migrations *testMigrationRegistrar
+	database    *sql.DB
+	dialect     modulehost.Dialect
+	migrations  *testMigrationRegistrar
+	definitions metadatasdk.DefinitionStore
+	operations  modulehost.ManagedOperationStore
+	archives    modulehost.RetentionArchiveStore
 }
 
 type testMigrationRegistrar struct {
@@ -114,13 +115,22 @@ func (r *testMigrationRegistrar) ApplyOwnedMigrations(ctx context.Context, owner
 	return nil
 }
 
-func (h testHost) Database() modulehost.Database           { return h.database }
-func (h testHost) Dialect() modulehost.Dialect             { return h.dialect }
-func (testHost) WorkspaceScope() modulehost.WorkspaceScope { return testWorkspaceScope{} }
-func (testHost) QueueScopes() modulehost.QueueScopeIndex   { return testQueueScopes{} }
-func (testHost) Identity() identitysdk.Binding             { return identityBindingStub{} }
-func (testHost) Clock() modulehost.Clock                   { return testClock{} }
-func (testHost) WorkerID() string                          { return "worker" }
+func (h testHost) Database() modulehost.Database                { return h.database }
+func (h testHost) Dialect() modulehost.Dialect                  { return h.dialect }
+func (testHost) WorkspaceScope() modulehost.WorkspaceScope      { return testWorkspaceScope{} }
+func (testHost) QueueScopes() modulehost.QueueScopeIndex        { return testQueueScopes{} }
+func (h testHost) DefinitionStore() metadatasdk.DefinitionStore { return h.definitions }
+func (h testHost) ManagedOperationStore() modulehost.ManagedOperationStore {
+	return h.operations
+}
+func (h testHost) OperationControlStore() modulehost.OperationControlStore {
+	controls, _ := h.operations.(modulehost.OperationControlStore)
+	return controls
+}
+func (h testHost) RetentionArchiveStore() modulehost.RetentionArchiveStore { return h.archives }
+func (testHost) Identity() identitysdk.Binding                             { return identityBindingStub{} }
+func (testHost) Clock() modulehost.Clock                                   { return testClock{} }
+func (testHost) WorkerID() string                                          { return "worker" }
 func (testHost) Catalog() modulehost.Catalog {
 	return modulehost.Catalog{DefaultLocale: "en", TemplateCapabilities: []contract.NotificationTemplateCapability{{Channel: "in_app"}}}
 }
@@ -146,7 +156,7 @@ func newTestHost(t *testing.T) testHost {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = database.Close() })
-	return testHost{database: database, dialect: dialect, migrations: &testMigrationRegistrar{database: database}}
+	return testHost{database: database, dialect: dialect, migrations: &testMigrationRegistrar{database: database}, definitions: newTestDefinitionStore(), operations: newTestManagedOperationStore(t, database, dialect), archives: newTestRetentionArchiveStore(t, database, dialect)}
 }
 
 func TestModuleFactoryContractAndBorrowedDatabaseLifecycle(t *testing.T) {
@@ -194,45 +204,6 @@ func TestModuleFactoryContractAndBorrowedDatabaseLifecycle(t *testing.T) {
 			t.Fatalf("route %d is not an exact Action projection: route=%+v action=%+v", index, routes[index].Action, actions[index])
 		}
 	}
-	openAPI, ok := adapter.(modulehttp.OpenAPIProvider)
-	if !ok {
-		t.Fatal("Notification Adapter does not project OpenAPI from its Actions")
-	}
-	operations := openAPI.OpenAPIOperations()
-	if len(operations) != len(routes) {
-		t.Fatalf("Notification OpenAPI/route counts=%d/%d", len(operations), len(routes))
-	}
-	for _, route := range routes {
-		if _, found := operations[route.Pattern()]; !found {
-			t.Fatalf("Notification Action route %q has no OpenAPI projection", route.Pattern())
-		}
-	}
-	capabilitycontracttest.VerifyBinding(t, binding)
-	summary, err := binding.CapabilitySummary(t.Context())
-	if err != nil {
-		t.Fatal(err)
-	}
-	wantCounts := map[string]int{
-		"notification.inbox":               20,
-		"notification.delivery_governance": 7,
-		"notification.templates":           14,
-	}
-	for _, category := range summary.Categories {
-		if category.OperationCount != wantCounts[category.Key] {
-			t.Fatalf("Notification category %q operations=%d want=%d", category.Key, category.OperationCount, wantCounts[category.Key])
-		}
-		delete(wantCounts, category.Key)
-	}
-	if len(wantCounts) != 0 {
-		t.Fatalf("Notification categories are missing: %+v", wantCounts)
-	}
-	invalidTemplate, _ := json.Marshal(contract.NotificationTemplate{Key: "Invalid Key", Status: "draft"})
-	validation := modulecapability.ValidationRequest{ContractVersion: modulecapability.ValidationContractVersion, ModuleKey: "notification", CategoryKey: "notification.templates", ContractSHA256: summary.Identity.ContractSHA256, Kind: "notification.template", Candidate: modulecapability.AuthoringFragment{Collection: "notification_templates", Key: "invalid", Value: invalidTemplate}}
-	result, err := binding.ValidateCapabilityCandidate(t.Context(), validation)
-	if err != nil || len(result.Diagnostics) == 0 || result.Diagnostics[0].Owner != "notification" {
-		t.Fatalf("Notification owner validation result=%+v err=%v", result, err)
-	}
-	capabilitycontracttest.VerifyModuleRemoteParity(t, binding, capabilitycontracttest.ValidationCase{Name: "invalid template", Request: validation})
 }
 
 func TestModuleSystemTemplatesSynchronizeThroughOwnedStore(t *testing.T) {
@@ -265,9 +236,6 @@ func TestModuleSystemMigrationExportsAndIdempotentlyReconcilesExactApplication(t
 	migration, ok := binding.(notificationsdk.SystemMigrationBinding)
 	if !ok || migration.SystemMigration() == nil {
 		t.Fatal("Module Binding did not expose system migration")
-	}
-	if _, err := host.database.Exec(`INSERT INTO _notification_retention_archive_entries (id, workspace_id, policy_key, policy_version, job_id, source_table, resource_id, payload_hash, payload_json, archived_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, "archive", "workspace", "notification.history.v1", "1", "job", "_notification_events", "event", "hash", `{}`, "now"); err != nil {
-		t.Fatal(err)
 	}
 	const snapshotPayload = `{"recipient_user_ids":["user"],"snapshot":{"title":"Frozen title","body":"Frozen body","template_key":"report.completed","template_version":7,"template_content_hash":"sha256"}}`
 	if _, err := host.database.Exec(`INSERT INTO _notification_events (id, workspace_id, source, source_event_id, status, payload_json, lease_owner, occurred_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, "leased-event", "workspace", "test", "source", "processing", snapshotPayload, "worker", "now", "now", "now"); err != nil {
@@ -374,7 +342,7 @@ func TestModuleSystemMigrationExportsAndIdempotentlyReconcilesExactApplication(t
 	if err != nil {
 		t.Fatal(err)
 	}
-	if exported.Bundle.Source != (contract.NotificationPortableScope{WorkspaceID: "workspace", ApplicationKey: "runtime"}) || exported.Bundle.Fingerprint == "" || len(exported.Bundle.Tables) != 15 {
+	if exported.Bundle.Source != (contract.NotificationPortableScope{WorkspaceID: "workspace", ApplicationKey: "runtime"}) || exported.Bundle.Fingerprint == "" || len(exported.Bundle.Tables) != 7 {
 		t.Fatalf("export=%+v", exported)
 	}
 	if status, err := migration.SystemMigration().Status(t.Context()); err != nil || status.BundleFingerprint != exported.Bundle.Fingerprint || status.ActiveLeases != 0 {

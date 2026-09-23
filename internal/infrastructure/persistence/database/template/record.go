@@ -2,22 +2,29 @@ package templatestore
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
+	"strconv"
 	"strings"
 
+	metadatasdk "github.com/domainry/domainry-metadata-sdk"
+	metadatamodulehost "github.com/domainry/domainry-metadata-sdk/modulehost"
 	notification "github.com/domainry/domainry-notification/internal/domain/notification/model"
 	"github.com/domainry/domainry-notification/internal/domain/template/service"
-	"github.com/domainry/domainry-orm/query"
-	"github.com/domainry/domainry-orm/sqlhost"
 )
 
-var templateRecordColumns = []string{"template_key", "draft_json", "published_json", "published_version", "status", "updated_by", "created_at", "updated_at"}
-var templateVersionColumns = []string{"template_key", "version", "payload_json", "content_hash", "published_by", "published_at"}
-var templateRecordInsertColumns = append(append([]string(nil), templateRecordColumns...), "workspace_id")
-var templateVersionInsertColumns = append(append([]string(nil), templateVersionColumns...), "workspace_id")
+const (
+	templateDefinitionKind         = "notification_template"
+	templateVersionDefinitionKind  = "notification_template_version"
+	templateRecordSchema           = "domainry-notification-template-record-v1"
+	templatePublishedVersionSchema = "domainry-notification-template-version-v1"
+	templateDefinitionSourceKind   = "notification_template"
+)
 
 func (s *Store) SyncPublished(ctx context.Context, templates []template.Template) error {
 	for _, value := range templates {
@@ -35,114 +42,106 @@ func (s *Store) SyncPublished(ctx context.Context, templates []template.Template
 }
 
 func (s *Store) seedPublishedTemplate(ctx context.Context, value template.Template) error {
-	tx, err := s.Database.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelSerializable})
-	if err != nil {
+	if _, found, err := s.templateRecordDefinition(ctx, value.Key); err != nil || found {
 		return err
-	}
-	defer tx.Rollback()
-	var exists int
-	lookup, args, err := query.NewWorkspaceSelectBuilder(s.Renderer, "_notification_templates", s.workspaceID.String()).Projections(query.Project(query.CountAll())).Where(query.Equal("template_key", value.Key)).Build()
-	if err != nil {
-		return err
-	}
-	if err := tx.QueryRowContext(ctx, lookup, args...).Scan(&exists); err != nil {
-		return fmt.Errorf("inspect notification template seed: %w", err)
-	}
-	if exists > 0 {
-		return nil
-	}
-	raw, err := json.Marshal(value)
-	if err != nil {
-		return fmt.Errorf("encode notification template seed: %w", err)
 	}
 	now := notification.Timestamp(s.clock.Now())
-	_, err = s.WorkspaceInsert(ctx, tx, s.workspaceID.String(), "_notification_templates", templateRecordInsertColumns, value.Key, nil, string(raw), value.Version, "active", "manifest", now, now, s.workspaceID.String())
-	if err != nil {
-		return fmt.Errorf("insert notification template seed: %w", err)
+	record := template.Record{
+		Key: value.Key, Published: cloneTemplatePointer(value), PublishedVersion: value.Version,
+		Status: "active", UpdatedBy: "manifest", CreatedAt: now, UpdatedAt: now,
 	}
-	if err := s.insertTemplateVersion(ctx, tx, value, "manifest", now); err != nil {
-		return err
-	}
-	return tx.Commit()
+	return s.publishTemplateAndVersion(ctx, record, value, metadatasdk.DefinitionNoCurrentVersion, "manifest", now)
 }
 
 func (s *Store) List(ctx context.Context) ([]template.Record, error) {
-	builder := query.NewWorkspaceSelectBuilder(s.Renderer, "_notification_templates", s.workspaceID.String()).Columns(templateRecordColumns...).OrderBy(query.Ascending("template_key"))
-	queryValue, args, err := builder.Build()
-	if err != nil {
-		return nil, err
+	if s.definitions == nil {
+		return nil, fmt.Errorf("notification shared Definition store is unavailable")
 	}
-	rows, err := s.Database.QueryContext(ctx, queryValue, args...)
+	definitions, err := s.definitions.List(ctx, metadatasdk.DefinitionQuery{
+		Owner: metadatasdk.DefinitionOwnerNotification, ResourceType: templateDefinitionKind, SourceID: s.workspaceSourceID(),
+	})
 	if err != nil {
-		return nil, fmt.Errorf("list notification templates: %w", err)
+		return nil, fmt.Errorf("list notification template definitions: %w", err)
 	}
-	defer rows.Close()
-	values := []template.Record{}
-	for rows.Next() {
-		value, scanErr := scanTemplateRecord(rows)
-		if scanErr != nil {
-			return nil, scanErr
+	values := make([]template.Record, 0, len(definitions))
+	for _, definition := range definitions {
+		value, err := decodeTemplateRecord(definition.Payload)
+		if err != nil {
+			return nil, err
 		}
 		values = append(values, value)
 	}
-	return values, rows.Err()
+	sort.Slice(values, func(i, j int) bool { return values[i].Key < values[j].Key })
+	return values, nil
 }
 
 func (s *Store) PublishedRevision(ctx context.Context) (string, error) {
-	predicate := query.And(query.Equal("status", "active"), query.IsNotNull("published_json"))
-	queryValue, args, err := query.NewWorkspaceSelectBuilder(s.Renderer, "_notification_templates", s.workspaceID.String()).Projections(query.Project(query.CountAll()), query.Project(query.Max(query.Column("updated_at")))).Where(predicate).Build()
+	values, err := s.List(ctx)
 	if err != nil {
 		return "", err
 	}
-	var count int64
-	var updatedAt sql.NullString
-	if err := s.Database.QueryRowContext(ctx, queryValue, args...).Scan(&count, &updatedAt); err != nil {
-		return "", fmt.Errorf("read published notification revision: %w", err)
+	count := 0
+	latest := ""
+	for _, value := range values {
+		if value.Status != "active" || value.Published == nil {
+			continue
+		}
+		count++
+		if value.UpdatedAt > latest {
+			latest = value.UpdatedAt
+		}
 	}
-	return fmt.Sprintf("%d:%s", count, updatedAt.String), nil
+	return fmt.Sprintf("%d:%s", count, latest), nil
 }
 
 func (s *Store) Get(ctx context.Context, key string) (template.Record, bool, error) {
-	key = strings.TrimSpace(key)
-	if key == "" {
-		return template.Record{}, false, fmt.Errorf("notification template key is required")
+	definition, found, err := s.templateRecordDefinition(ctx, key)
+	if err != nil || !found {
+		return template.Record{}, found, err
 	}
-	return s.templateRecordByKey(ctx, s.Database, key)
+	value, err := decodeTemplateRecord(definition.Payload)
+	return value, err == nil, err
 }
 
 func (s *Store) ListVersions(ctx context.Context, key string) ([]template.Version, error) {
 	key = strings.TrimSpace(key)
-	predicates := []query.Predicate{query.Equal("template_key", key)}
-	queryValue, args, err := query.NewWorkspaceSelectBuilder(s.Renderer, "_notification_template_versions", s.workspaceID.String()).Columns(templateVersionColumns...).Where(query.And(predicates...)).OrderBy(query.Descending("version")).Build()
-	if err != nil {
-		return nil, err
+	if key == "" {
+		return nil, fmt.Errorf("notification template key is required")
 	}
-	rows, err := s.Database.QueryContext(ctx, queryValue, args...)
-	if err != nil {
-		return nil, fmt.Errorf("list notification template versions: %w", err)
+	if s.definitions == nil {
+		return nil, fmt.Errorf("notification shared Definition store is unavailable")
 	}
-	defer rows.Close()
-	values := []template.Version{}
-	for rows.Next() {
-		value, scanErr := scanTemplateVersion(rows)
-		if scanErr != nil {
-			return nil, scanErr
+	definitions, err := s.definitions.List(ctx, metadatasdk.DefinitionQuery{
+		Owner: metadatasdk.DefinitionOwnerNotification, ResourceType: templateVersionDefinitionKind, SourceID: s.templateDefinitionKey(key),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("list notification template version definitions: %w", err)
+	}
+	values := make([]template.Version, 0, len(definitions))
+	for _, definition := range definitions {
+		value, err := decodeTemplateVersion(definition.Payload)
+		if err != nil {
+			return nil, err
 		}
 		values = append(values, value)
 	}
-	return values, rows.Err()
+	sort.Slice(values, func(i, j int) bool { return values[i].Version > values[j].Version })
+	return values, nil
 }
 
 func (s *Store) GetVersion(ctx context.Context, key string, version int) (template.Version, bool, error) {
-	predicates := []query.Predicate{query.Equal("template_key", strings.TrimSpace(key)), query.Equal("version", version)}
-	queryValue, args, err := query.NewWorkspaceSelectBuilder(s.Renderer, "_notification_template_versions", s.workspaceID.String()).Columns(templateVersionColumns...).Where(query.And(predicates...)).Build()
-	if err != nil {
-		return template.Version{}, false, err
+	key = strings.TrimSpace(key)
+	if key == "" || version < 1 {
+		return template.Version{}, false, fmt.Errorf("notification template version identity is required")
 	}
-	value, err := scanTemplateVersion(s.Database.QueryRowContext(ctx, queryValue, args...))
-	if errors.Is(err, sql.ErrNoRows) {
-		return template.Version{}, false, nil
+	if s.definitions == nil {
+		return template.Version{}, false, fmt.Errorf("notification shared Definition store is unavailable")
 	}
+	definition, found, err := s.definitions.Get(ctx, metadatasdk.DefinitionOwnerNotification, templateVersionDefinitionKind, s.templateVersionDefinitionKey(key, version))
+	if err != nil || !found {
+		return template.Version{}, found, err
+	}
+	value, err := decodeTemplateVersion(definition.Payload)
 	return value, err == nil, err
 }
 
@@ -151,57 +150,31 @@ func (s *Store) SaveDraft(ctx context.Context, value template.Template, expected
 	if value.Key == "" || actor == "" {
 		return template.Record{}, fmt.Errorf("notification template key and actor are required")
 	}
-	raw, err := json.Marshal(value)
-	if err != nil {
-		return template.Record{}, fmt.Errorf("encode notification template draft: %w", err)
-	}
-	tx, err := s.Database.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelSerializable})
+	currentDefinition, found, err := s.templateRecordDefinition(ctx, value.Key)
 	if err != nil {
 		return template.Record{}, err
 	}
-	defer tx.Rollback()
 	now := notification.Timestamp(s.clock.Now())
-	current, found, err := s.templateRecordByKey(ctx, tx, value.Key)
-	if err != nil {
-		return template.Record{}, err
-	}
-	if !found {
-		if expectedUpdatedAt != "" {
-			return template.Record{}, template.ErrRecordConflict
-		}
-		_, err = s.WorkspaceInsert(ctx, tx, s.workspaceID.String(), "_notification_templates", templateRecordInsertColumns, value.Key, string(raw), nil, 0, "active", actor, now, now, s.workspaceID.String())
+	record := template.Record{Key: value.Key, Status: "active", UpdatedBy: actor, CreatedAt: now, UpdatedAt: now}
+	expectedRevision := metadatasdk.DefinitionNoCurrentVersion
+	if found {
+		record, err = decodeTemplateRecord(currentDefinition.Payload)
 		if err != nil {
-			return template.Record{}, fmt.Errorf("insert notification template draft: %w", err)
+			return template.Record{}, err
 		}
-	} else {
-		if expectedUpdatedAt != "" && current.UpdatedAt != expectedUpdatedAt {
+		if expectedUpdatedAt != "" && record.UpdatedAt != expectedUpdatedAt {
 			return template.Record{}, template.ErrRecordConflict
 		}
-		predicate := query.Equal("template_key", value.Key)
-		queryValue, args, buildErr := query.NewWorkspaceUpdateBuilder(s.Renderer, "_notification_templates", s.workspaceID.String()).Set("draft_json", string(raw)).Set("status", "active").Set("updated_by", actor).Set("updated_at", now).Where(predicate).Build()
-		if buildErr != nil {
-			return template.Record{}, buildErr
-		}
-		result, updateErr := tx.ExecContext(ctx, queryValue, args...)
-		if updateErr != nil {
-			return template.Record{}, fmt.Errorf("update notification template draft: %w", updateErr)
-		}
-		count, countErr := result.RowsAffected()
-		if countErr != nil || count != 1 {
-			return template.Record{}, template.ErrRecordConflict
-		}
+		expectedRevision = currentDefinition.CurrentVersionID
+	} else if expectedUpdatedAt != "" {
+		return template.Record{}, template.ErrRecordConflict
 	}
-	stored, found, err := s.templateRecordByKey(ctx, tx, value.Key)
-	if err != nil {
+	record.Draft = cloneTemplatePointer(value)
+	record.Status, record.UpdatedBy, record.UpdatedAt = "active", actor, now
+	if err := s.publishTemplateRecord(ctx, record, expectedRevision, actor); err != nil {
 		return template.Record{}, err
 	}
-	if !found {
-		return template.Record{}, template.ErrRecordNotFound
-	}
-	if err := tx.Commit(); err != nil {
-		return template.Record{}, err
-	}
-	return stored, nil
+	return record, nil
 }
 
 func (s *Store) Publish(ctx context.Context, value template.Template, expectedUpdatedAt, actor string) (template.Record, error) {
@@ -211,56 +184,28 @@ func (s *Store) Publish(ctx context.Context, value template.Template, expectedUp
 	}
 	value.Status = "published"
 	value.ContentHash = template.ContentHash(value)
-	raw, err := json.Marshal(value)
-	if err != nil {
-		return template.Record{}, fmt.Errorf("encode published notification template: %w", err)
-	}
-	tx, err := s.Database.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelSerializable})
+	currentDefinition, found, err := s.templateRecordDefinition(ctx, value.Key)
 	if err != nil {
 		return template.Record{}, err
 	}
-	defer tx.Rollback()
+	if !found {
+		return template.Record{}, template.ErrRecordNotFound
+	}
+	record, err := decodeTemplateRecord(currentDefinition.Payload)
+	if err != nil {
+		return template.Record{}, err
+	}
+	if expectedUpdatedAt != "" && record.UpdatedAt != expectedUpdatedAt {
+		return template.Record{}, template.ErrRecordConflict
+	}
 	now := notification.Timestamp(s.clock.Now())
-	current, found, err := s.templateRecordByKey(ctx, tx, value.Key)
-	if err != nil {
+	record.Draft, record.Published = nil, cloneTemplatePointer(value)
+	record.PublishedVersion, record.Status = value.Version, "active"
+	record.UpdatedBy, record.UpdatedAt = actor, now
+	if err := s.publishTemplateAndVersion(ctx, record, value, currentDefinition.CurrentVersionID, actor, now); err != nil {
 		return template.Record{}, err
 	}
-	if !found {
-		return template.Record{}, template.ErrRecordNotFound
-	}
-	if expectedUpdatedAt != "" && current.UpdatedAt != expectedUpdatedAt {
-		return template.Record{}, template.ErrRecordConflict
-	}
-	predicate := query.Equal("template_key", value.Key)
-	queryValue, args, err := query.NewWorkspaceUpdateBuilder(s.Renderer, "_notification_templates", s.workspaceID.String()).Set("draft_json", nil).Set("published_json", string(raw)).Set("published_version", value.Version).Set("status", "active").Set("updated_by", actor).Set("updated_at", now).Where(predicate).Build()
-	if err != nil {
-		return template.Record{}, err
-	}
-	result, err := tx.ExecContext(ctx, queryValue, args...)
-	if err != nil {
-		return template.Record{}, fmt.Errorf("publish notification template: %w", err)
-	}
-	count, err := result.RowsAffected()
-	if err != nil {
-		return template.Record{}, err
-	}
-	if count != 1 {
-		return template.Record{}, template.ErrRecordConflict
-	}
-	if err := s.insertTemplateVersion(ctx, tx, value, actor, now); err != nil {
-		return template.Record{}, err
-	}
-	stored, found, err := s.templateRecordByKey(ctx, tx, value.Key)
-	if err != nil {
-		return template.Record{}, err
-	}
-	if !found {
-		return template.Record{}, template.ErrRecordNotFound
-	}
-	if err := tx.Commit(); err != nil {
-		return template.Record{}, err
-	}
-	return stored, nil
+	return record, nil
 }
 
 func (s *Store) Disable(ctx context.Context, key, expectedUpdatedAt, actor string) (template.Record, error) {
@@ -268,106 +213,165 @@ func (s *Store) Disable(ctx context.Context, key, expectedUpdatedAt, actor strin
 	if key == "" || actor == "" {
 		return template.Record{}, fmt.Errorf("notification template key and actor are required")
 	}
-	tx, err := s.Database.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelSerializable})
-	if err != nil {
-		return template.Record{}, err
-	}
-	defer tx.Rollback()
-	current, found, err := s.templateRecordByKey(ctx, tx, key)
+	currentDefinition, found, err := s.templateRecordDefinition(ctx, key)
 	if err != nil {
 		return template.Record{}, err
 	}
 	if !found {
 		return template.Record{}, template.ErrRecordNotFound
 	}
-	if expectedUpdatedAt != "" && current.UpdatedAt != expectedUpdatedAt {
+	record, err := decodeTemplateRecord(currentDefinition.Payload)
+	if err != nil {
+		return template.Record{}, err
+	}
+	if expectedUpdatedAt != "" && record.UpdatedAt != expectedUpdatedAt {
 		return template.Record{}, template.ErrRecordConflict
 	}
-	now := notification.Timestamp(s.clock.Now())
-	predicate := query.Equal("template_key", key)
-	queryValue, args, err := query.NewWorkspaceUpdateBuilder(s.Renderer, "_notification_templates", s.workspaceID.String()).Set("status", "disabled").Set("updated_by", actor).Set("updated_at", now).Where(predicate).Build()
-	if err != nil {
+	record.Status, record.UpdatedBy, record.UpdatedAt = "disabled", actor, notification.Timestamp(s.clock.Now())
+	if err := s.publishTemplateRecord(ctx, record, currentDefinition.CurrentVersionID, actor); err != nil {
 		return template.Record{}, err
 	}
-	result, err := tx.ExecContext(ctx, queryValue, args...)
-	if err != nil {
-		return template.Record{}, fmt.Errorf("disable notification template: %w", err)
-	}
-	count, err := result.RowsAffected()
-	if err != nil {
-		return template.Record{}, err
-	}
-	if count != 1 {
-		return template.Record{}, template.ErrRecordConflict
-	}
-	stored, found, err := s.templateRecordByKey(ctx, tx, key)
-	if err != nil || !found {
-		return template.Record{}, err
-	}
-	if err := tx.Commit(); err != nil {
-		return template.Record{}, err
-	}
-	return stored, nil
+	return record, nil
 }
 
-func (s *Store) insertTemplateVersion(ctx context.Context, executor sqlhost.Executor, value template.Template, actor, publishedAt string) error {
-	raw, err := json.Marshal(value)
+func (s *Store) publishTemplateAndVersion(ctx context.Context, record template.Record, published template.Template, expectedRevision, actor, publishedAt string) error {
+	if s.Database == nil {
+		return fmt.Errorf("notification template database is unavailable")
+	}
+	tx, err := s.Database.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelSerializable})
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	txContext := metadatamodulehost.WithExecutor(ctx, tx)
+	if err := s.publishTemplateVersion(txContext, published, actor, publishedAt); err != nil {
+		return err
+	}
+	if err := s.publishTemplateRecord(txContext, record, expectedRevision, actor); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func (s *Store) publishTemplateRecord(ctx context.Context, record template.Record, expectedRevision, actor string) error {
+	if s.definitions == nil {
+		return fmt.Errorf("notification shared Definition store is unavailable")
+	}
+	raw, err := json.Marshal(record)
+	if err != nil {
+		return fmt.Errorf("encode notification template record: %w", err)
+	}
+	hash := payloadHash(raw)
+	_, err = s.definitions.Publish(ctx, metadatasdk.DefinitionPublishCommand{
+		Owner: metadatasdk.DefinitionOwnerNotification, ResourceType: templateDefinitionKind,
+		ResourceKey: s.templateDefinitionKey(record.Key), ExpectedCurrentVersionID: expectedRevision,
+		SchemaVersion: templateRecordSchema + ":" + hash, SchemaHash: hash, Name: record.Key, Payload: raw,
+		SourceKind: templateDefinitionSourceKind, SourceID: s.workspaceSourceID(), PublishedBy: actor,
+	})
+	return mapDefinitionConflict(err)
+}
+
+func (s *Store) publishTemplateVersion(ctx context.Context, value template.Template, actor, publishedAt string) error {
+	if s.definitions == nil {
+		return fmt.Errorf("notification shared Definition store is unavailable")
+	}
+	version := template.Version{TemplateKey: value.Key, Version: value.Version, Template: value, ContentHash: value.ContentHash, PublishedBy: actor, PublishedAt: publishedAt}
+	key := s.templateVersionDefinitionKey(value.Key, value.Version)
+	if existing, found, err := s.definitions.Get(ctx, metadatasdk.DefinitionOwnerNotification, templateVersionDefinitionKind, key); err != nil {
+		return err
+	} else if found {
+		stored, decodeErr := decodeTemplateVersion(existing.Payload)
+		if decodeErr != nil {
+			return decodeErr
+		}
+		if stored.ContentHash == version.ContentHash {
+			return nil
+		}
+		return template.ErrRecordConflict
+	}
+	raw, err := json.Marshal(version)
 	if err != nil {
 		return fmt.Errorf("encode notification template version: %w", err)
 	}
-	columns := append([]string{"id"}, templateVersionInsertColumns...)
-	_, err = s.WorkspaceInsert(ctx, executor, s.workspaceID.String(), "_notification_template_versions", columns, fmt.Sprintf("%s:%d", value.Key, value.Version), value.Key,
-		value.Version, string(raw), value.ContentHash, actor, publishedAt, s.workspaceID.String())
-	if err != nil {
-		return fmt.Errorf("insert notification template version: %w", err)
-	}
-	return nil
+	hash := payloadHash(raw)
+	_, err = s.definitions.Publish(ctx, metadatasdk.DefinitionPublishCommand{
+		Owner: metadatasdk.DefinitionOwnerNotification, ResourceType: templateVersionDefinitionKind,
+		ResourceKey: key, ExpectedCurrentVersionID: metadatasdk.DefinitionNoCurrentVersion,
+		SchemaVersion: templatePublishedVersionSchema + ":" + hash, SchemaHash: hash, Name: value.Key + " v" + strconv.Itoa(value.Version), Payload: raw,
+		SourceKind: templateDefinitionSourceKind, SourceID: s.templateDefinitionKey(value.Key), PublishedBy: actor,
+	})
+	return mapDefinitionConflict(err)
 }
 
-func (s *Store) templateRecordByKey(ctx context.Context, queryer sqlhost.Queryer, key string) (template.Record, bool, error) {
-	predicate := query.Equal("template_key", strings.TrimSpace(key))
-	queryValue, args, err := query.NewWorkspaceSelectBuilder(s.Renderer, "_notification_templates", s.workspaceID.String()).Columns(templateRecordColumns...).Where(predicate).Build()
+func (s *Store) templateRecordDefinition(ctx context.Context, key string) (metadatasdk.Definition, bool, error) {
+	key = strings.TrimSpace(key)
+	if key == "" {
+		return metadatasdk.Definition{}, false, fmt.Errorf("notification template key is required")
+	}
+	if s.definitions == nil {
+		return metadatasdk.Definition{}, false, fmt.Errorf("notification shared Definition store is unavailable")
+	}
+	value, found, err := s.definitions.Get(ctx, metadatasdk.DefinitionOwnerNotification, templateDefinitionKind, s.templateDefinitionKey(key))
 	if err != nil {
-		return template.Record{}, false, err
+		return metadatasdk.Definition{}, false, fmt.Errorf("get notification template definition: %w", err)
 	}
-	value, err := scanTemplateRecord(queryer.QueryRowContext(ctx, queryValue, args...))
-	if errors.Is(err, sql.ErrNoRows) {
-		return template.Record{}, false, nil
-	}
-	return value, err == nil, err
+	return value, found, nil
 }
 
-func scanTemplateRecord(row scanner) (template.Record, error) {
+func (s *Store) workspaceSourceID() string {
+	hash := workspaceIdentityHash(s.workspaceID.String())
+	return "workspace:" + hex.EncodeToString(hash[:])
+}
+
+func (s *Store) templateDefinitionKey(key string) string {
+	workspaceHash := workspaceIdentityHash(s.workspaceID.String())
+	templateHash := sha256.Sum256([]byte(strings.TrimSpace(key)))
+	return "workspace:" + hex.EncodeToString(workspaceHash[:8]) + ":template:" + hex.EncodeToString(templateHash[:16])
+}
+
+func (s *Store) templateVersionDefinitionKey(key string, version int) string {
+	return s.templateDefinitionKey(key) + ":version:" + strconv.Itoa(version)
+}
+
+func workspaceIdentityHash(value string) [32]byte {
+	return sha256.Sum256([]byte(strings.TrimSpace(value)))
+}
+
+func payloadHash(raw []byte) string {
+	sum := sha256.Sum256(raw)
+	return hex.EncodeToString(sum[:])
+}
+
+func decodeTemplateRecord(raw json.RawMessage) (template.Record, error) {
 	var value template.Record
-	var draftJSON, publishedJSON sql.NullString
-	if err := row.Scan(&value.Key, &draftJSON, &publishedJSON, &value.PublishedVersion, &value.Status, &value.UpdatedBy, &value.CreatedAt, &value.UpdatedAt); err != nil {
-		return value, err
-	}
-	if draftJSON.Valid {
-		var draft template.Template
-		if err := json.Unmarshal([]byte(draftJSON.String), &draft); err != nil {
-			return value, fmt.Errorf("decode notification template draft: %w", err)
-		}
-		value.Draft = &draft
-	}
-	if publishedJSON.Valid {
-		var published template.Template
-		if err := json.Unmarshal([]byte(publishedJSON.String), &published); err != nil {
-			return value, fmt.Errorf("decode published notification template: %w", err)
-		}
-		value.Published = &published
+	if err := json.Unmarshal(raw, &value); err != nil {
+		return value, fmt.Errorf("decode notification template record definition: %w", err)
 	}
 	return value, nil
 }
 
-func scanTemplateVersion(row scanner) (template.Version, error) {
+func decodeTemplateVersion(raw json.RawMessage) (template.Version, error) {
 	var value template.Version
-	var raw string
-	if err := row.Scan(&value.TemplateKey, &value.Version, &raw, &value.ContentHash, &value.PublishedBy, &value.PublishedAt); err != nil {
-		return value, err
-	}
-	if err := json.Unmarshal([]byte(raw), &value.Template); err != nil {
-		return value, fmt.Errorf("decode notification template version: %w", err)
+	if err := json.Unmarshal(raw, &value); err != nil {
+		return value, fmt.Errorf("decode notification template version definition: %w", err)
 	}
 	return value, nil
+}
+
+func cloneTemplatePointer(value template.Template) *template.Template {
+	raw, _ := json.Marshal(value)
+	var cloned template.Template
+	_ = json.Unmarshal(raw, &cloned)
+	return &cloned
+}
+
+func mapDefinitionConflict(err error) error {
+	if err == nil {
+		return nil
+	}
+	var metadataError *metadatasdk.Error
+	if errors.As(err, &metadataError) && metadataError.StatusCode == 409 {
+		return template.ErrRecordConflict
+	}
+	return err
 }

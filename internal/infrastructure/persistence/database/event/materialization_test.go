@@ -49,7 +49,7 @@ func TestMaterializeCommitsAllProjectionsAndFencedEvent(t *testing.T) {
 	if err := store.Materialize(t.Context(), event, []inbox.Item{item}); err != nil {
 		t.Fatal(err)
 	}
-	for table, want := range map[string]int{"_notification_inbox_items": 1, "_notification_alert_groups": 1, "_notification_channel_plans": 1} {
+	for table, want := range map[string]int{"_notification_inbox_items": 1, "_notification_alert_groups": 1, "_notification_deliveries": 1} {
 		var got int
 		if err := db.QueryRow("SELECT COUNT(*) FROM " + table).Scan(&got); err != nil || got != want {
 			t.Fatalf("%s count=%d err=%v", table, got, err)
@@ -92,7 +92,8 @@ func materializationStore(t *testing.T) (*sql.DB, *sqlstore.Store, *queueScopes)
 		`CREATE TABLE _notification_events (id TEXT, workspace_id TEXT, source TEXT, source_event_id TEXT, status TEXT, payload_json TEXT, attempt_count INTEGER, next_attempt_at TEXT, last_error_code TEXT, lease_owner TEXT, lease_expires_at TEXT, fencing_token INTEGER, occurred_at TEXT, created_at TEXT, updated_at TEXT, UNIQUE(workspace_id,id), UNIQUE(workspace_id,source,source_event_id))`,
 		`CREATE TABLE _notification_inbox_items (id TEXT, workspace_id TEXT, recipient_user_id TEXT, event_id TEXT, event_type TEXT, source TEXT, category TEXT, severity TEXT, title TEXT, body TEXT, search_text TEXT, payload_json TEXT, subject_type TEXT, subject_id TEXT, action_state TEXT, alert_state TEXT, group_key TEXT, occurrence_count INTEGER, first_occurred_at TEXT, last_occurred_at TEXT, read_at TEXT, archived_at TEXT, expires_at TEXT, created_at TEXT, updated_at TEXT, UNIQUE(workspace_id,id))`,
 		`CREATE TABLE _notification_alert_groups (workspace_id TEXT, recipient_user_id TEXT, group_key TEXT, state TEXT, occurrence_count INTEGER, first_occurred_at TEXT, last_occurred_at TEXT, acknowledged_at TEXT, acknowledged_by TEXT, resolved_at TEXT, last_event_id TEXT, updated_at TEXT, UNIQUE(workspace_id,recipient_user_id,group_key))`,
-		`CREATE TABLE _notification_channel_plans (id TEXT, workspace_id TEXT, event_id TEXT, channel TEXT, status TEXT, payload_json TEXT, attempt_count INTEGER, next_attempt_at TEXT, last_error_code TEXT, outbox_message_id TEXT, lease_owner TEXT, lease_expires_at TEXT, fencing_token INTEGER, created_at TEXT, updated_at TEXT, UNIQUE(workspace_id,id))`,
+		`CREATE TABLE _notification_deliveries (id TEXT, workspace_id TEXT, row_kind TEXT, event_id TEXT, recipient_key TEXT, template_key TEXT, channel TEXT, dedupe_key TEXT, status TEXT, payload_json TEXT, attempt_count INTEGER, next_attempt_at TEXT, last_error_code TEXT, outbox_message_id TEXT, lease_owner TEXT, lease_expires_at TEXT, fencing_token INTEGER, created_at TEXT, updated_at TEXT, UNIQUE(workspace_id,id))`,
+		`CREATE TABLE _notification_delivery_attempts (id TEXT, workspace_id TEXT, attempt_kind TEXT, event_id TEXT, delivery_id TEXT, event_type TEXT, source TEXT, source_event_id TEXT, channel TEXT, stage TEXT, error_code TEXT, attempt INTEGER, disposition TEXT, retryable INTEGER, next_attempt_at TEXT, fencing_token INTEGER, occurred_at TEXT, UNIQUE(workspace_id,id), UNIQUE(workspace_id,attempt_kind,event_id,delivery_id,fencing_token))`,
 	}
 	for _, statement := range statements {
 		if _, err := db.Exec(statement); err != nil {

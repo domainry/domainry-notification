@@ -27,10 +27,12 @@ var alertGroupColumns = []string{
 	"last_occurred_at", "acknowledged_at", "acknowledged_by", "resolved_at", "last_event_id", "updated_at",
 }
 
-var channelPlanColumns = []string{
-	"id", "workspace_id", "event_id", "channel", "status", "payload_json", "attempt_count", "next_attempt_at",
+var deliveryColumns = []string{
+	"id", "workspace_id", "row_kind", "event_id", "recipient_key", "template_key", "channel", "dedupe_key", "status", "payload_json", "attempt_count", "next_attempt_at",
 	"last_error_code", "outbox_message_id", "lease_owner", "lease_expires_at", "fencing_token", "created_at", "updated_at",
 }
+
+const notificationDeliveriesTable = "_notification_deliveries"
 
 func (s *Store) Materialize(ctx context.Context, event inbox.Event, items []inbox.Item) error {
 	if event.WorkspaceID == "" || event.ID == "" || event.LeaseOwner == "" {
@@ -177,7 +179,7 @@ func (s *Store) insertChannelPlan(ctx context.Context, tx *sql.Tx, plan delivery
 	if err != nil {
 		return fmt.Errorf("encode notification channel plan: %w", err)
 	}
-	_, err = s.WorkspaceInsert(ctx, tx, plan.WorkspaceID.String(), "_notification_channel_plans", channelPlanColumns, plan.ID, plan.WorkspaceID.String(), plan.EventID, plan.Channel,
+	_, err = s.WorkspaceInsert(ctx, tx, plan.WorkspaceID.String(), notificationDeliveriesTable, deliveryColumns, plan.ID, plan.WorkspaceID.String(), "delivery", plan.EventID, "", plan.TemplateKey, plan.Channel, plan.DedupeKey,
 		plan.Status, string(raw), plan.AttemptCount, plan.NextAttemptAt, plan.LastErrorCode, plan.OutboxMessageID, plan.LeaseOwner, plan.LeaseExpiresAt,
 		plan.FencingToken, plan.CreatedAt, plan.UpdatedAt)
 	if err != nil {

@@ -2,6 +2,7 @@ package portabilitystore
 
 import (
 	"context"
+	"github.com/domainry/domainry-notification-sdk/modulehost"
 	notification "github.com/domainry/domainry-notification/internal/domain/notification/model"
 	"github.com/domainry/domainry-notification/internal/infrastructure/persistence/base"
 )
@@ -12,13 +13,15 @@ type WorkspaceScope interface {
 type Config struct {
 	SQLStore       *base.SQLStore
 	WorkspaceScope WorkspaceScope
+	Controls       modulehost.OperationControlStore
 }
 type Store struct {
 	*base.SQLStore
 	workspaceScope WorkspaceScope
+	controls       modulehost.OperationControlStore
 }
 
 func New(config Config) *Store {
-	return &Store{SQLStore: config.SQLStore, workspaceScope: config.WorkspaceScope}
+	return &Store{SQLStore: config.SQLStore, workspaceScope: config.WorkspaceScope, controls: config.Controls}
 }
 func (s *Store) columns(columns []string) string { return s.Columns(columns) }

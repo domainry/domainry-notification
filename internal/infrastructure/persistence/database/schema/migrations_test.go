@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/domainry/domainry-notification/internal/infrastructure/persistence/database/artifactkernel"
 	ormdialect "github.com/domainry/domainry-orm/dialect"
 	_ "modernc.org/sqlite"
 )
@@ -80,6 +81,21 @@ func testApplicationSchemaMigrations(driver, schemaName, prefix string, scope Ap
 	}
 	return ApplicationSchemaMigrations(testSchemaProfile{driver: driver}, renderer, prefix, scope)
 }
+func testSharedOperationSchemaMigrations(driver, schemaName string) ([]SchemaMigration, error) {
+	renderer, err := ormdialect.ParseRenderer(driver, schemaName, "")
+	if err != nil {
+		return nil, err
+	}
+	return SharedOperationSchemaMigrations(testSchemaProfile{driver: driver}, renderer)
+}
+
+func testSharedArtifactSchemaMigrations(driver, schemaName string) ([]SchemaMigration, error) {
+	renderer, err := ormdialect.ParseRenderer(driver, schemaName, "")
+	if err != nil {
+		return nil, err
+	}
+	return artifactkernel.SchemaMigrations(renderer)
+}
 
 func TestBaseSchemaMatchesOwnershipAndRunsOnSQLite(t *testing.T) {
 	if len(ownedSchemaTables()) != len(tableOwnership) {
@@ -96,25 +112,13 @@ func TestBaseSchemaMatchesOwnershipAndRunsOnSQLite(t *testing.T) {
 		}
 		defined[table.name] = true
 	}
-	for _, table := range retentionArchiveTables {
-		if defined[table.name] || !owned[table.name] {
-			t.Fatalf("invalid schema table %q", table.name)
-		}
-		defined[table.name] = true
-	}
-	for _, table := range migrationControlTables {
-		if defined[table.name] || !owned[table.name] {
-			t.Fatalf("invalid schema table %q", table.name)
-		}
-		defined[table.name] = true
-	}
 	for _, index := range baseSchemaIndexes {
 		if !defined[index.table] {
 			t.Fatalf("index %q references unowned table %q", index.name, index.table)
 		}
 	}
 	migrations, err := testSchemaMigrations("sqlite", "", "")
-	if err != nil || len(migrations) != 4 || migrations[0].Version != 1 || migrations[0].Name != "create_notification_schema" || migrations[1].Version != 2 || migrations[2].Version != 3 || migrations[2].Name != "create_notification_migration_control" || migrations[3].Version != 4 || migrations[3].Name != "scope_notification_user_resources" {
+	if err != nil || len(migrations) != 1 || migrations[0].Version != 1 || migrations[0].Name != "create_notification_schema" {
 		t.Fatalf("migrations=%+v err=%v", migrations, err)
 	}
 	db, err := sql.Open("sqlite", "file:"+t.Name()+"?mode=memory&cache=shared")
@@ -135,6 +139,62 @@ func TestBaseSchemaMatchesOwnershipAndRunsOnSQLite(t *testing.T) {
 			t.Fatalf("table %q count=%d err=%v", table, count, err)
 		}
 	}
+	for _, table := range []string{"_notification_migration_controls", "_notification_retention_archive_entries"} {
+		var count int
+		if err := db.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = ?`, table).Scan(&count); err != nil || count != 0 {
+			t.Fatalf("private notification table %q count=%d err=%v", table, count, err)
+		}
+	}
+}
+
+func TestSharedOperationSchemaOwnsMigrationControlRegistry(t *testing.T) {
+	migrations, err := testSharedOperationSchemaMigrations("sqlite", "")
+	if err != nil || len(migrations) != 1 || migrations[0].Name != "create_shared_operations" {
+		t.Fatalf("migrations=%+v err=%v", migrations, err)
+	}
+	db, err := sql.Open("sqlite", "file:"+t.Name()+"?mode=memory&cache=shared")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	for _, statement := range migrations[0].Statements {
+		if _, err := db.Exec(statement); err != nil {
+			t.Fatalf("execute %q: %v", statement, err)
+		}
+	}
+	for _, table := range []string{"_operations", "_operation_controls"} {
+		var count int
+		if err := db.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = ?`, table).Scan(&count); err != nil || count != 1 {
+			t.Fatalf("shared table %q count=%d err=%v", table, count, err)
+		}
+	}
+}
+
+func TestSharedArtifactSchemaOwnsRetentionArchive(t *testing.T) {
+	migrations, err := testSharedArtifactSchemaMigrations("sqlite", "")
+	if err != nil || len(migrations) != 1 || migrations[0].Name != "shared_artifacts" {
+		t.Fatalf("migrations=%+v err=%v", migrations, err)
+	}
+	db, err := sql.Open("sqlite", "file:"+t.Name()+"?mode=memory&cache=shared")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	for _, statement := range migrations[0].Statements {
+		if _, err := db.Exec(statement); err != nil {
+			t.Fatalf("execute %q: %v", statement, err)
+		}
+	}
+	for _, table := range []string{"_artifacts", "_artifact_bindings"} {
+		var count int
+		if err := db.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = ?`, table).Scan(&count); err != nil || count != 1 {
+			t.Fatalf("shared Artifact table %q count=%d err=%v", table, count, err)
+		}
+	}
+	var retired int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = '_lifecycle_archive_entries'`).Scan(&retired); err != nil || retired != 0 {
+		t.Fatalf("retired Lifecycle archive table count=%d err=%v", retired, err)
+	}
 }
 
 func TestSchemaMigrationsRenderPhysicalNamesAndMySQLTypes(t *testing.T) {
@@ -148,7 +208,6 @@ func TestSchemaMigrationsRenderPhysicalNamesAndMySQLTypes(t *testing.T) {
 		"`domainry_uniq_notification_event_workspace_identity`",
 		"VARCHAR(191) CHARACTER SET ascii COLLATE ascii_bin",
 		"LONGTEXT",
-		"`failure` TEXT NOT NULL",
 	} {
 		if !strings.Contains(joined, fragment) {
 			t.Fatalf("migration does not contain %q:\n%s", fragment, joined)
@@ -205,7 +264,7 @@ func TestApplicationSchemaMigrationsPersistExactOwnership(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(migrations) != 4 || migrations[0].Name != "create_application_schema" || migrations[1].Version != 2 || migrations[2].Version != 3 || migrations[3].Version != 4 {
+	if len(migrations) != 1 || migrations[0].Name != "create_application_schema" {
 		t.Fatalf("migrations=%+v", migrations)
 	}
 	db, err := sql.Open("sqlite", "file:"+t.Name()+"?mode=memory&cache=shared")

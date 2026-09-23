@@ -15,7 +15,6 @@ import (
 	notificationsdk "github.com/domainry/domainry-notification-sdk"
 	"github.com/domainry/domainry-notification-sdk/contract"
 	"github.com/domainry/domainry-notification-sdk/modulehost"
-	notificationcapability "github.com/domainry/domainry-notification/capability"
 	notificationapplication "github.com/domainry/domainry-notification/internal/application"
 	appdelivery "github.com/domainry/domainry-notification/internal/application/delivery"
 	appinbox "github.com/domainry/domainry-notification/internal/application/inbox"
@@ -60,6 +59,22 @@ func (f *Factory) openHosted(ctx context.Context, application notificationsdk.Ap
 	if host == nil || host.Database() == nil || host.Dialect() == nil || host.WorkspaceScope() == nil || host.QueueScopes() == nil || host.Identity() == nil || host.Identity().Principals() == nil || host.Clock() == nil || strings.TrimSpace(host.WorkerID()) == "" || host.WorkNotifier() == nil || host.RecipientResolver() == nil || host.DeliveryGateway() == nil {
 		return nil, fmt.Errorf("notification Module host is incomplete")
 	}
+	definitionHost, ok := host.(modulehost.DefinitionStoreHost)
+	if !ok || definitionHost.DefinitionStore() == nil {
+		return nil, fmt.Errorf("notification shared Definition store is required")
+	}
+	operationHost, ok := host.(modulehost.ManagedOperationStoreHost)
+	if !ok || operationHost.ManagedOperationStore() == nil {
+		return nil, fmt.Errorf("notification shared managed Operation store is required")
+	}
+	controlHost, ok := host.(modulehost.OperationControlStoreHost)
+	if !ok || controlHost.OperationControlStore() == nil {
+		return nil, fmt.Errorf("notification shared Operation Control store is required")
+	}
+	archiveHost, ok := host.(modulehost.RetentionArchiveStoreHost)
+	if !ok || archiveHost.RetentionArchiveStore() == nil {
+		return nil, fmt.Errorf("notification shared Lifecycle retention archive store is required")
+	}
 	if mode == notificationsdk.DeploymentModeModule {
 		migrationHost, ok := host.(modulehost.MigrationHost)
 		if !ok || migrationHost.Migrations() == nil {
@@ -97,7 +112,7 @@ func (f *Factory) openHosted(ctx context.Context, application notificationsdk.Ap
 			return nil, fmt.Errorf("apply Notification Module migrations: %w", err)
 		}
 	}
-	store, err := sqlstore.New(sqlstore.Config{Database: host.Database(), Dialect: host.Dialect(), WorkspaceScope: workspaceScopeAdapter{host.WorkspaceScope()}, QueueScopes: queueScopeAdapter{host.QueueScopes()}, Clock: host.Clock(), WorkspaceID: notification.WorkspaceID(application.WorkspaceID)})
+	store, err := sqlstore.New(sqlstore.Config{Database: host.Database(), Dialect: host.Dialect(), WorkspaceScope: workspaceScopeAdapter{host.WorkspaceScope()}, QueueScopes: queueScopeAdapter{host.QueueScopes()}, Clock: host.Clock(), WorkspaceID: notification.WorkspaceID(application.WorkspaceID), DefinitionStore: definitionHost.DefinitionStore(), OperationStore: operationHost.ManagedOperationStore(), ControlStore: controlHost.OperationControlStore(), ArchiveStore: archiveHost.RetentionArchiveStore()})
 	if err != nil {
 		return nil, err
 	}
@@ -212,10 +227,6 @@ func (f *Factory) openHosted(ctx context.Context, application notificationsdk.Ap
 		return nil, err
 	}
 	b := &binding{application: application, mode: mode, identity: host.Identity(), principals: principalResolver, templates: templateManager, publications: publicationProcessor, engine: templateEngine, publisher: publisher, compiler: compiler, store: store, inboxProcessor: inboxProcessor, policy: policyManager, deliveryProcessor: deliveryProcessor, mailbox: mailbox, actions: actions, catalog: eventCatalog, eventTypes: eventTypes, rules: rules, metrics: host.DeliveryMetrics(), clock: host.Clock(), templateCapabilities: append([]contract.NotificationTemplateCapability(nil), catalog.TemplateCapabilities...)}
-	b.capabilities, err = notificationcapability.Open(notificationcapability.Inputs{})
-	if err != nil {
-		return nil, fmt.Errorf("build Notification capability disclosure: %w", err)
-	}
 	if err := b.RefreshPublished(ctx); err != nil {
 		return nil, err
 	}

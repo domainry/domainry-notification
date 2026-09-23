@@ -6,9 +6,11 @@ toolchain go1.26.6
 
 require (
 	github.com/DATA-DOG/go-sqlmock v1.5.2
-	github.com/domainry/domainry-foundation v0.1.1
-	github.com/domainry/domainry-identity-sdk v0.1.12
-	github.com/domainry/domainry-notification-sdk v0.1.2
+	github.com/domainry/domainry-foundation v0.1.2
+	github.com/domainry/domainry-identity-sdk v0.1.14
+	github.com/domainry/domainry-metadata v0.1.10
+	github.com/domainry/domainry-metadata-sdk v0.1.4
+	github.com/domainry/domainry-notification-sdk v0.1.3
 	github.com/domainry/domainry-orm v0.1.30
 	github.com/go-sql-driver/mysql v1.10.0
 	github.com/jackc/pgx/v5 v5.10.0
@@ -40,12 +42,10 @@ require (
 	go.opentelemetry.io/proto/otlp v1.10.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
 	go.uber.org/zap v1.27.1 // indirect
-	golang.org/x/mod v0.40.0 // indirect
 	golang.org/x/net v0.58.0 // indirect
 	golang.org/x/sync v0.22.0 // indirect
 	golang.org/x/sys v0.47.0 // indirect
 	golang.org/x/text v0.41.0 // indirect
-	golang.org/x/tools v0.49.0 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20260526163538-3dc84a4a5aaa // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260526163538-3dc84a4a5aaa // indirect
 	google.golang.org/grpc v1.82.1 // indirect

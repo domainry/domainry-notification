@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	metadatasdk "github.com/domainry/domainry-metadata-sdk"
 	notificationsdk "github.com/domainry/domainry-notification-sdk"
 	"github.com/domainry/domainry-notification-sdk/contract"
 	"github.com/domainry/domainry-notification-sdk/modulehost"
@@ -57,8 +58,9 @@ func TestModuleToSaaSCutoverPreservesStateAndMovesTheOnlyWriter(t *testing.T) {
 	sourceDB.SetMaxOpenConns(1)
 	t.Cleanup(func() { _ = sourceDB.Close() })
 	sourceDialect, _ := ormdialect.ParseRenderer("sqlite", "", "")
+	sourceDefinitions, sourceOperations, sourceArchives := prepareCutoverSharedStores(t, sourceDB, sourceDialect, application)
 	sourceHost := &cutoverModuleHost{
-		saasApplicationHost: &saasApplicationHost{application: application, database: sourceDB, dialect: sourceDialect, identity: applicationIdentityStub{}, catalog: catalog, clock: wallClock{}, workerID: "module-worker", notifier: discardWorkNotifier{}, projection: identityRecipientResolver{application: application, projection: projectionStub{}}, audiences: snapshotOnlyAudienceResolver{}, gateway: applicationGatewayStub{}},
+		saasApplicationHost: &saasApplicationHost{application: application, database: sourceDB, dialect: sourceDialect, identity: applicationIdentityStub{}, catalog: catalog, clock: wallClock{}, workerID: "module-worker", notifier: discardWorkNotifier{}, projection: identityRecipientResolver{application: application, projection: projectionStub{}}, audiences: snapshotOnlyAudienceResolver{}, gateway: applicationGatewayStub{}, definitions: sourceDefinitions, operations: sourceOperations, controls: sourceOperations.(modulehost.OperationControlStore), archives: sourceArchives},
 		migrations:          &cutoverMigrationRegistrar{database: sourceDB},
 	}
 	source, err := module.NewFactory(module.Options{}).OpenModule(t.Context(), application, sourceHost)
@@ -87,7 +89,7 @@ func TestModuleToSaaSCutoverPreservesStateAndMovesTheOnlyWriter(t *testing.T) {
 	targetDB.SetMaxOpenConns(1)
 	t.Cleanup(func() { _ = targetDB.Close() })
 	persistence, _ := NewSQLPersistence(SQLPersistenceOptions{Database: targetDB, Driver: sqlstore.SQLite})
-	targetFactory, err := NewSQLApplicationFactory(SQLApplicationFactoryOptions{Persistence: persistence, Catalog: catalog, WorkerID: "saas-worker", DeliveryGateway: applicationGatewayStub{}})
+	targetFactory, err := NewSQLApplicationFactory(SQLApplicationFactoryOptions{Persistence: persistence, Catalog: catalog, WorkerID: "saas-worker", DeliveryGateway: applicationGatewayStub{}, ArtifactContent: newTestArtifactContent(t)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -120,4 +122,25 @@ func TestModuleToSaaSCutoverPreservesStateAndMovesTheOnlyWriter(t *testing.T) {
 			t.Fatalf("source write error=%v", err)
 		}
 	}
+}
+
+func prepareCutoverSharedStores(t *testing.T, database *sql.DB, dialect modulehost.Dialect, application notificationsdk.ApplicationRef) (metadatasdk.DefinitionStore, modulehost.ManagedOperationStore, modulehost.RetentionArchiveStore) {
+	t.Helper()
+	persistence, err := NewSQLPersistence(SQLPersistenceOptions{Database: database, Driver: sqlstore.SQLite})
+	if err != nil {
+		t.Fatal(err)
+	}
+	definitions, err := persistence.PrepareDefinitionStore(t.Context(), application, dialect)
+	if err != nil {
+		t.Fatal(err)
+	}
+	operations, err := persistence.PrepareManagedOperationStore(t.Context(), dialect)
+	if err != nil {
+		t.Fatal(err)
+	}
+	archives, err := persistence.PrepareRetentionArchiveStore(t.Context(), dialect, newTestArtifactContent(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return definitions, operations, archives
 }

@@ -23,6 +23,7 @@ import (
 	"github.com/domainry/domainry-notification-sdk/modulehost"
 	server "github.com/domainry/domainry-notification/internal/assembly/saas"
 	sqlstore "github.com/domainry/domainry-notification/internal/infrastructure/persistence"
+	"github.com/domainry/domainry-notification/internal/infrastructure/persistence/database/artifactkernel"
 	notificationhttp "github.com/domainry/domainry-notification/internal/transport/http/saas"
 	ormsqlite "github.com/domainry/domainry-orm/sqlite"
 )
@@ -55,12 +56,18 @@ func run() error {
 		_ = database.Close()
 		return err
 	}
+	artifactContent, err := artifactkernel.NewContentFiles(config.artifactStoragePath)
+	if err != nil {
+		_ = persistence.Close()
+		return err
+	}
+	defer artifactContent.Close()
 	remoteGateway, err := deliverygateway.NewRemote(deliverygateway.RemoteConfig{BaseURL: config.deliveryGatewayURL, ServiceCredential: config.deliveryGatewayCredential, RequestTimeout: config.deliveryGatewayTimeout, MaxAttempts: config.deliveryGatewayAttempts})
 	if err != nil {
 		_ = persistence.Close()
 		return err
 	}
-	applications, err := server.NewSQLApplicationFactory(server.SQLApplicationFactoryOptions{Persistence: persistence, Catalog: config.catalog, WorkerID: config.workerID, RemoteDeliveryGateway: remoteGateway})
+	applications, err := server.NewSQLApplicationFactory(server.SQLApplicationFactoryOptions{Persistence: persistence, Catalog: config.catalog, WorkerID: config.workerID, RemoteDeliveryGateway: remoteGateway, ArtifactContent: artifactContent})
 	if err != nil {
 		_ = persistence.Close()
 		return err
@@ -101,6 +108,7 @@ func run() error {
 
 type configuration struct {
 	httpAddress, sqlDriver, databaseDSN, databaseSchema string
+	artifactStoragePath                                 string
 	storeDriver                                         sqlstore.Driver
 	databaseMaxOpen, databaseMaxIdle                    int
 	databaseConnLifetime                                time.Duration
@@ -118,7 +126,8 @@ type configuration struct {
 func configurationFromEnvironment() (configuration, error) {
 	value := configuration{
 		httpAddress: env("NOTIFICATION_HTTP_ADDRESS", ":8080"), databaseDSN: strings.TrimSpace(os.Getenv("NOTIFICATION_DATABASE_DSN")), databaseSchema: strings.TrimSpace(os.Getenv("NOTIFICATION_DATABASE_SCHEMA")),
-		databaseMaxOpen: 20, databaseMaxIdle: 10, databaseConnLifetime: 30 * time.Minute, databaseLockTimeout: 5 * time.Second,
+		artifactStoragePath: strings.TrimSpace(os.Getenv("NOTIFICATION_ARTIFACT_STORAGE_PATH")),
+		databaseMaxOpen:     20, databaseMaxIdle: 10, databaseConnLifetime: 30 * time.Minute, databaseLockTimeout: 5 * time.Second,
 		deliveryGatewayURL: strings.TrimSpace(os.Getenv("NOTIFICATION_DELIVERY_GATEWAY_URL")), deliveryGatewayCredential: strings.TrimSpace(os.Getenv("NOTIFICATION_DELIVERY_GATEWAY_SERVICE_CREDENTIAL")), deliveryGatewayTimeout: 10 * time.Second, deliveryGatewayAttempts: 3,
 		workerID: strings.TrimSpace(os.Getenv("NOTIFICATION_WORKER_ID")), workerPollInterval: time.Second, workerBatchSize: 100,
 		telemetry: telemetry.Config{ServiceName: "domainry-notification", ServiceVersion: strings.TrimSpace(os.Getenv("NOTIFICATION_SERVICE_VERSION")), Exporter: env("NOTIFICATION_TELEMETRY_EXPORTER", "none"), Endpoint: strings.TrimSpace(os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT")), Headers: telemetryHeaders(os.Getenv("OTEL_EXPORTER_OTLP_HEADERS")), Insecure: strings.EqualFold(strings.TrimSpace(os.Getenv("OTEL_EXPORTER_OTLP_INSECURE")), "true"), SampleRatio: 1, ExportTimeout: 10 * time.Second},
@@ -143,8 +152,8 @@ func configurationFromEnvironment() (configuration, error) {
 	default:
 		return configuration{}, fmt.Errorf("NOTIFICATION_DATABASE_DRIVER must be sqlite, postgres or mysql")
 	}
-	if value.databaseDSN == "" || value.deliveryGatewayURL == "" || value.deliveryGatewayCredential == "" || value.workerID == "" {
-		return configuration{}, fmt.Errorf("Notification SaaS database, Delivery Gateway and worker configuration are required")
+	if value.databaseDSN == "" || value.artifactStoragePath == "" || value.deliveryGatewayURL == "" || value.deliveryGatewayCredential == "" || value.workerID == "" {
+		return configuration{}, fmt.Errorf("Notification SaaS database, Artifact storage, Delivery Gateway and worker configuration are required")
 	}
 	catalogFile := strings.TrimSpace(os.Getenv("NOTIFICATION_CATALOG_FILE"))
 	if catalogFile == "" {

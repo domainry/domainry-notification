@@ -9,7 +9,7 @@ import (
 
 func TestSchemaOwnershipSeparatesSystemAndWorkspaceState(t *testing.T) {
 	ownership := schema.SchemaOwnership()
-	if len(ownership) != 16 {
+	if len(ownership) != 7 {
 		t.Fatalf("owned table count=%d", len(ownership))
 	}
 	system := []string{}
@@ -28,7 +28,7 @@ func TestSchemaOwnershipSeparatesSystemAndWorkspaceState(t *testing.T) {
 	if !slices.Equal(system, wantSystem) {
 		t.Fatalf("system tables=%v", system)
 	}
-	if len(workspace) != 16 || !slices.Contains(workspace, "_notification_retention_archive_entries") || !slices.Contains(workspace, "_notification_migration_controls") {
+	if len(workspace) != 7 || !slices.Contains(workspace, "_notification_user_settings") || !slices.Contains(workspace, "_notification_deliveries") {
 		t.Fatalf("workspace tables=%v", workspace)
 	}
 	flat := schema.OwnedTables()

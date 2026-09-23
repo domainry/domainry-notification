@@ -8,7 +8,11 @@ import (
 )
 
 func TestTemplatePublicationRequestLockLeaseAndFencingLifecycle(t *testing.T) {
-	_, store := migratedStore(t)
+	database, store := migratedStore(t)
+	draft := template.Template{Key: "workflow.failed", Name: "Workflow failed", Channel: "email", Status: "draft", Version: 2, DefaultLocale: "en", Locales: map[string]template.Content{"en": {Subject: "Failed", Text: "Run failed"}}}
+	if _, err := store.SaveDraft(t.Context(), draft, "", "admin-1"); err != nil {
+		t.Fatal(err)
+	}
 	request := template.PublicationRequest{
 		ID: "request-1", TemplateKey: "workflow.failed", Snapshot: template.Template{Key: "workflow.failed", Version: 2},
 		CandidateHash: "hash-1", DraftUpdatedAt: "2026-08-24T00:59:00.000000000Z", Status: template.PublicationScheduled,
@@ -47,6 +51,13 @@ func TestTemplatePublicationRequestLockLeaseAndFencingLifecycle(t *testing.T) {
 	}
 	if err := store.CreatePublicationRequest(t.Context(), conflict); err != nil {
 		t.Fatalf("new request after terminal transition: %v", err)
+	}
+	var operations, privateTables int
+	if err := database.QueryRow(`SELECT COUNT(*) FROM _operations WHERE owner = 'notification' AND kind = 'template_publication'`).Scan(&operations); err != nil || operations != 2 {
+		t.Fatalf("shared publication operations=%d err=%v", operations, err)
+	}
+	if err := database.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name IN ('_notification_template_publication_requests', '_notification_template_publication_locks')`).Scan(&privateTables); err != nil || privateTables != 0 {
+		t.Fatalf("private publication tables=%d err=%v", privateTables, err)
 	}
 }
 
