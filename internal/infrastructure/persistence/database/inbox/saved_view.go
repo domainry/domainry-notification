@@ -3,7 +3,6 @@ package inboxstore
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -11,6 +10,7 @@ import (
 	"github.com/domainry/domainry-foundation/mutation"
 	"github.com/domainry/domainry-notification/internal/domain/inbox/service"
 	notification "github.com/domainry/domainry-notification/internal/domain/notification/model"
+	"github.com/domainry/domainry-notification/internal/infrastructure/persistence/database/timejson"
 	"github.com/domainry/domainry-orm/query"
 	"github.com/domainry/domainry-orm/sqlhost"
 )
@@ -47,7 +47,7 @@ func (s *Store) ListSavedViews(ctx context.Context, workspaceID notification.Wor
 			return nil, err
 		}
 		var value inbox.SavedView
-		if err := json.Unmarshal([]byte(raw), &value); err != nil {
+		if err := timejson.Unmarshal([]byte(raw), &value); err != nil {
 			return nil, fmt.Errorf("decode notification inbox saved view: %w", err)
 		}
 		values = append(values, value)
@@ -64,7 +64,7 @@ func (s *Store) SaveSavedView(ctx context.Context, workspaceID notification.Work
 		return inbox.SavedView{}, err
 	}
 	ctx = s.workspaceScope.Context(ctx, workspaceID)
-	raw, err := json.Marshal(value)
+	raw, err := timejson.Marshal(value)
 	if err != nil {
 		return inbox.SavedView{}, fmt.Errorf("encode notification inbox saved view: %w", err)
 	}
@@ -79,14 +79,14 @@ func (s *Store) SaveSavedView(ctx context.Context, workspaceID notification.Work
 	}
 	if !exists {
 		_, err = s.WorkspaceInsert(ctx, tx, workspaceID.String(), notificationUserSettingsTable, []string{"workspace_id", "recipient_user_id", "setting_kind", "setting_key", "payload_json", "updated_by", "created_at", "updated_at"},
-			workspaceID.String(), recipientID.String(), savedViewSettingKind, value.Key, string(raw), recipientID.String(), value.CreatedAt, value.UpdatedAt)
+			workspaceID.String(), recipientID.String(), savedViewSettingKind, value.Key, string(raw), recipientID.String(), notification.TimestampMillis(value.CreatedAt), notification.TimestampMillis(value.UpdatedAt))
 		if err != nil {
 			return inbox.SavedView{}, fmt.Errorf("insert notification inbox saved view: %w", err)
 		}
 		return value, tx.Commit()
 	}
 	predicate := query.And(query.Equal("recipient_user_id", recipientID.String()), query.Equal("setting_kind", savedViewSettingKind), query.Equal("setting_key", value.Key))
-	queryValue, args, err := query.NewWorkspaceUpdateBuilder(s.Renderer, notificationUserSettingsTable, workspaceID.String()).Set("payload_json", string(raw)).Set("updated_by", recipientID.String()).Set("updated_at", value.UpdatedAt).Where(predicate).Build()
+	queryValue, args, err := query.NewWorkspaceUpdateBuilder(s.Renderer, notificationUserSettingsTable, workspaceID.String()).Set("payload_json", string(raw)).Set("updated_by", recipientID.String()).Set("updated_at", notification.TimestampMillis(value.UpdatedAt)).Where(predicate).Build()
 	if err != nil {
 		return inbox.SavedView{}, err
 	}

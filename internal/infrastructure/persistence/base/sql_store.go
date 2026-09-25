@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/domainry/domainry-notification-sdk/modulehost"
+	notification "github.com/domainry/domainry-notification/internal/domain/notification/model"
 	"github.com/domainry/domainry-orm/query"
 	"github.com/domainry/domainry-orm/sqlhost"
 )
@@ -29,6 +30,7 @@ func (s *SQLStore) Columns(columns []string) string {
 }
 
 func (s *SQLStore) Insert(ctx context.Context, executor sqlhost.Executor, table string, columns []string, values ...any) (sql.Result, error) {
+	values = normalizeTimestampValues(columns, values)
 	statement, arguments, err := query.NewInsertBuilder(s.Renderer, table).Columns(columns...).Values(values...).Build()
 	if err != nil {
 		return nil, err
@@ -37,6 +39,7 @@ func (s *SQLStore) Insert(ctx context.Context, executor sqlhost.Executor, table 
 }
 
 func (s *SQLStore) WorkspaceInsert(ctx context.Context, executor sqlhost.Executor, workspaceID, table string, columns []string, values ...any) (sql.Result, error) {
+	values = normalizeTimestampValues(columns, values)
 	workspaceColumn := -1
 	for index, column := range columns {
 		if strings.EqualFold(strings.TrimSpace(column), query.WorkspaceIDColumn) {
@@ -56,4 +59,19 @@ func (s *SQLStore) WorkspaceInsert(ctx context.Context, executor sqlhost.Executo
 		return nil, err
 	}
 	return executor.ExecContext(ctx, statement, arguments...)
+}
+
+func normalizeTimestampValues(columns []string, values []any) []any {
+	result := append([]any(nil), values...)
+	for index, column := range columns {
+		if index >= len(result) || !strings.HasSuffix(strings.ToLower(strings.TrimSpace(column)), "_at") || result[index] == nil {
+			continue
+		}
+		switch result[index].(type) {
+		case int, int32, int64:
+			continue
+		}
+		result[index] = notification.TimestampMillis(fmt.Sprint(result[index]))
+	}
+	return result
 }

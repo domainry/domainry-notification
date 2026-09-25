@@ -19,7 +19,7 @@ func (s *Store) GovernanceMetrics(ctx context.Context, workspaceID notification.
 	}
 	ctx = s.workspaceScope.Context(ctx, workspaceID)
 	result := inbox.GovernanceMetrics{Since: since, GeneratedAt: notification.Timestamp(s.clock.Now())}
-	predicate := query.And(query.Equal("workspace_id", workspaceID.String()), query.GreaterThanOrEqual("last_occurred_at", since))
+	predicate := query.And(query.Equal("workspace_id", workspaceID.String()), query.GreaterThanOrEqual("last_occurred_at", notification.TimestampMillis(since)))
 	var err error
 	if result.Summary, err = s.inboxAggregateSummary(ctx, workspaceID.String(), predicate); err != nil {
 		return result, err
@@ -43,7 +43,7 @@ func (s *Store) GovernanceMetrics(ctx context.Context, workspaceID notification.
 
 func (s *Store) eventFailureMetrics(ctx context.Context, workspaceID notification.WorkspaceID, since string) (inbox.FailureMetrics, error) {
 	result := inbox.FailureMetrics{}
-	predicate := query.And(query.Equal("workspace_id", workspaceID.String()), query.GreaterThanOrEqual("occurred_at", since))
+	predicate := query.And(query.Equal("workspace_id", workspaceID.String()), query.GreaterThanOrEqual("occurred_at", notification.TimestampMillis(since)))
 	projections := []query.Projection{
 		query.Project(query.CountAll()),
 		query.Project(query.Coalesce(query.Sum(query.CaseWhen(query.Equal("disposition", "retry_scheduled"), 1).Else(0)), query.Value(0))),
@@ -92,7 +92,7 @@ func inboxAggregateProjections() []query.Projection {
 	return []query.Projection{
 		query.Project(query.CountAll()),
 		query.Project(query.Coalesce(query.Sum(query.Column("occurrence_count")), query.Value(0))),
-		query.Project(query.Coalesce(query.Sum(query.CaseWhen(query.Equal("read_at", ""), 1).Else(0)), query.Value(0))),
+		query.Project(query.Coalesce(query.Sum(query.CaseWhen(query.Equal("read_at", int64(0)), 1).Else(0)), query.Value(0))),
 		query.Project(query.Coalesce(query.Sum(query.CaseWhen(query.Equal("action_state", "open"), 1).Else(0)), query.Value(0))),
 		query.Project(query.Coalesce(query.Sum(query.CaseWhen(query.Equal("alert_state", "firing"), 1).Else(0)), query.Value(0))),
 	}

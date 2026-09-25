@@ -43,8 +43,8 @@ type migrationControlReference struct {
 	MigrationID       string `json:"migration_id"`
 	Role              string `json:"role"`
 	BundleFingerprint string `json:"bundle_fingerprint,omitempty"`
-	FrozenAt          string `json:"frozen_at,omitempty"`
-	ActivatedAt       string `json:"activated_at,omitempty"`
+	FrozenAt          int64  `json:"frozen_at,omitempty"`
+	ActivatedAt       int64  `json:"activated_at,omitempty"`
 }
 
 func (s *Store) MigrationStatus(ctx context.Context, workspaceID string) (MigrationControl, error) {
@@ -66,8 +66,8 @@ func (s *Store) MigrationStatus(ctx context.Context, workspaceID string) (Migrat
 		result.Role = strings.TrimSpace(reference.Role)
 		result.State = strings.TrimSpace(control.State)
 		result.BundleFingerprint = strings.TrimSpace(reference.BundleFingerprint)
-		result.FrozenAt = strings.TrimSpace(reference.FrozenAt)
-		result.ActivatedAt = strings.TrimSpace(reference.ActivatedAt)
+		result.FrozenAt = migrationTimestampText(reference.FrozenAt)
+		result.ActivatedAt = migrationTimestampText(reference.ActivatedAt)
 		result.UpdatedAt = control.UpdatedAt.UTC().Format(time.RFC3339Nano)
 		result.Revision = control.Revision
 	}
@@ -154,7 +154,8 @@ func (s *Store) transitionMigration(ctx context.Context, workspaceID, migrationI
 
 func (s *Store) putMigrationControl(ctx context.Context, current, next MigrationControl, at time.Time) (MigrationControl, error) {
 	reference, err := json.Marshal(migrationControlReference{
-		MigrationID: next.MigrationID, Role: next.Role, BundleFingerprint: next.BundleFingerprint, FrozenAt: next.FrozenAt, ActivatedAt: next.ActivatedAt,
+		MigrationID: next.MigrationID, Role: next.Role, BundleFingerprint: next.BundleFingerprint,
+		FrozenAt: migrationTimestampMillis(next.FrozenAt), ActivatedAt: migrationTimestampMillis(next.ActivatedAt),
 	})
 	if err != nil {
 		return MigrationControl{}, err
@@ -177,6 +178,21 @@ func (s *Store) putMigrationControl(ctx context.Context, current, next Migration
 		return MigrationControl{}, fmt.Errorf("notification migration transition conflict")
 	}
 	return s.MigrationStatus(ctx, next.WorkspaceID)
+}
+
+func migrationTimestampMillis(value string) int64 {
+	parsed, err := time.Parse(time.RFC3339Nano, strings.TrimSpace(value))
+	if err != nil {
+		return 0
+	}
+	return parsed.UTC().UnixMilli()
+}
+
+func migrationTimestampText(value int64) string {
+	if value == 0 {
+		return ""
+	}
+	return time.UnixMilli(value).UTC().Format(time.RFC3339Nano)
 }
 
 func (s *Store) activeMigrationLeases(ctx context.Context, workspaceID string) (int, error) {

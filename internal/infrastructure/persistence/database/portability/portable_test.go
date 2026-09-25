@@ -150,7 +150,7 @@ func applyPortableMigrations(t *testing.T, database *sql.DB, migrations []Schema
 
 func insertPortableEvent(t *testing.T, database *sql.DB, workspaceID, id, sourceEventID, leaseOwner string) {
 	t.Helper()
-	if _, err := database.Exec(`INSERT INTO _notification_events (id, workspace_id, source, source_event_id, status, payload_json, lease_owner, occurred_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, id, workspaceID, "test", sourceEventID, "queued", `{}`, leaseOwner, "now", "now", "now"); err != nil {
+	if _, err := database.Exec(`INSERT INTO _notification_events (id, workspace_id, source, source_event_id, status, payload_json, lease_owner, occurred_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, id, workspaceID, "test", sourceEventID, "queued", `{}`, leaseOwner, int64(1), int64(1), int64(1)); err != nil {
 		t.Fatal(err)
 	}
 }

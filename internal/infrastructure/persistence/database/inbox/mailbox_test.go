@@ -84,10 +84,10 @@ func TestMailboxWorkspaceIsolationAndAtomicMarkAllRead(t *testing.T) {
 		t.Fatalf("updated=%d err=%v", updated, err)
 	}
 	var workspaceOneUnread, workspaceTwoUnread int
-	if err := db.QueryRow(`SELECT COUNT(*) FROM _notification_inbox_items WHERE workspace_id = ? AND read_at = ''`, "workspace-1").Scan(&workspaceOneUnread); err != nil {
+	if err := db.QueryRow(`SELECT COUNT(*) FROM _notification_inbox_items WHERE workspace_id = ? AND read_at = 0`, "workspace-1").Scan(&workspaceOneUnread); err != nil {
 		t.Fatal(err)
 	}
-	if err := db.QueryRow(`SELECT COUNT(*) FROM _notification_inbox_items WHERE workspace_id = ? AND read_at = ''`, "workspace-2").Scan(&workspaceTwoUnread); err != nil {
+	if err := db.QueryRow(`SELECT COUNT(*) FROM _notification_inbox_items WHERE workspace_id = ? AND read_at = 0`, "workspace-2").Scan(&workspaceTwoUnread); err != nil {
 		t.Fatal(err)
 	}
 	if workspaceOneUnread != 0 || workspaceTwoUnread != 1 {
@@ -102,7 +102,7 @@ func TestMailboxWorkspaceIsolationAndAtomicMarkAllRead(t *testing.T) {
 	if _, _, err := store.SetRead(t.Context(), foreign, "item-3", "now", "now"); err == nil {
 		t.Fatal("cross-workspace mutation was accepted")
 	}
-	if err := db.QueryRow(`SELECT COUNT(*) FROM _notification_inbox_items WHERE workspace_id = ? AND read_at = ''`, "workspace-2").Scan(&workspaceTwoUnread); err != nil || workspaceTwoUnread != 1 {
+	if err := db.QueryRow(`SELECT COUNT(*) FROM _notification_inbox_items WHERE workspace_id = ? AND read_at = 0`, "workspace-2").Scan(&workspaceTwoUnread); err != nil || workspaceTwoUnread != 1 {
 		t.Fatalf("unauthorized mutation changed foreign rows: unread=%d err=%v", workspaceTwoUnread, err)
 	}
 }

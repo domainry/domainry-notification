@@ -232,7 +232,8 @@ func TestModuleSystemMigrationExportsAndIdempotentlyReconcilesExactApplication(t
 		t.Fatal("Module Binding did not expose system migration")
 	}
 	const snapshotPayload = `{"recipient_user_ids":["user"],"snapshot":{"title":"Frozen title","body":"Frozen body","template_key":"report.completed","template_version":7,"template_content_hash":"sha256"}}`
-	if _, err := host.database.Exec(`INSERT INTO _notification_events (id, workspace_id, source, source_event_id, status, payload_json, lease_owner, occurred_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, "leased-event", "workspace", "test", "source", "processing", snapshotPayload, "worker", "now", "now", "now"); err != nil {
+	storedAt := time.Date(2026, 8, 29, 1, 0, 0, 0, time.UTC).UnixMilli()
+	if _, err := host.database.Exec(`INSERT INTO _notification_events (id, workspace_id, source, source_event_id, status, payload_json, lease_owner, occurred_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, "leased-event", "workspace", "test", "source", "processing", snapshotPayload, "worker", storedAt, storedAt, storedAt); err != nil {
 		t.Fatal(err)
 	}
 	command := contract.NotificationMigrationCommand{MigrationID: "migration", At: time.Date(2026, 8, 29, 2, 0, 0, 0, time.UTC)}

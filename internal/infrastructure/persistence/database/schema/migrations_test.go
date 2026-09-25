@@ -267,7 +267,7 @@ func TestApplicationSchemaMigrationsPersistExactOwnership(t *testing.T) {
 			}
 		}
 	}
-	if _, err := db.Exec(`INSERT INTO app_one__notification_events (id, workspace_id, source, source_event_id, status, payload_json, occurred_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, "event-one", scope.WorkspaceID, "test", "source-event-one", "pending", `{}`, "1", "1", "1"); err != nil {
+	if _, err := db.Exec(`INSERT INTO app_one__notification_events (id, workspace_id, source, source_event_id, status, payload_json, occurred_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, "event-one", scope.WorkspaceID, "test", "source-event-one", "pending", `{}`, int64(1), int64(1), int64(1)); err != nil {
 		t.Fatal(err)
 	}
 	var workspaceID, applicationKey string

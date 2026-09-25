@@ -72,7 +72,7 @@ func TestInsertEventUsesCallerExecutorAndHostScopeAdapters(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	event := inbox.Event{ID: "event-1", WorkspaceID: "workspace-1", Source: "workflow", SourceEventID: "source-1", Status: inbox.EventQueued, UpdatedAt: "now"}
+	event := inbox.Event{ID: "event-1", WorkspaceID: "workspace-1", Source: "workflow", SourceEventID: "source-1", Status: inbox.EventQueued, UpdatedAt: "2026-09-25T00:00:00Z"}
 	if err := store.InsertEvent(t.Context(), database, event); err != nil {
 		t.Fatal(err)
 	}

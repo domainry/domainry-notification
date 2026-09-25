@@ -5,7 +5,6 @@ import (
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -15,6 +14,7 @@ import (
 	metadatasdk "github.com/domainry/domainry-metadata-sdk"
 	"github.com/domainry/domainry-notification/internal/domain/delivery/service"
 	notification "github.com/domainry/domainry-notification/internal/domain/notification/model"
+	"github.com/domainry/domainry-notification/internal/infrastructure/persistence/database/timejson"
 	"github.com/domainry/domainry-orm/query"
 )
 
@@ -44,7 +44,7 @@ func (s *Store) GetPolicy(ctx context.Context) (delivery.Policy, error) {
 		return defaultPolicy(), nil
 	}
 	var policy delivery.Policy
-	if err := json.Unmarshal(definition.Payload, &policy); err != nil {
+	if err := timejson.Unmarshal(definition.Payload, &policy); err != nil {
 		return policy, fmt.Errorf("decode notification delivery policy: %w", err)
 	}
 	policy.Revision = definition.CurrentVersionID
@@ -61,7 +61,7 @@ func (s *Store) SavePolicy(ctx context.Context, policy delivery.Policy) (deliver
 	}
 	payload := policy
 	payload.Revision = ""
-	raw, err := json.Marshal(payload)
+	raw, err := timejson.Marshal(payload)
 	if err != nil {
 		return policy, fmt.Errorf("encode notification delivery policy: %w", err)
 	}
@@ -114,7 +114,7 @@ func (s *Store) ListRecipientPreferences(ctx context.Context, workspaceID notifi
 			return nil, err
 		}
 		var value delivery.RecipientPreference
-		if err := json.Unmarshal([]byte(raw), &value); err != nil {
+		if err := timejson.Unmarshal([]byte(raw), &value); err != nil {
 			return nil, fmt.Errorf("decode notification recipient preference: %w", err)
 		}
 		values = append(values, value)
@@ -142,7 +142,7 @@ func (s *Store) GetRecipientPreference(ctx context.Context, workspaceID notifica
 		return delivery.RecipientPreference{}, false, fmt.Errorf("get notification recipient preference: %w", err)
 	}
 	var value delivery.RecipientPreference
-	if err := json.Unmarshal([]byte(raw), &value); err != nil {
+	if err := timejson.Unmarshal([]byte(raw), &value); err != nil {
 		return value, false, fmt.Errorf("decode notification recipient preference: %w", err)
 	}
 	return value, true, nil
@@ -157,7 +157,7 @@ func (s *Store) SaveRecipientPreference(ctx context.Context, workspaceID notific
 		return value, err
 	}
 	ctx = s.workspaceScope.Context(ctx, workspaceID)
-	raw, err := json.Marshal(value)
+	raw, err := timejson.Marshal(value)
 	if err != nil {
 		return value, fmt.Errorf("encode notification recipient preference: %w", err)
 	}
@@ -175,7 +175,7 @@ func (s *Store) SaveRecipientPreference(ctx context.Context, workspaceID notific
 	err = tx.QueryRowContext(ctx, selectSQL, selectArgs...).Scan(&existing)
 	if errors.Is(err, sql.ErrNoRows) {
 		_, err = s.WorkspaceInsert(ctx, tx, workspaceID.String(), notificationUserSettingsTable, []string{"workspace_id", "recipient_user_id", "setting_kind", "setting_key", "payload_json", "updated_by", "created_at", "updated_at"},
-			workspaceID.String(), value.RecipientKey, recipientPreferenceSettingKind, recipientPreferenceDefaultKey, string(raw), value.UpdatedBy, value.UpdatedAt, value.UpdatedAt)
+			workspaceID.String(), value.RecipientKey, recipientPreferenceSettingKind, recipientPreferenceDefaultKey, string(raw), value.UpdatedBy, notification.TimestampMillis(value.UpdatedAt), notification.TimestampMillis(value.UpdatedAt))
 		if err != nil {
 			return value, fmt.Errorf("insert notification recipient preference: %w", err)
 		}
@@ -184,7 +184,7 @@ func (s *Store) SaveRecipientPreference(ctx context.Context, workspaceID notific
 	if err != nil {
 		return value, err
 	}
-	queryValue, args, err := query.NewWorkspaceUpdateBuilder(s.Renderer, notificationUserSettingsTable, workspaceID.String()).Set("payload_json", string(raw)).Set("updated_by", value.UpdatedBy).Set("updated_at", value.UpdatedAt).Where(predicate).Build()
+	queryValue, args, err := query.NewWorkspaceUpdateBuilder(s.Renderer, notificationUserSettingsTable, workspaceID.String()).Set("payload_json", string(raw)).Set("updated_by", value.UpdatedBy).Set("updated_at", notification.TimestampMillis(value.UpdatedAt)).Where(predicate).Build()
 	if err != nil {
 		return value, err
 	}
@@ -228,7 +228,7 @@ func (s *Store) ReserveBatch(ctx context.Context, workspaceID notification.Works
 			return fmt.Errorf("parse notification delivery reservation timestamp: %w", parseErr)
 		}
 		var count int
-		frequency, frequencyArgs, buildErr := query.NewWorkspaceSelectBuilder(s.Renderer, notificationDeliveriesTable, workspaceID.String()).Projections(query.Project(query.CountAll())).Where(query.And(query.Equal("row_kind", deliveryReservationRowKind), query.Equal("recipient_key", reservation.RecipientKey.String()), query.Equal("channel", reservation.Channel), query.GreaterThanOrEqual("created_at", notification.Timestamp(createdAt.Add(-time.Hour))))).Build()
+		frequency, frequencyArgs, buildErr := query.NewWorkspaceSelectBuilder(s.Renderer, notificationDeliveriesTable, workspaceID.String()).Projections(query.Project(query.CountAll())).Where(query.And(query.Equal("row_kind", deliveryReservationRowKind), query.Equal("recipient_key", reservation.RecipientKey.String()), query.Equal("channel", reservation.Channel), query.GreaterThanOrEqual("created_at", createdAt.Add(-time.Hour).UTC().UnixMilli()))).Build()
 		if buildErr != nil {
 			return buildErr
 		}
@@ -239,7 +239,7 @@ func (s *Store) ReserveBatch(ctx context.Context, workspaceID notification.Works
 			return delivery.ErrFrequencyExceeded
 		}
 		if strings.TrimSpace(reservation.DedupeKey) != "" && dedupeWindowSeconds > 0 {
-			dedupe, dedupeArgs, buildErr := query.NewWorkspaceSelectBuilder(s.Renderer, notificationDeliveriesTable, workspaceID.String()).Projections(query.Project(query.CountAll())).Where(query.And(query.Equal("row_kind", deliveryReservationRowKind), query.Equal("recipient_key", reservation.RecipientKey.String()), query.Equal("template_key", reservation.TemplateKey), query.Equal("channel", reservation.Channel), query.Equal("dedupe_key", reservation.DedupeKey), query.GreaterThanOrEqual("created_at", notification.Timestamp(createdAt.Add(-time.Duration(dedupeWindowSeconds)*time.Second))))).Build()
+			dedupe, dedupeArgs, buildErr := query.NewWorkspaceSelectBuilder(s.Renderer, notificationDeliveriesTable, workspaceID.String()).Projections(query.Project(query.CountAll())).Where(query.And(query.Equal("row_kind", deliveryReservationRowKind), query.Equal("recipient_key", reservation.RecipientKey.String()), query.Equal("template_key", reservation.TemplateKey), query.Equal("channel", reservation.Channel), query.Equal("dedupe_key", reservation.DedupeKey), query.GreaterThanOrEqual("created_at", createdAt.Add(-time.Duration(dedupeWindowSeconds)*time.Second).UTC().UnixMilli()))).Build()
 			if buildErr != nil {
 				return buildErr
 			}
@@ -251,7 +251,7 @@ func (s *Store) ReserveBatch(ctx context.Context, workspaceID notification.Works
 			}
 		}
 		_, err = s.WorkspaceInsert(ctx, tx, workspaceID.String(), notificationDeliveriesTable, []string{"id", "workspace_id", "row_kind", "event_id", "recipient_key", "template_key", "channel", "dedupe_key", "status", "payload_json", "attempt_count", "next_attempt_at", "last_error_code", "outbox_message_id", "lease_owner", "lease_expires_at", "fencing_token", "created_at", "updated_at"},
-			reservation.ID, workspaceID.String(), deliveryReservationRowKind, "", reservation.RecipientKey.String(), reservation.TemplateKey, reservation.Channel, reservation.DedupeKey, "reserved", `{}`, 0, "", "", "", "", "", 0, reservation.CreatedAt, reservation.CreatedAt)
+			reservation.ID, workspaceID.String(), deliveryReservationRowKind, "", reservation.RecipientKey.String(), reservation.TemplateKey, reservation.Channel, reservation.DedupeKey, "reserved", `{}`, 0, int64(0), "", "", "", int64(0), 0, notification.TimestampMillis(reservation.CreatedAt), notification.TimestampMillis(reservation.CreatedAt))
 		if err != nil {
 			return fmt.Errorf("insert notification delivery reservation: %w", err)
 		}

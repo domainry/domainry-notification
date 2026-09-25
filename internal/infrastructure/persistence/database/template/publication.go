@@ -13,6 +13,7 @@ import (
 	metadatamodulehost "github.com/domainry/domainry-metadata-sdk/modulehost"
 	notificationmodulehost "github.com/domainry/domainry-notification-sdk/modulehost"
 	template "github.com/domainry/domainry-notification/internal/domain/template/service"
+	"github.com/domainry/domainry-notification/internal/infrastructure/persistence/database/timejson"
 )
 
 const (
@@ -146,7 +147,7 @@ func (s *Store) TransitionPublicationRequest(ctx context.Context, requestID stri
 	request.ReviewedBy, request.ReviewedAt = transition.ReviewedBy, transition.ReviewedAt
 	request.PublishedVersion, request.Failure, request.UpdatedAt = transition.PublishedVersion, transition.Failure, transition.UpdatedAt
 	request.LeaseOwner, request.LeaseExpiresAt = "", ""
-	metadata, err := json.Marshal(request)
+	metadata, err := timejson.Marshal(request)
 	if err != nil {
 		return template.PublicationRequest{}, fmt.Errorf("encode notification publication Operation: %w", err)
 	}
@@ -264,7 +265,7 @@ func (s *Store) publicationOperationIdentity(requestID string) notificationmodul
 }
 
 func (s *Store) publicationOperation(request template.PublicationRequest) (notificationmodulehost.ManagedOperation, error) {
-	metadata, err := json.Marshal(request)
+	metadata, err := timejson.Marshal(request)
 	if err != nil {
 		return notificationmodulehost.ManagedOperation{}, fmt.Errorf("encode notification publication Operation: %w", err)
 	}
@@ -294,7 +295,7 @@ func (s *Store) publicationOperation(request template.PublicationRequest) (notif
 
 func publicationRequestFromOperation(operation notificationmodulehost.ManagedOperation) (template.PublicationRequest, error) {
 	var value template.PublicationRequest
-	if err := json.Unmarshal(operation.Metadata, &value); err != nil {
+	if err := timejson.Unmarshal(operation.Metadata, &value); err != nil {
 		return value, fmt.Errorf("decode notification publication Operation: %w", err)
 	}
 	value.ID, value.TemplateKey = operation.Command.ID, operation.Command.Scope.ResourceID

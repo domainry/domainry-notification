@@ -13,7 +13,7 @@ import (
 
 func TestRetentionArchivesAndPurgesOnlyTerminalWorkspaceRows(t *testing.T) {
 	db, store, content := migratedStoreWithArtifactContent(t)
-	old := "2025-01-01T00:00:00Z"
+	old := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC).UnixMilli()
 	for _, event := range []struct{ id, status string }{{"terminal", "materialized"}, {"active", "queued"}} {
 		if _, err := db.Exec(`INSERT INTO _notification_events (id, workspace_id, source, source_event_id, status, payload_json, occurred_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, event.id, "workspace-a", "test", event.id, event.status, `{}`, old, old, old); err != nil {
 			t.Fatal(err)
@@ -82,7 +82,7 @@ func TestRetentionArchivesAndPurgesOnlyTerminalWorkspaceRows(t *testing.T) {
 
 func TestRetentionLegalHoldFailsClosedForMatchingResource(t *testing.T) {
 	db, store := migratedStore(t)
-	old := "2025-01-01T00:00:00Z"
+	old := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC).UnixMilli()
 	if _, err := db.Exec(`INSERT INTO _notification_events (id, workspace_id, source, source_event_id, status, payload_json, occurred_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, "held", "workspace-a", "test", "held", "failed", `{}`, old, old, old); err != nil {
 		t.Fatal(err)
 	}

@@ -13,6 +13,7 @@ import (
 	"github.com/domainry/domainry-notification/internal/domain/delivery/service"
 	"github.com/domainry/domainry-notification/internal/domain/inbox/service"
 	notification "github.com/domainry/domainry-notification/internal/domain/notification/model"
+	"github.com/domainry/domainry-notification/internal/infrastructure/persistence/database/timejson"
 	"github.com/domainry/domainry-orm/query"
 )
 
@@ -72,19 +73,31 @@ func (s *Store) ExportSubject(ctx context.Context, workspaceID, subjectID string
 		return nil, err
 	}
 	defer rows.Close()
-	items := []map[string]string{}
+	timeColumns := map[string]bool{"first_occurred_at": true, "last_occurred_at": true, "read_at": true, "archived_at": true}
+	items := []map[string]any{}
 	for rows.Next() {
-		values := make([]string, len(columns))
+		values := make([]any, len(columns))
 		destinations := make([]any, len(columns))
-		for i := range values {
-			destinations[i] = &values[i]
+		textValues := make([]string, len(columns))
+		timeValues := make([]int64, len(columns))
+		for i, column := range columns {
+			if timeColumns[column] {
+				destinations[i] = &timeValues[i]
+			} else {
+				destinations[i] = &textValues[i]
+			}
 		}
 		if err := rows.Scan(destinations...); err != nil {
 			return nil, err
 		}
-		item := make(map[string]string, len(columns))
-		for i := range columns {
-			item[columns[i]] = values[i]
+		item := make(map[string]any, len(columns))
+		for i, column := range columns {
+			if timeColumns[column] {
+				values[i] = timeValues[i]
+			} else {
+				values[i] = textValues[i]
+			}
+			item[column] = values[i]
 		}
 		items = append(items, item)
 	}
@@ -119,7 +132,7 @@ func (s *Store) EraseSubject(ctx context.Context, workspaceID, subjectID string,
 	}
 	if changed["events"], err = s.rewritePayloads(ctx, tx, "_notification_events", workspaceID, func(raw []byte) ([]byte, bool, error) {
 		var event inbox.Event
-		if err := json.Unmarshal(raw, &event); err != nil {
+		if err := timejson.Unmarshal(raw, &event); err != nil {
 			return nil, false, err
 		}
 		if !replaceRecipients(event.RecipientUserIDs, subjectID, anonymous) {
@@ -131,21 +144,21 @@ func (s *Store) EraseSubject(ctx context.Context, workspaceID, subjectID string,
 			replaceRecipients(event.ChannelPlans[i].RecipientUserIDs, subjectID, anonymous)
 			event.ChannelPlans[i].Variables = nil
 		}
-		value, marshalErr := json.Marshal(event)
+		value, marshalErr := timejson.Marshal(event)
 		return value, true, marshalErr
 	}); err != nil {
 		return nil, err
 	}
 	if changed["deliveries"], err = s.rewritePayloads(ctx, tx, "_notification_deliveries", workspaceID, func(raw []byte) ([]byte, bool, error) {
 		var plan delivery.Plan
-		if err := json.Unmarshal(raw, &plan); err != nil {
+		if err := timejson.Unmarshal(raw, &plan); err != nil {
 			return nil, false, err
 		}
 		if !replaceRecipients(plan.RecipientUserIDs, subjectID, anonymous) {
 			return raw, false, nil
 		}
 		plan.Variables, plan.DigestItemTitle, plan.DigestItemBody = nil, "[erased]", "[erased]"
-		value, marshalErr := json.Marshal(plan)
+		value, marshalErr := timejson.Marshal(plan)
 		return value, true, marshalErr
 	}); err != nil {
 		return nil, err
@@ -195,7 +208,7 @@ func (s *Store) EraseSubject(ctx context.Context, workspaceID, subjectID string,
 	if err := tx.Commit(); err != nil {
 		return nil, err
 	}
-	return json.Marshal(map[string]any{"anonymous_subject": anonymous, "changed": changed, "content_redacted": true, "at": time.Now().UTC()})
+	return json.Marshal(map[string]any{"anonymous_subject": anonymous, "changed": changed, "content_redacted": true, "at": time.Now().UTC().UnixMilli()})
 }
 
 func (s *Store) anonymizeInboxItems(ctx context.Context, tx *sql.Tx, workspaceID, subjectID, anonymous string) (int64, error) {

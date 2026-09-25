@@ -58,7 +58,10 @@ func (s *Store) PreviewRetention(ctx context.Context, request contract.Notificat
 		if err != nil {
 			return contract.NotificationRetentionPreview{}, err
 		}
-		type candidate struct{ id, timestamp string }
+		type candidate struct {
+			id        string
+			timestamp int64
+		}
 		candidates := []candidate{}
 		for rows.Next() {
 			var value candidate
@@ -84,7 +87,7 @@ func (s *Store) PreviewRetention(ctx context.Context, request contract.Notificat
 				continue
 			}
 			result.Rows++
-			parsed, _ := time.Parse(time.RFC3339Nano, candidate.timestamp)
+			parsed := time.UnixMilli(candidate.timestamp).UTC()
 			if !parsed.IsZero() && (result.OldestEligible.IsZero() || parsed.Before(result.OldestEligible)) {
 				result.OldestEligible = parsed
 			}
@@ -142,7 +145,10 @@ func (s *Store) processRetentionSpec(ctx context.Context, request contract.Notif
 	if err != nil {
 		return contract.NotificationRetentionBatchResult{}, err
 	}
-	type candidate struct{ id, timestamp string }
+	type candidate struct {
+		id        string
+		timestamp int64
+	}
 	candidates := []candidate{}
 	for rows.Next() {
 		var value candidate
@@ -168,7 +174,7 @@ func (s *Store) processRetentionSpec(ctx context.Context, request contract.Notif
 		}
 		result.Checkpoint = spec.table + ":" + candidate.id
 		result.Scanned++
-		parsed, _ := time.Parse(time.RFC3339Nano, candidate.timestamp)
+		parsed := time.UnixMilli(candidate.timestamp).UTC()
 		if !parsed.IsZero() && (result.OldestEligible.IsZero() || parsed.Before(result.OldestEligible)) {
 			result.OldestEligible = parsed
 		}
@@ -216,7 +222,7 @@ func (s *Store) processRetentionSpec(ctx context.Context, request contract.Notif
 
 func (s *Store) retentionPredicate(spec retentionSpec, cutoff time.Time) query.Predicate {
 	predicates := []query.Predicate{}
-	predicates = append(predicates, query.NotEqual(spec.timeColumn, ""), query.LessThanOrEqual(spec.timeColumn, cutoff.UTC().Format(time.RFC3339Nano)))
+	predicates = append(predicates, query.NotEqual(spec.timeColumn, int64(0)), query.LessThanOrEqual(spec.timeColumn, cutoff.UTC().UnixMilli()))
 	if len(spec.eligibleStatuses) > 0 {
 		values := make([]any, len(spec.eligibleStatuses))
 		for index, status := range spec.eligibleStatuses {

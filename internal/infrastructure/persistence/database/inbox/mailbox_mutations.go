@@ -45,7 +45,7 @@ func (s *Store) updateInboxPersonalState(ctx context.Context, queryValue inbox.Q
 		return inbox.Item{}, found, err
 	}
 	predicate := query.And(mailboxAccessPredicate(queryValue), query.Equal("id", itemID))
-	statement, args, err := query.NewWorkspaceUpdateBuilder(s.Renderer, "_notification_inbox_items", queryValue.WorkspaceID.String()).Set(column, strings.TrimSpace(value)).Set("updated_at", strings.TrimSpace(updatedAt)).Where(predicate).Build()
+	statement, args, err := query.NewWorkspaceUpdateBuilder(s.Renderer, "_notification_inbox_items", queryValue.WorkspaceID.String()).Set(column, notification.TimestampMillis(value)).Set("updated_at", notification.TimestampMillis(updatedAt)).Where(predicate).Build()
 	if err != nil {
 		return inbox.Item{}, false, err
 	}
@@ -83,8 +83,9 @@ func (s *Store) MarkAllRead(ctx context.Context, queryValue inbox.Query, readAt 
 		return 0, fmt.Errorf("notification inbox read timestamp is required")
 	}
 	ctx = s.workspaceScope.Context(ctx, queryValue.WorkspaceID)
-	predicate := query.And(mailboxPredicate(queryValue, false), query.Equal("read_at", ""), query.LessThanOrEqual("updated_at", readAt))
-	statement, args, err := query.NewWorkspaceUpdateBuilder(s.Renderer, "_notification_inbox_items", queryValue.WorkspaceID.String()).Set("read_at", readAt).Set("updated_at", readAt).Where(predicate).Build()
+	readAtMillis := notification.TimestampMillis(readAt)
+	predicate := query.And(mailboxPredicate(queryValue, false), query.Equal("read_at", int64(0)), query.LessThanOrEqual("updated_at", readAtMillis))
+	statement, args, err := query.NewWorkspaceUpdateBuilder(s.Renderer, "_notification_inbox_items", queryValue.WorkspaceID.String()).Set("read_at", readAtMillis).Set("updated_at", readAtMillis).Where(predicate).Build()
 	if err != nil {
 		return 0, err
 	}
@@ -122,7 +123,8 @@ func (s *Store) AcknowledgeAlert(ctx context.Context, queryValue inbox.Query, it
 		return inbox.Item{}, false, fmt.Errorf("notification alert is not firing")
 	}
 	if item.AlertState != inbox.AlertAcknowledged {
-		groupUpdate, groupArgs, buildErr := query.NewWorkspaceUpdateBuilder(s.Renderer, "_notification_alert_groups", item.WorkspaceID.String()).Set("state", string(inbox.AlertAcknowledged)).Set("acknowledged_at", acknowledgedAt).Set("acknowledged_by", actor.String()).Set("updated_at", acknowledgedAt).Where(query.And(query.Equal("recipient_user_id", item.RecipientUserID.String()), query.Equal("group_key", item.GroupKey), query.Equal("state", "firing"))).Build()
+		acknowledgedAtMillis := notification.TimestampMillis(acknowledgedAt)
+		groupUpdate, groupArgs, buildErr := query.NewWorkspaceUpdateBuilder(s.Renderer, "_notification_alert_groups", item.WorkspaceID.String()).Set("state", string(inbox.AlertAcknowledged)).Set("acknowledged_at", acknowledgedAtMillis).Set("acknowledged_by", actor.String()).Set("updated_at", acknowledgedAtMillis).Where(query.And(query.Equal("recipient_user_id", item.RecipientUserID.String()), query.Equal("group_key", item.GroupKey), query.Equal("state", "firing"))).Build()
 		if buildErr != nil {
 			return inbox.Item{}, false, buildErr
 		}
@@ -138,7 +140,7 @@ func (s *Store) AcknowledgeAlert(ctx context.Context, queryValue inbox.Query, it
 			return inbox.Item{}, false, mutation.MutationConflict("notification_alert_group", item.GroupKey, mutation.MutationConflictOptimistic, nil)
 		}
 		itemPredicate := query.And(query.Equal("recipient_user_id", item.RecipientUserID.String()), query.Equal("id", item.ID))
-		itemUpdate, itemArgs, buildErr := query.NewWorkspaceUpdateBuilder(s.Renderer, "_notification_inbox_items", item.WorkspaceID.String()).Set("alert_state", string(inbox.AlertAcknowledged)).Set("updated_at", acknowledgedAt).Where(itemPredicate).Build()
+		itemUpdate, itemArgs, buildErr := query.NewWorkspaceUpdateBuilder(s.Renderer, "_notification_inbox_items", item.WorkspaceID.String()).Set("alert_state", string(inbox.AlertAcknowledged)).Set("updated_at", acknowledgedAtMillis).Where(itemPredicate).Build()
 		if buildErr != nil {
 			return inbox.Item{}, false, buildErr
 		}

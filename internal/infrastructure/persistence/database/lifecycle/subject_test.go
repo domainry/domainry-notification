@@ -11,10 +11,10 @@ import (
 
 func TestSubjectLifecyclePreviewExportAndEraseOwnedRows(t *testing.T) {
 	database, _ := migratedStore(t)
-	if _, err := database.Exec(`INSERT INTO _notification_user_settings (workspace_id, recipient_user_id, setting_kind, setting_key, payload_json, updated_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, "workspace", "user", "delivery_preference", "default", `{}`, "user", "now", "now"); err != nil {
+	if _, err := database.Exec(`INSERT INTO _notification_user_settings (workspace_id, recipient_user_id, setting_kind, setting_key, payload_json, updated_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, "workspace", "user", "delivery_preference", "default", `{}`, "user", int64(1), int64(1)); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := database.Exec(`INSERT INTO _notification_inbox_delegations (id, workspace_id, owner_user_id, delegate_user_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`, "delegation", "workspace", "user", "delegate", "now", "now"); err != nil {
+	if _, err := database.Exec(`INSERT INTO _notification_inbox_delegations (id, workspace_id, owner_user_id, delegate_user_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`, "delegation", "workspace", "user", "delegate", int64(1), int64(1)); err != nil {
 		t.Fatal(err)
 	}
 	dialect, _ := ormdialect.ParseRenderer("sqlite", "", "")

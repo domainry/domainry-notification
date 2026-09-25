@@ -36,7 +36,7 @@ func (l Ledger) Ensure(ctx context.Context, executor Executor) error {
 		ormschema.Column("name", ormschema.TextKey(191)).NotNull(),
 		ormschema.Column("checksum", ormschema.TextKey(64)).NotNull(),
 		ormschema.Column("dirty", ormschema.Boolean()).NotNull(),
-		ormschema.Column("applied_at", ormschema.TextKey(64)).NotNull(),
+		ormschema.Column("applied_at", ormschema.BigInt()).NotNull(),
 	).PrimaryKey("namespace", "version").Build()
 	if err != nil {
 		return fmt.Errorf("build Notification SaaS migration ledger: %w", err)
@@ -87,7 +87,7 @@ func (l Ledger) State(ctx context.Context, queryer Queryer, namespace string, ve
 func (l Ledger) RecordDirty(ctx context.Context, executor Executor, namespace string, version uint, name, checksum string) error {
 	statement, args, err := query.NewInsertBuilder(l.renderer, LedgerTable).
 		Columns("namespace", "version", "name", "checksum", "dirty", "applied_at").
-		Values(namespace, version, name, checksum, true, "").Build()
+		Values(namespace, version, name, checksum, true, int64(0)).Build()
 	if err != nil {
 		return fmt.Errorf("build Notification SaaS migration ledger insert: %w", err)
 	}
@@ -97,7 +97,7 @@ func (l Ledger) RecordDirty(ctx context.Context, executor Executor, namespace st
 	return nil
 }
 
-func (l Ledger) Complete(ctx context.Context, executor Executor, namespace string, version uint, checksum, appliedAt string) error {
+func (l Ledger) Complete(ctx context.Context, executor Executor, namespace string, version uint, checksum string, appliedAt int64) error {
 	statement, args, err := query.NewUpdateBuilder(l.renderer, LedgerTable).
 		Set("dirty", false).Set("applied_at", appliedAt).
 		Where(query.And(

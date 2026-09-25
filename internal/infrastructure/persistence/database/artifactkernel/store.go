@@ -75,7 +75,7 @@ func (s Store) Transition(ctx context.Context, workspaceID, id string, expected,
 		return false, fmt.Errorf("artifact transition is invalid")
 	}
 	statement, arguments, err := query.NewWorkspaceUpdateBuilder(s.renderer, artifactTable, workspaceID).
-		Set("status", string(next)).Set("scan_status", string(scan)).Set("updated_at", at.UTC().Format(time.RFC3339Nano)).
+		Set("status", string(next)).Set("scan_status", string(scan)).Set("updated_at", at.UTC().UnixMilli()).
 		Where(query.And(query.Equal("id", strings.TrimSpace(id)), query.Equal("status", string(expected)))).Build()
 	if err != nil {
 		return false, err
@@ -178,7 +178,7 @@ func artifactColumns() []string {
 }
 
 func artifactValues(value sharedartifact.Artifact) []any {
-	return []any{value.WorkspaceID, value.ID, value.Owner, value.Kind, value.IdempotencyKey, value.CreatedBy, value.OwnerOrgID, value.Filename, value.MediaType, value.ContentSHA256, value.SizeBytes, value.StorageReference, string(value.Status), optionalTime(value.ExpiresAt), string(value.ScanStatus), value.DownloadTokenSHA256, value.AuthorizationScopeSHA256, string(value.Metadata), value.CreatedAt.UTC().Format(time.RFC3339Nano), value.UpdatedAt.UTC().Format(time.RFC3339Nano)}
+	return []any{value.WorkspaceID, value.ID, value.Owner, value.Kind, value.IdempotencyKey, value.CreatedBy, value.OwnerOrgID, value.Filename, value.MediaType, value.ContentSHA256, value.SizeBytes, value.StorageReference, string(value.Status), optionalTime(value.ExpiresAt), string(value.ScanStatus), value.DownloadTokenSHA256, value.AuthorizationScopeSHA256, string(value.Metadata), value.CreatedAt.UTC().UnixMilli(), value.UpdatedAt.UTC().UnixMilli()}
 }
 
 func bindingColumns() []string {
@@ -186,41 +186,40 @@ func bindingColumns() []string {
 }
 
 func bindingValues(value sharedartifact.Binding) []any {
-	return []any{value.WorkspaceID, value.ID, value.ArtifactID, value.Owner, value.Kind, value.ResourceType, value.ResourceID, value.FieldKey, string(value.Metadata), value.CreatedAt.UTC().Format(time.RFC3339Nano)}
+	return []any{value.WorkspaceID, value.ID, value.ArtifactID, value.Owner, value.Kind, value.ResourceType, value.ResourceID, value.FieldKey, string(value.Metadata), value.CreatedAt.UTC().UnixMilli()}
 }
 
 type scanner interface{ Scan(...any) error }
 
 func scanArtifact(row scanner) (sharedartifact.Artifact, error) {
 	var value sharedartifact.Artifact
-	var status, scanStatus, metadata, createdAt, updatedAt, expiresAt string
+	var status, scanStatus, metadata string
+	var createdAt, updatedAt int64
+	var expiresAt sql.NullInt64
 	err := row.Scan(&value.WorkspaceID, &value.ID, &value.Owner, &value.Kind, &value.IdempotencyKey, &value.CreatedBy, &value.OwnerOrgID, &value.Filename, &value.MediaType, &value.ContentSHA256, &value.SizeBytes, &value.StorageReference, &status, &expiresAt, &scanStatus, &value.DownloadTokenSHA256, &value.AuthorizationScopeSHA256, &metadata, &createdAt, &updatedAt)
 	if err != nil {
 		return value, err
 	}
 	value.Status, value.ScanStatus, value.Metadata = sharedartifact.Status(status), sharedartifact.ScanStatus(scanStatus), json.RawMessage(metadata)
-	if value.CreatedAt, err = time.Parse(time.RFC3339Nano, createdAt); err != nil {
-		return value, err
+	value.CreatedAt = time.UnixMilli(createdAt).UTC()
+	value.UpdatedAt = time.UnixMilli(updatedAt).UTC()
+	if expiresAt.Valid {
+		value.ExpiresAt = time.UnixMilli(expiresAt.Int64).UTC()
 	}
-	if value.UpdatedAt, err = time.Parse(time.RFC3339Nano, updatedAt); err != nil {
-		return value, err
-	}
-	if expiresAt != "" {
-		value.ExpiresAt, err = time.Parse(time.RFC3339Nano, expiresAt)
-	}
-	return value, err
+	return value, nil
 }
 
 func scanBinding(row scanner) (sharedartifact.Binding, error) {
 	var value sharedartifact.Binding
-	var metadata, createdAt string
+	var metadata string
+	var createdAt int64
 	err := row.Scan(&value.WorkspaceID, &value.ID, &value.ArtifactID, &value.Owner, &value.Kind, &value.ResourceType, &value.ResourceID, &value.FieldKey, &metadata, &createdAt)
 	if err != nil {
 		return value, err
 	}
 	value.Metadata = json.RawMessage(metadata)
-	value.CreatedAt, err = time.Parse(time.RFC3339Nano, createdAt)
-	return value, err
+	value.CreatedAt = time.UnixMilli(createdAt).UTC()
+	return value, nil
 }
 
 func normalizeArtifact(value sharedartifact.Artifact) sharedartifact.Artifact {
@@ -294,21 +293,21 @@ func validScan(value sharedartifact.ScanStatus) bool {
 	return false
 }
 
-func optionalTime(value time.Time) string {
+func optionalTime(value time.Time) any {
 	if value.IsZero() {
-		return ""
+		return nil
 	}
-	return value.UTC().Format(time.RFC3339Nano)
+	return value.UTC().UnixMilli()
 }
 
 func SchemaMigrations(renderer modulehost.Dialect) ([]modulehost.SchemaMigration, error) {
 	migration := modulehost.SchemaMigration{Version: 1, Name: "shared_artifacts"}
 	tables := []*ormschema.TableBuilder{
 		ormschema.NewTable(renderer, artifactTable).IfNotExists().Columns(
-			required("workspace_id", ormschema.TextKey(191)), required("id", ormschema.TextKey(255)), required("owner", ormschema.TextKey(191)), required("kind", ormschema.TextKey(191)), required("idempotency_key", ormschema.TextKey(191)), required("created_by", ormschema.TextKey(255)), ormschema.Column("owner_org_id", ormschema.TextKey(255)).NotNull().DefaultValue(""), required("filename", ormschema.Text()), required("media_type", ormschema.TextKey(255)), required("content_sha256", ormschema.TextKey(255)), required("size_bytes", ormschema.BigInt()), required("storage_reference", ormschema.Text()), required("status", ormschema.TextKey(64)), ormschema.Column("expires_at", ormschema.TextKey(255)).NotNull().DefaultValue(""), required("scan_status", ormschema.TextKey(64)), ormschema.Column("download_token_sha256", ormschema.TextKey(255)).NotNull().DefaultValue(""), ormschema.Column("authorization_scope_sha256", ormschema.TextKey(255)).NotNull().DefaultValue(""), required("metadata_json", ormschema.LongText()), required("created_at", ormschema.TextKey(255)), required("updated_at", ormschema.TextKey(255)),
+			required("workspace_id", ormschema.TextKey(191)), required("id", ormschema.TextKey(255)), required("owner", ormschema.TextKey(191)), required("kind", ormschema.TextKey(191)), required("idempotency_key", ormschema.TextKey(191)), required("created_by", ormschema.TextKey(255)), ormschema.Column("owner_org_id", ormschema.TextKey(255)).NotNull().DefaultValue(""), required("filename", ormschema.Text()), required("media_type", ormschema.TextKey(255)), required("content_sha256", ormschema.TextKey(255)), required("size_bytes", ormschema.BigInt()), required("storage_reference", ormschema.Text()), required("status", ormschema.TextKey(64)), ormschema.Column("expires_at", ormschema.BigInt()), required("scan_status", ormschema.TextKey(64)), ormschema.Column("download_token_sha256", ormschema.TextKey(255)).NotNull().DefaultValue(""), ormschema.Column("authorization_scope_sha256", ormschema.TextKey(255)).NotNull().DefaultValue(""), required("metadata_json", ormschema.LongText()), required("created_at", ormschema.BigInt()), required("updated_at", ormschema.BigInt()),
 		).PrimaryKey("id").Unique("workspace_id", "owner", "kind", "idempotency_key").Unique("workspace_id", "owner", "kind", "storage_reference"),
 		ormschema.NewTable(renderer, bindingTable).IfNotExists().Columns(
-			required("workspace_id", ormschema.TextKey(191)), required("id", ormschema.TextKey(255)), required("artifact_id", ormschema.TextKey(255)), required("owner", ormschema.TextKey(191)), required("kind", ormschema.TextKey(191)), required("resource_type", ormschema.TextKey(191)), required("resource_id", ormschema.TextKey(255)), ormschema.Column("field_key", ormschema.TextKey(255)).NotNull().DefaultValue(""), required("metadata_json", ormschema.LongText()), required("created_at", ormschema.TextKey(255)),
+			required("workspace_id", ormschema.TextKey(191)), required("id", ormschema.TextKey(255)), required("artifact_id", ormschema.TextKey(255)), required("owner", ormschema.TextKey(191)), required("kind", ormschema.TextKey(191)), required("resource_type", ormschema.TextKey(191)), required("resource_id", ormschema.TextKey(255)), ormschema.Column("field_key", ormschema.TextKey(255)).NotNull().DefaultValue(""), required("metadata_json", ormschema.LongText()), required("created_at", ormschema.BigInt()),
 		).PrimaryKey("id").Unique("workspace_id", "artifact_id", "owner", "kind", "resource_type", "resource_id", "field_key"),
 	}
 	for _, table := range tables {

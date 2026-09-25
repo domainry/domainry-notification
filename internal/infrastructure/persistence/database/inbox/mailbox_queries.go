@@ -3,12 +3,13 @@ package inboxstore
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
 
 	"github.com/domainry/domainry-notification/internal/domain/inbox/service"
+	notification "github.com/domainry/domainry-notification/internal/domain/notification/model"
+	"github.com/domainry/domainry-notification/internal/infrastructure/persistence/database/timejson"
 	"github.com/domainry/domainry-orm/query"
 	"github.com/domainry/domainry-orm/sqlhost"
 )
@@ -79,7 +80,7 @@ func (s *Store) CountFacets(ctx context.Context, queryValue inbox.Query) (inbox.
 	ctx = s.workspaceScope.Context(ctx, queryValue.WorkspaceID)
 	predicate := mailboxPredicate(queryValue, false)
 	result := inbox.Facets{}
-	unreadSQL, unreadArgs, buildErr := query.NewWorkspaceSelectBuilder(s.Renderer, "_notification_inbox_items", queryValue.WorkspaceID.String()).Projections(query.Project(query.CountAll())).Where(query.And(predicate, query.Equal("read_at", ""))).Build()
+	unreadSQL, unreadArgs, buildErr := query.NewWorkspaceSelectBuilder(s.Renderer, "_notification_inbox_items", queryValue.WorkspaceID.String()).Projections(query.Project(query.CountAll())).Where(query.And(predicate, query.Equal("read_at", int64(0)))).Build()
 	if buildErr != nil {
 		return result, buildErr
 	}
@@ -143,13 +144,13 @@ func mailboxPredicate(queryValue inbox.Query, includeCursor bool) query.Predicat
 	predicates := []query.Predicate{mailboxAccessPredicate(queryValue)}
 	switch queryValue.Mailbox {
 	case inbox.MailboxUnread:
-		predicates = append(predicates, query.Equal("archived_at", ""), query.Equal("read_at", ""))
+		predicates = append(predicates, query.Equal("archived_at", int64(0)), query.Equal("read_at", int64(0)))
 	case inbox.MailboxActionRequired:
-		predicates = append(predicates, query.Equal("archived_at", ""), query.Equal("action_state", "open"))
+		predicates = append(predicates, query.Equal("archived_at", int64(0)), query.Equal("action_state", "open"))
 	case inbox.MailboxArchived:
-		predicates = append(predicates, query.NotEqual("archived_at", ""))
+		predicates = append(predicates, query.NotEqual("archived_at", int64(0)))
 	default:
-		predicates = append(predicates, query.Equal("archived_at", ""))
+		predicates = append(predicates, query.Equal("archived_at", int64(0)))
 	}
 	if queryValue.Query != "" {
 		predicates = append(predicates, query.LikeValue(query.Lower(query.Column("search_text")), "%"+strings.ToLower(queryValue.Query)+"%"))
@@ -163,13 +164,14 @@ func mailboxPredicate(queryValue inbox.Query, includeCursor bool) query.Predicat
 	}
 	predicates = appendStringPredicate(predicates, "action_state", actions)
 	if queryValue.From != "" {
-		predicates = append(predicates, query.GreaterThanOrEqual("last_occurred_at", queryValue.From))
+		predicates = append(predicates, query.GreaterThanOrEqual("last_occurred_at", notification.TimestampMillis(queryValue.From)))
 	}
 	if queryValue.To != "" {
-		predicates = append(predicates, query.LessThanOrEqual("last_occurred_at", queryValue.To))
+		predicates = append(predicates, query.LessThanOrEqual("last_occurred_at", notification.TimestampMillis(queryValue.To)))
 	}
 	if includeCursor && queryValue.BeforeUpdatedAt != "" && queryValue.BeforeID != "" {
-		predicates = append(predicates, query.Or(query.LessThan("updated_at", queryValue.BeforeUpdatedAt), query.And(query.Equal("updated_at", queryValue.BeforeUpdatedAt), query.LessThan("id", queryValue.BeforeID))))
+		before := notification.TimestampMillis(queryValue.BeforeUpdatedAt)
+		predicates = append(predicates, query.Or(query.LessThan("updated_at", before), query.And(query.Equal("updated_at", before), query.LessThan("id", queryValue.BeforeID))))
 	}
 	return query.And(predicates...)
 }
@@ -218,16 +220,17 @@ func normalizeMailboxStoreQuery(queryValue inbox.Query) (inbox.Query, error) {
 
 func scanInboxItem(row scanner) (inbox.Item, error) {
 	var value inbox.Item
-	var raw, eventID, firstOccurredAt, lastOccurredAt, readAt, archivedAt, alertState, updatedAt string
+	var raw, eventID, alertState string
+	var firstOccurredAt, lastOccurredAt, readAt, archivedAt, updatedAt int64
 	var occurrenceCount int
 	if err := row.Scan(&raw, &eventID, &occurrenceCount, &firstOccurredAt, &lastOccurredAt, &readAt, &archivedAt, &alertState, &updatedAt); err != nil {
 		return value, err
 	}
-	if err := json.Unmarshal([]byte(raw), &value); err != nil {
+	if err := timejson.Unmarshal([]byte(raw), &value); err != nil {
 		return value, fmt.Errorf("decode notification inbox item: %w", err)
 	}
 	value.EventID, value.OccurrenceCount = eventID, occurrenceCount
-	value.FirstOccurredAt, value.LastOccurredAt = firstOccurredAt, lastOccurredAt
-	value.ReadAt, value.ArchivedAt, value.AlertState, value.UpdatedAt = readAt, archivedAt, inbox.AlertState(alertState), updatedAt
+	value.FirstOccurredAt, value.LastOccurredAt = notification.MillisTimestamp(firstOccurredAt), notification.MillisTimestamp(lastOccurredAt)
+	value.ReadAt, value.ArchivedAt, value.AlertState, value.UpdatedAt = notification.MillisTimestamp(readAt), notification.MillisTimestamp(archivedAt), inbox.AlertState(alertState), notification.MillisTimestamp(updatedAt)
 	return value, nil
 }

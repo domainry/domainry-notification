@@ -287,7 +287,7 @@ func (p *SQLPersistence) applyMigration(ctx context.Context, connection sqlhost.
 			return fmt.Errorf("apply Notification SaaS migration %s/%d (%s): %w", namespace, migration.Version, migration.Name, err)
 		}
 	}
-	if err := ledger.Complete(ctx, tx, namespace, migration.Version, checksum, time.Now().UTC().Format(time.RFC3339Nano)); err != nil {
+	if err := ledger.Complete(ctx, tx, namespace, migration.Version, checksum, time.Now().UTC().UnixMilli()); err != nil {
 		return fmt.Errorf("record Notification SaaS migration %s/%d: %w", namespace, migration.Version, err)
 	}
 	if err := tx.Commit(); err != nil {

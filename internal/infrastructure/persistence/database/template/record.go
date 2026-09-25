@@ -16,6 +16,7 @@ import (
 	metadatamodulehost "github.com/domainry/domainry-metadata-sdk/modulehost"
 	notification "github.com/domainry/domainry-notification/internal/domain/notification/model"
 	"github.com/domainry/domainry-notification/internal/domain/template/service"
+	"github.com/domainry/domainry-notification/internal/infrastructure/persistence/database/timejson"
 )
 
 const (
@@ -257,7 +258,7 @@ func (s *Store) publishTemplateRecord(ctx context.Context, record template.Recor
 	if s.definitions == nil {
 		return fmt.Errorf("notification shared Definition store is unavailable")
 	}
-	raw, err := json.Marshal(record)
+	raw, err := timejson.Marshal(record)
 	if err != nil {
 		return fmt.Errorf("encode notification template record: %w", err)
 	}
@@ -289,7 +290,7 @@ func (s *Store) publishTemplateVersion(ctx context.Context, value template.Templ
 		}
 		return template.ErrRecordConflict
 	}
-	raw, err := json.Marshal(version)
+	raw, err := timejson.Marshal(version)
 	if err != nil {
 		return fmt.Errorf("encode notification template version: %w", err)
 	}
@@ -344,7 +345,7 @@ func payloadHash(raw []byte) string {
 
 func decodeTemplateRecord(raw json.RawMessage) (template.Record, error) {
 	var value template.Record
-	if err := json.Unmarshal(raw, &value); err != nil {
+	if err := timejson.Unmarshal(raw, &value); err != nil {
 		return value, fmt.Errorf("decode notification template record definition: %w", err)
 	}
 	return value, nil
@@ -352,7 +353,7 @@ func decodeTemplateRecord(raw json.RawMessage) (template.Record, error) {
 
 func decodeTemplateVersion(raw json.RawMessage) (template.Version, error) {
 	var value template.Version
-	if err := json.Unmarshal(raw, &value); err != nil {
+	if err := timejson.Unmarshal(raw, &value); err != nil {
 		return value, fmt.Errorf("decode notification template version definition: %w", err)
 	}
 	return value, nil

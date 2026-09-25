@@ -2,11 +2,11 @@ package eventstore
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 
 	"github.com/domainry/domainry-notification/internal/domain/inbox/service"
 	notification "github.com/domainry/domainry-notification/internal/domain/notification/model"
+	"github.com/domainry/domainry-notification/internal/infrastructure/persistence/database/timejson"
 	"github.com/domainry/domainry-orm/sqlhost"
 )
 
@@ -30,7 +30,7 @@ func (s *Store) InsertEvent(ctx context.Context, executor sqlhost.Executor, even
 	if err := s.queueScopes.Register(ctx, executor, notification.WorkInboxEvent, event.WorkspaceID, event.UpdatedAt); err != nil {
 		return fmt.Errorf("register notification inbox queue scope: %w", err)
 	}
-	raw, err := json.Marshal(event)
+	raw, err := timejson.Marshal(event)
 	if err != nil {
 		return fmt.Errorf("encode notification event: %w", err)
 	}
@@ -45,7 +45,7 @@ func (s *Store) InsertEvent(ctx context.Context, executor sqlhost.Executor, even
 func eventValues(event inbox.Event, raw string) []any {
 	return []any{
 		event.ID, event.WorkspaceID.String(), event.Source, event.SourceEventID, string(event.Status), raw, event.AttemptCount,
-		event.NextAttemptAt, event.LastErrorCode, event.LeaseOwner, event.LeaseExpiresAt, event.FencingToken,
-		event.OccurredAt, event.CreatedAt, event.UpdatedAt,
+		notification.TimestampMillis(event.NextAttemptAt), event.LastErrorCode, event.LeaseOwner, notification.TimestampMillis(event.LeaseExpiresAt), event.FencingToken,
+		notification.TimestampMillis(event.OccurredAt), notification.TimestampMillis(event.CreatedAt), notification.TimestampMillis(event.UpdatedAt),
 	}
 }

@@ -3,7 +3,6 @@ package eventstore
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -11,6 +10,7 @@ import (
 	"github.com/domainry/domainry-notification/internal/domain/delivery/service"
 	"github.com/domainry/domainry-notification/internal/domain/inbox/service"
 	notification "github.com/domainry/domainry-notification/internal/domain/notification/model"
+	"github.com/domainry/domainry-notification/internal/infrastructure/persistence/database/timejson"
 	"github.com/domainry/domainry-orm/query"
 )
 
@@ -62,7 +62,7 @@ func (s *Store) Materialize(ctx context.Context, event inbox.Event, items []inbo
 			return err
 		}
 	}
-	queryValue, args, err := query.NewWorkspaceUpdateBuilder(s.Renderer, "_notification_events", event.WorkspaceID.String()).Set("status", "materialized").Set("lease_owner", "").Set("lease_expires_at", "").Set("last_error_code", "").Set("updated_at", event.UpdatedAt).Where(query.And(query.Equal("id", event.ID), query.Equal("status", "processing"), query.Equal("lease_owner", event.LeaseOwner), query.Equal("fencing_token", event.FencingToken))).Build()
+	queryValue, args, err := query.NewWorkspaceUpdateBuilder(s.Renderer, "_notification_events", event.WorkspaceID.String()).Set("status", "materialized").Set("lease_owner", "").Set("lease_expires_at", int64(0)).Set("last_error_code", "").Set("updated_at", notification.TimestampMillis(event.UpdatedAt)).Where(query.And(query.Equal("id", event.ID), query.Equal("status", "processing"), query.Equal("lease_owner", event.LeaseOwner), query.Equal("fencing_token", event.FencingToken))).Build()
 	if err != nil {
 		return err
 	}
@@ -91,7 +91,7 @@ func (s *Store) transitionAlertGroup(ctx context.Context, tx *sql.Tx, event inbo
 	if event.AlertState == inbox.AlertFiring {
 		increment = 1
 	}
-	update, updateArgs, err := query.NewWorkspaceUpdateBuilder(s.Renderer, "_notification_alert_groups", event.WorkspaceID.String()).Set("state", string(event.AlertState)).SetExpression("occurrence_count", query.Add(query.Column("occurrence_count"), query.Value(increment))).Set("last_occurred_at", event.OccurredAt).Set("acknowledged_at", "").Set("acknowledged_by", "").Set("resolved_at", resolvedAt).Set("last_event_id", event.ID).Set("updated_at", event.UpdatedAt).Where(query.And(query.Equal("recipient_user_id", item.RecipientUserID.String()), query.Equal("group_key", event.GroupKey), query.LessThanOrEqual("last_occurred_at", event.OccurredAt))).Build()
+	update, updateArgs, err := query.NewWorkspaceUpdateBuilder(s.Renderer, "_notification_alert_groups", event.WorkspaceID.String()).Set("state", string(event.AlertState)).SetExpression("occurrence_count", query.Add(query.Column("occurrence_count"), query.Value(increment))).Set("last_occurred_at", notification.TimestampMillis(event.OccurredAt)).Set("acknowledged_at", int64(0)).Set("acknowledged_by", "").Set("resolved_at", notification.TimestampMillis(resolvedAt)).Set("last_event_id", event.ID).Set("updated_at", notification.TimestampMillis(event.UpdatedAt)).Where(query.And(query.Equal("recipient_user_id", item.RecipientUserID.String()), query.Equal("group_key", event.GroupKey), query.LessThanOrEqual("last_occurred_at", notification.TimestampMillis(event.OccurredAt)))).Build()
 	if err != nil {
 		return err
 	}
@@ -115,7 +115,7 @@ func (s *Store) transitionAlertGroup(ctx context.Context, tx *sql.Tx, event inbo
 		return nil
 	}
 	_, err = s.WorkspaceInsert(ctx, tx, event.WorkspaceID.String(), "_notification_alert_groups", alertGroupColumns, event.WorkspaceID.String(), item.RecipientUserID.String(),
-		event.GroupKey, string(event.AlertState), increment, event.OccurredAt, event.OccurredAt, "", "", resolvedAt, event.ID, event.UpdatedAt)
+		event.GroupKey, string(event.AlertState), increment, notification.TimestampMillis(event.OccurredAt), notification.TimestampMillis(event.OccurredAt), int64(0), "", notification.TimestampMillis(resolvedAt), event.ID, notification.TimestampMillis(event.UpdatedAt))
 	if err != nil {
 		return fmt.Errorf("insert notification alert group: %w", err)
 	}
@@ -123,7 +123,7 @@ func (s *Store) transitionAlertGroup(ctx context.Context, tx *sql.Tx, event inbo
 }
 
 func (s *Store) upsertInboxItem(ctx context.Context, tx *sql.Tx, item inbox.Item) error {
-	raw, err := json.Marshal(item)
+	raw, err := timejson.Marshal(item)
 	if err != nil {
 		return fmt.Errorf("encode notification inbox item: %w", err)
 	}
@@ -137,8 +137,8 @@ func (s *Store) upsertInboxItem(ctx context.Context, tx *sql.Tx, item inbox.Item
 		Set("body", item.Body).Set("search_text", inboxSearchText(item)).Set("payload_json", string(raw)).
 		Set("subject_type", item.SubjectType).Set("subject_id", item.SubjectID).
 		Set("action_state", string(item.ActionState)).Set("alert_state", string(item.AlertState)).
-		Set("last_occurred_at", item.LastOccurredAt).Set("expires_at", item.ExpiresAt).Set("updated_at", item.UpdatedAt)
-	queryValue, args, err := queryBuilder.SetExpression("occurrence_count", query.Add(query.Column("occurrence_count"), query.Value(increment))).Where(query.And(query.Equal("id", item.ID), query.LessThanOrEqual("last_occurred_at", item.LastOccurredAt))).Build()
+		Set("last_occurred_at", notification.TimestampMillis(item.LastOccurredAt)).Set("expires_at", notification.TimestampMillis(item.ExpiresAt)).Set("updated_at", notification.TimestampMillis(item.UpdatedAt))
+	queryValue, args, err := queryBuilder.SetExpression("occurrence_count", query.Add(query.Column("occurrence_count"), query.Value(increment))).Where(query.And(query.Equal("id", item.ID), query.LessThanOrEqual("last_occurred_at", notification.TimestampMillis(item.LastOccurredAt)))).Build()
 	if err != nil {
 		return err
 	}
@@ -167,7 +167,7 @@ func (s *Store) upsertInboxItem(ctx context.Context, tx *sql.Tx, item inbox.Item
 	}
 	values := []any{item.ID, item.WorkspaceID.String(), item.RecipientUserID.String(), item.EventID, item.EventType, item.Source, item.Category, item.Severity,
 		item.Title, item.Body, inboxSearchText(item), string(raw), item.SubjectType, item.SubjectID, string(item.ActionState), string(item.AlertState), item.GroupKey,
-		occurrences, item.FirstOccurredAt, item.LastOccurredAt, item.ReadAt, item.ArchivedAt, item.ExpiresAt, item.CreatedAt, item.UpdatedAt}
+		occurrences, notification.TimestampMillis(item.FirstOccurredAt), notification.TimestampMillis(item.LastOccurredAt), notification.TimestampMillis(item.ReadAt), notification.TimestampMillis(item.ArchivedAt), notification.TimestampMillis(item.ExpiresAt), notification.TimestampMillis(item.CreatedAt), notification.TimestampMillis(item.UpdatedAt)}
 	if _, err := s.WorkspaceInsert(ctx, tx, item.WorkspaceID.String(), "_notification_inbox_items", inboxItemColumns, values...); err != nil {
 		return fmt.Errorf("insert notification inbox item: %w", err)
 	}
@@ -175,13 +175,13 @@ func (s *Store) upsertInboxItem(ctx context.Context, tx *sql.Tx, item inbox.Item
 }
 
 func (s *Store) insertChannelPlan(ctx context.Context, tx *sql.Tx, plan delivery.Plan) error {
-	raw, err := json.Marshal(plan)
+	raw, err := timejson.Marshal(plan)
 	if err != nil {
 		return fmt.Errorf("encode notification channel plan: %w", err)
 	}
 	_, err = s.WorkspaceInsert(ctx, tx, plan.WorkspaceID.String(), notificationDeliveriesTable, deliveryColumns, plan.ID, plan.WorkspaceID.String(), "delivery", plan.EventID, "", plan.TemplateKey, plan.Channel, plan.DedupeKey,
-		plan.Status, string(raw), plan.AttemptCount, plan.NextAttemptAt, plan.LastErrorCode, plan.OutboxMessageID, plan.LeaseOwner, plan.LeaseExpiresAt,
-		plan.FencingToken, plan.CreatedAt, plan.UpdatedAt)
+		plan.Status, string(raw), plan.AttemptCount, notification.TimestampMillis(plan.NextAttemptAt), plan.LastErrorCode, plan.OutboxMessageID, plan.LeaseOwner, notification.TimestampMillis(plan.LeaseExpiresAt),
+		plan.FencingToken, notification.TimestampMillis(plan.CreatedAt), notification.TimestampMillis(plan.UpdatedAt))
 	if err != nil {
 		return fmt.Errorf("insert notification channel plan: %w", err)
 	}

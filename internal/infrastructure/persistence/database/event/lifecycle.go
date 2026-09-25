@@ -16,6 +16,7 @@ import (
 	"github.com/domainry/domainry-notification/internal/domain/delivery/service"
 	"github.com/domainry/domainry-notification/internal/domain/inbox/service"
 	notification "github.com/domainry/domainry-notification/internal/domain/notification/model"
+	"github.com/domainry/domainry-notification/internal/infrastructure/persistence/database/timejson"
 	"github.com/domainry/domainry-orm/query"
 )
 
@@ -115,7 +116,8 @@ func (s *Store) ListDue(ctx context.Context, now string, limit int) ([]inbox.Eve
 }
 
 func (s *Store) listDueForWorkspace(ctx context.Context, workspaceID notification.WorkspaceID, now string, limit int) ([]inbox.Event, error) {
-	due := query.Or(query.And(query.Equal("status", "queued"), query.Or(query.Equal("next_attempt_at", ""), query.LessThanOrEqual("next_attempt_at", now))), query.And(query.Equal("status", "processing"), query.LessThanOrEqual("lease_expires_at", now)))
+	nowMillis := notification.TimestampMillis(now)
+	due := query.Or(query.And(query.Equal("status", "queued"), query.Or(query.Equal("next_attempt_at", int64(0)), query.LessThanOrEqual("next_attempt_at", nowMillis))), query.And(query.Equal("status", "processing"), query.LessThanOrEqual("lease_expires_at", nowMillis)))
 	queryValue, args, err := query.NewWorkspaceSelectBuilder(s.Renderer, "_notification_events", workspaceID.String()).Columns(eventColumns...).Where(due).OrderBy(query.Ascending("occurred_at")).Limit(limit).Build()
 	if err != nil {
 		return nil, err
@@ -142,8 +144,9 @@ func (s *Store) Claim(ctx context.Context, workspaceID notification.WorkspaceID,
 		return inbox.Event{}, false, fmt.Errorf("notification event claim identity and lease are required")
 	}
 	ctx = s.workspaceScope.Context(ctx, workspaceID)
-	due := query.Or(query.And(query.Equal("status", "queued"), query.Or(query.Equal("next_attempt_at", ""), query.LessThanOrEqual("next_attempt_at", now))), query.And(query.Equal("status", "processing"), query.LessThanOrEqual("lease_expires_at", now)))
-	queryValue, args, err := query.NewWorkspaceUpdateBuilder(s.Renderer, "_notification_events", workspaceID.String()).Set("status", "processing").Set("lease_owner", owner).Set("lease_expires_at", expiresAt).SetExpression("fencing_token", query.Add(query.Column("fencing_token"), query.Value(1))).Set("updated_at", now).Where(query.And(query.Equal("id", eventID), due)).Build()
+	nowMillis, expiresAtMillis := notification.TimestampMillis(now), notification.TimestampMillis(expiresAt)
+	due := query.Or(query.And(query.Equal("status", "queued"), query.Or(query.Equal("next_attempt_at", int64(0)), query.LessThanOrEqual("next_attempt_at", nowMillis))), query.And(query.Equal("status", "processing"), query.LessThanOrEqual("lease_expires_at", nowMillis)))
+	queryValue, args, err := query.NewWorkspaceUpdateBuilder(s.Renderer, "_notification_events", workspaceID.String()).Set("status", "processing").Set("lease_owner", owner).Set("lease_expires_at", expiresAtMillis).SetExpression("fencing_token", query.Add(query.Column("fencing_token"), query.Value(1))).Set("updated_at", nowMillis).Where(query.And(query.Equal("id", eventID), due)).Build()
 	if err != nil {
 		return inbox.Event{}, false, err
 	}
@@ -177,7 +180,7 @@ func (s *Store) transitionFailure(ctx context.Context, event inbox.Event, status
 		return err
 	}
 	defer tx.Rollback()
-	queryValue, args, err := query.NewWorkspaceUpdateBuilder(s.Renderer, "_notification_events", event.WorkspaceID.String()).Set("status", string(status)).SetExpression("attempt_count", query.Add(query.Column("attempt_count"), query.Value(1))).Set("next_attempt_at", strings.TrimSpace(nextAttemptAt)).Set("last_error_code", errorCode).Set("lease_owner", "").Set("lease_expires_at", "").Set("updated_at", strings.TrimSpace(updatedAt)).Where(query.And(query.Equal("id", event.ID), query.Equal("status", "processing"), query.Equal("lease_owner", event.LeaseOwner), query.Equal("fencing_token", event.FencingToken))).Build()
+	queryValue, args, err := query.NewWorkspaceUpdateBuilder(s.Renderer, "_notification_events", event.WorkspaceID.String()).Set("status", string(status)).SetExpression("attempt_count", query.Add(query.Column("attempt_count"), query.Value(1))).Set("next_attempt_at", notification.TimestampMillis(nextAttemptAt)).Set("last_error_code", errorCode).Set("lease_owner", "").Set("lease_expires_at", int64(0)).Set("updated_at", notification.TimestampMillis(updatedAt)).Where(query.And(query.Equal("id", event.ID), query.Equal("status", "processing"), query.Equal("lease_owner", event.LeaseOwner), query.Equal("fencing_token", event.FencingToken))).Build()
 	if err != nil {
 		return err
 	}
@@ -203,7 +206,7 @@ func (s *Store) transitionFailure(ctx context.Context, event inbox.Event, status
 		NextAttemptAt: strings.TrimSpace(nextAttemptAt), FencingToken: event.FencingToken, OccurredAt: strings.TrimSpace(updatedAt),
 	}
 	columns := []string{"id", "workspace_id", "attempt_kind", "event_id", "delivery_id", "event_type", "source", "source_event_id", "channel", "stage", "error_code", "attempt", "disposition", "retryable", "next_attempt_at", "fencing_token", "occurred_at"}
-	_, err = s.WorkspaceInsert(ctx, tx, failure.WorkspaceID.String(), "_notification_delivery_attempts", columns, failure.ID, failure.WorkspaceID.String(), "event", failure.EventID, "", failure.EventType, failure.Source, failure.SourceEventID, "", failure.Stage, failure.ErrorCode, failure.Attempt, failure.Disposition, retryable, failure.NextAttemptAt, failure.FencingToken, failure.OccurredAt)
+	_, err = s.WorkspaceInsert(ctx, tx, failure.WorkspaceID.String(), "_notification_delivery_attempts", columns, failure.ID, failure.WorkspaceID.String(), "event", failure.EventID, "", failure.EventType, failure.Source, failure.SourceEventID, "", failure.Stage, failure.ErrorCode, failure.Attempt, failure.Disposition, retryable, notification.TimestampMillis(failure.NextAttemptAt), failure.FencingToken, notification.TimestampMillis(failure.OccurredAt))
 	if err != nil {
 		return fmt.Errorf("record notification event failure: %w", err)
 	}
@@ -247,20 +250,21 @@ func scanEvent(row scanner) (inbox.Event, error) {
 	var value inbox.Event
 	var id, workspaceID, source, sourceEventID, status, raw string
 	var attemptCount int
-	var nextAttemptAt, lastErrorCode, leaseOwner, leaseExpiresAt string
+	var lastErrorCode, leaseOwner string
+	var nextAttemptAt, leaseExpiresAt int64
 	var fencingToken int64
-	var occurredAt, createdAt, updatedAt string
+	var occurredAt, createdAt, updatedAt int64
 	err := row.Scan(&id, &workspaceID, &source, &sourceEventID, &status, &raw, &attemptCount, &nextAttemptAt, &lastErrorCode, &leaseOwner, &leaseExpiresAt, &fencingToken, &occurredAt, &createdAt, &updatedAt)
 	if err != nil {
 		return value, err
 	}
-	if err := json.Unmarshal([]byte(raw), &value); err != nil {
+	if err := timejson.Unmarshal([]byte(raw), &value); err != nil {
 		return value, fmt.Errorf("decode notification event: %w", err)
 	}
 	value.ID, value.WorkspaceID, value.Source, value.SourceEventID, value.Status = id, notification.WorkspaceID(workspaceID), source, sourceEventID, inbox.EventStatus(status)
-	value.AttemptCount, value.NextAttemptAt, value.LastErrorCode = attemptCount, nextAttemptAt, lastErrorCode
-	value.LeaseOwner, value.LeaseExpiresAt, value.FencingToken = leaseOwner, leaseExpiresAt, fencingToken
-	value.OccurredAt, value.CreatedAt, value.UpdatedAt = occurredAt, createdAt, updatedAt
+	value.AttemptCount, value.NextAttemptAt, value.LastErrorCode = attemptCount, notification.MillisTimestamp(nextAttemptAt), lastErrorCode
+	value.LeaseOwner, value.LeaseExpiresAt, value.FencingToken = leaseOwner, notification.MillisTimestamp(leaseExpiresAt), fencingToken
+	value.OccurredAt, value.CreatedAt, value.UpdatedAt = notification.MillisTimestamp(occurredAt), notification.MillisTimestamp(createdAt), notification.MillisTimestamp(updatedAt)
 	return value, nil
 }
 

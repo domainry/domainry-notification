@@ -26,13 +26,13 @@ func TestApplicationBindingIgnoresSharedMigrationNamespaces(t *testing.T) {
 	if err := ledger.RecordDirty(t.Context(), database, "shared/metadata", 1, "metadata", "metadata-checksum"); err != nil {
 		t.Fatal(err)
 	}
-	if err := ledger.Complete(t.Context(), database, "shared/metadata", 1, "metadata-checksum", "now"); err != nil {
+	if err := ledger.Complete(t.Context(), database, "shared/metadata", 1, "metadata-checksum", 1); err != nil {
 		t.Fatal(err)
 	}
 	if err := ledger.RecordDirty(t.Context(), database, "workspace/app", 1, "notification", "notification-checksum"); err != nil {
 		t.Fatal(err)
 	}
-	if err := ledger.Complete(t.Context(), database, "workspace/app", 1, "notification-checksum", "now"); err != nil {
+	if err := ledger.Complete(t.Context(), database, "workspace/app", 1, "notification-checksum", 1); err != nil {
 		t.Fatal(err)
 	}
 	if err := ledger.ValidateApplicationBinding(t.Context(), database, "workspace/app"); err != nil {
