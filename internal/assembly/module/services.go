@@ -8,6 +8,7 @@ import (
 
 	notificationsdk "github.com/domainry/domainry-notification-sdk"
 	"github.com/domainry/domainry-notification-sdk/contract"
+	"github.com/domainry/domainry-notification-sdk/modulehost"
 	notificationapplication "github.com/domainry/domainry-notification/internal/application"
 	"github.com/domainry/domainry-notification/internal/domain/delivery/service"
 	"github.com/domainry/domainry-notification/internal/domain/inbox/service"
@@ -518,6 +519,61 @@ func (s moduleAdministration) InboxGovernanceMetrics(ctx context.Context, a noti
 		return contract.NotificationInboxGovernanceMetrics{}, moduleError(err)
 	}
 	return convert[contract.NotificationInboxGovernanceMetrics](value)
+}
+
+func (s moduleAdministration) ListDeadLetters(ctx context.Context, a notificationsdk.UserAuthority, cursor string, limit int) (contract.NotificationDeadLetterPage, error) {
+	p, err := s.b.authorizeAction(ctx, a, notificationapplication.ActionGovernanceDeadLettersList, false)
+	if err != nil {
+		return contract.NotificationDeadLetterPage{}, err
+	}
+	if limit == 0 {
+		limit = 25
+	}
+	if limit < 1 || limit > 100 || len(cursor) > 256 {
+		return contract.NotificationDeadLetterPage{}, &notificationsdk.Error{StatusCode: 400, Code: "notification.dead_letter_query_invalid"}
+	}
+	items, next, err := s.b.store.ListDeadLetters(ctx, notification.WorkspaceID(p.WorkspaceID), cursor, limit)
+	if err != nil {
+		return contract.NotificationDeadLetterPage{}, moduleError(err)
+	}
+	page := contract.NotificationDeadLetterPage{Items: make([]contract.NotificationDeadLetter, 0, len(items)), NextCursor: next}
+	for _, item := range items {
+		page.Items = append(page.Items, contract.NotificationDeadLetter{
+			ID: item.ID, Source: item.Source, AttemptCount: item.AttemptCount, LastErrorCode: item.LastErrorCode, UpdatedAt: item.UpdatedAt,
+		})
+	}
+	return page, nil
+}
+
+func (s moduleAdministration) RedriveDeadLetter(ctx context.Context, a notificationsdk.UserAuthority, eventID string) (contract.NotificationDeadLetterRedrive, error) {
+	p, err := s.b.authorizeAction(ctx, a, notificationapplication.ActionGovernanceDeadLettersRedrive, true)
+	if err != nil {
+		return contract.NotificationDeadLetterRedrive{}, err
+	}
+	eventID = strings.TrimSpace(eventID)
+	if eventID == "" || len(eventID) > 256 {
+		return contract.NotificationDeadLetterRedrive{}, &notificationsdk.Error{StatusCode: 400, Code: "notification.dead_letter_id_invalid"}
+	}
+	release, err := s.b.beginMigrationSensitiveWrite(ctx)
+	if err != nil {
+		return contract.NotificationDeadLetterRedrive{}, err
+	}
+	defer release()
+	queuedAt := notification.Timestamp(s.b.clock.Now().UTC())
+	changed, found, err := s.b.store.RedriveDeadLetter(ctx, notification.WorkspaceID(p.WorkspaceID), eventID, queuedAt)
+	if err != nil {
+		return contract.NotificationDeadLetterRedrive{}, moduleError(err)
+	}
+	if !found {
+		return contract.NotificationDeadLetterRedrive{}, &notificationsdk.Error{StatusCode: 404, Code: "notification.dead_letter_not_found"}
+	}
+	if !changed {
+		return contract.NotificationDeadLetterRedrive{}, &notificationsdk.Error{StatusCode: 409, Code: "notification.dead_letter_not_failed"}
+	}
+	if s.b.workNotifier != nil {
+		s.b.workNotifier.Notify(ctx, modulehost.WorkLocator{Kind: string(notification.WorkInboxEvent), WorkspaceID: p.WorkspaceID, TaskID: eventID})
+	}
+	return contract.NotificationDeadLetterRedrive{ID: eventID, QueuedAt: queuedAt}, nil
 }
 
 type moduleWorkers struct{ b *binding }

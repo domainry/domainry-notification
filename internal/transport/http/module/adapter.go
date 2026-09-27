@@ -90,6 +90,8 @@ func (s *adapter) actionHandlers() map[string]http.HandlerFunc {
 		notificationapplication.ActionDeliveryMetricsRead:          s.metrics,
 		notificationapplication.ActionGovernanceCatalogRead:        s.governanceCatalog,
 		notificationapplication.ActionGovernanceInboxMetricsRead:   s.inboxGovernanceMetrics,
+		notificationapplication.ActionGovernanceDeadLettersList:    s.listDeadLetters,
+		notificationapplication.ActionGovernanceDeadLettersRedrive: s.redriveDeadLetter,
 	}
 }
 
@@ -454,6 +456,41 @@ func (s *adapter) inboxGovernanceMetrics(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	value, err := s.binding.Administration().InboxGovernanceMetrics(r.Context(), a, metricSince(r))
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, value)
+}
+
+func (s *adapter) listDeadLetters(w http.ResponseWriter, r *http.Request) {
+	a, ok := withAuthority(w, r)
+	if !ok {
+		return
+	}
+	limit := 25
+	if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
+		var err error
+		limit, err = strconv.Atoi(raw)
+		if err != nil {
+			writeError(w, &notificationsdk.Error{StatusCode: 400, Code: "notification.dead_letter_query_invalid"})
+			return
+		}
+	}
+	page, err := s.binding.Administration().ListDeadLetters(r.Context(), a, r.URL.Query().Get("cursor"), limit)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, page)
+}
+
+func (s *adapter) redriveDeadLetter(w http.ResponseWriter, r *http.Request) {
+	a, ok := withAuthority(w, r)
+	if !ok {
+		return
+	}
+	value, err := s.binding.Administration().RedriveDeadLetter(r.Context(), a, r.PathValue("eventID"))
 	if err != nil {
 		writeError(w, err)
 		return

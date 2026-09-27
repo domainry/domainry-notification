@@ -77,8 +77,12 @@ func (s *integrationWorkspaceScope) allExact() bool {
 type integrationQueueScopes struct{}
 
 func (integrationQueueScopes) Register(ctx context.Context, executor modulehost.Executor, kind, workspaceID, updatedAt string) error {
-	_, err := executor.ExecContext(ctx, `INSERT INTO host_notification_queue_scopes (kind, workspace_id, updated_at) VALUES (?, ?, ?)
-		ON CONFLICT(kind, workspace_id) DO UPDATE SET updated_at = excluded.updated_at`, kind, workspaceID, updatedAt)
+	stamp, err := time.Parse(time.RFC3339Nano, updatedAt)
+	if err != nil {
+		return err
+	}
+	_, err = executor.ExecContext(ctx, `INSERT INTO host_notification_queue_scopes (kind, workspace_id, updated_at) VALUES (?, ?, ?)
+		ON CONFLICT(kind, workspace_id) DO UPDATE SET updated_at = excluded.updated_at`, kind, workspaceID, stamp.UnixMilli())
 	return err
 }
 
@@ -136,7 +140,7 @@ func (r *integrationMigrationRegistrar) ApplyOwnedMigrations(ctx context.Context
 				return err
 			}
 		}
-		if _, err := tx.ExecContext(ctx, `INSERT INTO _schema_migrations (namespace, version, checksum, applied_at) VALUES (?, ?, ?, ?)`, owner, migration.Version, checksum, "2026-09-03T00:00:00Z"); err != nil {
+		if _, err := tx.ExecContext(ctx, `INSERT INTO _schema_migrations (namespace, version, checksum, applied_at) VALUES (?, ?, ?, ?)`, owner, migration.Version, checksum, time.Date(2026, 9, 3, 0, 0, 0, 0, time.UTC).UnixMilli()); err != nil {
 			_ = tx.Rollback()
 			return err
 		}
@@ -381,8 +385,8 @@ func newIntegrationHost(t *testing.T) *integrationHost {
 	database.SetMaxOpenConns(1)
 	t.Cleanup(func() { _ = database.Close() })
 	for _, statement := range []string{
-		`CREATE TABLE _schema_migrations (namespace TEXT NOT NULL, version INTEGER NOT NULL, checksum TEXT NOT NULL, applied_at TEXT NOT NULL, PRIMARY KEY(namespace, version))`,
-		`CREATE TABLE host_notification_queue_scopes (kind TEXT NOT NULL, workspace_id TEXT NOT NULL, updated_at TEXT NOT NULL, PRIMARY KEY(kind, workspace_id))`,
+		`CREATE TABLE _schema_migrations (namespace TEXT NOT NULL, version INTEGER NOT NULL, checksum TEXT NOT NULL, applied_at BIGINT NOT NULL, PRIMARY KEY(namespace, version))`,
+		`CREATE TABLE host_notification_queue_scopes (kind TEXT NOT NULL, workspace_id TEXT NOT NULL, updated_at BIGINT NOT NULL, PRIMARY KEY(kind, workspace_id))`,
 		`CREATE TABLE host_business_records (id TEXT PRIMARY KEY, state TEXT NOT NULL)`,
 	} {
 		if _, err := database.Exec(statement); err != nil {
@@ -399,6 +403,9 @@ func newIntegrationHost(t *testing.T) *integrationHost {
 		notificationapplication.ActionDeliveryPolicyUpdate,
 		notificationapplication.ActionRecipientPreferencesList,
 		notificationapplication.ActionRecipientPreferencesUpdate,
+		notificationapplication.ActionGovernanceInboxMetricsRead,
+		notificationapplication.ActionGovernanceDeadLettersList,
+		notificationapplication.ActionGovernanceDeadLettersRedrive,
 		"notification.inbox.list",
 	}
 	identity := &integrationIdentity{clock: clock, profiles: map[string]integrationIdentityProfile{
@@ -535,6 +542,149 @@ func TestPublicBindingRunsDurableNotificationLifecycleWithRetryRecovery(t *testi
 	}
 	if !host.scope.allExact() {
 		t.Fatalf("persistence crossed the host workspace scope: %+v", host.scope.seen)
+	}
+}
+
+func TestPublicBindingRetriesFailedInboxMaterializationAndRecovers(t *testing.T) {
+	host := newIntegrationHost(t)
+	host.catalog.Rules[0].Channels = nil
+	binding, err := NewFactory(Options{}).OpenModule(t.Context(), integrationApplication(), host)
+	if err != nil {
+		t.Fatal(err)
+	}
+	event, created, err := binding.Publisher().PublishIntent(t.Context(), integrationIntent())
+	if err != nil || !created {
+		t.Fatalf("publish inbox event=%+v created=%v err=%v", event, created, err)
+	}
+	if _, err := host.database.Exec(`CREATE TRIGGER fail_inbox_materialization BEFORE INSERT ON _notification_inbox_items BEGIN SELECT RAISE(FAIL, 'injected inbox write failure'); END`); err != nil {
+		t.Fatal(err)
+	}
+	workers, local := binding.LocalWorkers()
+	if !local || workers == nil {
+		t.Fatal("Module binding did not expose local workers")
+	}
+	if processed, err := workers.ProcessDueInboxEvents(t.Context(), 10); err != nil || processed != 0 {
+		t.Fatalf("failed materialization processed=%d err=%v", processed, err)
+	}
+	assertIntegrationInboxEventState(t, host.database, event.ID, "queued", 1, "retry_scheduled")
+	if _, err := host.database.Exec(`DROP TRIGGER fail_inbox_materialization`); err != nil {
+		t.Fatal(err)
+	}
+	if processed, err := workers.ProcessDueInboxEvents(t.Context(), 10); err != nil || processed != 0 {
+		t.Fatalf("event retried before backoff elapsed: processed=%d err=%v", processed, err)
+	}
+	host.clock.Advance(time.Minute)
+	if processed, err := workers.ProcessDueInboxEvents(t.Context(), 10); err != nil || processed != 1 {
+		t.Fatalf("recovered materialization processed=%d err=%v", processed, err)
+	}
+	assertIntegrationInboxEventState(t, host.database, event.ID, "materialized", 1, "retry_scheduled")
+	page, err := binding.Inbox().List(t.Context(), notificationsdk.UserAuthority{AccessToken: "full-token"}, contract.NotificationInboxQuery{Scope: contract.NotificationInboxScopeMine}, "")
+	if err != nil || len(page.Items) != 1 || page.Items[0].EventID != event.ID {
+		t.Fatalf("recovered inbox page=%+v err=%v", page, err)
+	}
+	if processed, err := workers.ProcessInboxEvent(t.Context(), notificationsdk.WorkLocator{Kind: "notification_inbox", WorkspaceID: "workspace-a", TaskID: event.ID}); err != nil || processed {
+		t.Fatalf("materialized event ran twice: processed=%v err=%v", processed, err)
+	}
+}
+
+func TestPublicBindingDeadLettersInboxAfterBoundedFailures(t *testing.T) {
+	host := newIntegrationHost(t)
+	host.catalog.Rules[0].Channels = nil
+	binding, err := NewFactory(Options{}).OpenModule(t.Context(), integrationApplication(), host)
+	if err != nil {
+		t.Fatal(err)
+	}
+	event, created, err := binding.Publisher().PublishIntent(t.Context(), integrationIntent())
+	if err != nil || !created {
+		t.Fatalf("publish inbox event=%+v created=%v err=%v", event, created, err)
+	}
+	if _, err := host.database.Exec(`CREATE TRIGGER fail_inbox_materialization BEFORE INSERT ON _notification_inbox_items BEGIN SELECT RAISE(FAIL, 'injected inbox write failure'); END`); err != nil {
+		t.Fatal(err)
+	}
+	workers, local := binding.LocalWorkers()
+	if !local || workers == nil {
+		t.Fatal("Module binding did not expose local workers")
+	}
+	for attempt := 1; attempt <= 8; attempt++ {
+		if processed, err := workers.ProcessDueInboxEvents(t.Context(), 10); err != nil || processed != 0 {
+			t.Fatalf("attempt %d processed=%d err=%v", attempt, processed, err)
+		}
+		status, disposition := "queued", "retry_scheduled"
+		if attempt == 8 {
+			status, disposition = "failed", "dead_letter"
+		}
+		assertIntegrationInboxEventState(t, host.database, event.ID, status, attempt, disposition)
+		host.clock.Advance(time.Hour)
+	}
+	if _, err := host.database.Exec(`DROP TRIGGER fail_inbox_materialization`); err != nil {
+		t.Fatal(err)
+	}
+	if processed, err := workers.ProcessDueInboxEvents(t.Context(), 10); err != nil || processed != 0 {
+		t.Fatalf("dead-letter event was automatically retried: processed=%d err=%v", processed, err)
+	}
+	metrics, err := binding.Administration().InboxGovernanceMetrics(t.Context(), notificationsdk.UserAuthority{AccessToken: "full-token"}, "2026-09-03T00:00:00Z")
+	if err != nil || metrics.Failures.Total != 8 || metrics.Failures.RetryScheduled != 7 || metrics.Failures.DeadLetter != 1 {
+		t.Fatalf("dead-letter governance metrics=%+v err=%v", metrics.Failures, err)
+	}
+	var itemCount int
+	if err := host.database.QueryRow(`SELECT COUNT(*) FROM _notification_inbox_items WHERE event_id = ?`, event.ID).Scan(&itemCount); err != nil || itemCount != 0 {
+		t.Fatalf("dead-letter inbox items=%d err=%v", itemCount, err)
+	}
+	full := notificationsdk.UserAuthority{AccessToken: "full-token"}
+	if _, err := binding.Administration().ListDeadLetters(t.Context(), notificationsdk.UserAuthority{AccessToken: "limited-token"}, "", 10); !isIntegrationSDKError(err, 403, "notification.permission_denied", false) {
+		t.Fatalf("limited token listed dead letters: %v", err)
+	}
+	if _, err := binding.Administration().ListDeadLetters(t.Context(), notificationsdk.UserAuthority{AccessToken: "other-workspace"}, "", 10); !isIntegrationSDKError(err, 403, "notification.application_scope_mismatch", false) {
+		t.Fatalf("other workspace listed dead letters: %v", err)
+	}
+	page, err := binding.Administration().ListDeadLetters(t.Context(), full, "", 10)
+	if err != nil || len(page.Items) != 1 || page.Items[0].ID != event.ID || page.Items[0].AttemptCount != 8 || page.NextCursor != "" {
+		t.Fatalf("dead-letter page=%+v err=%v", page, err)
+	}
+	if _, err := binding.Administration().RedriveDeadLetter(t.Context(), notificationsdk.UserAuthority{AccessToken: "limited-token"}, event.ID); !isIntegrationSDKError(err, 403, "notification.permission_denied", false) {
+		t.Fatalf("limited token redrove dead letter: %v", err)
+	}
+	if _, err := binding.Administration().RedriveDeadLetter(t.Context(), full, event.ID); err != nil {
+		t.Fatalf("authorized redrive: %v", err)
+	}
+	if _, err := binding.Administration().RedriveDeadLetter(t.Context(), full, event.ID); !isIntegrationSDKError(err, 409, "notification.dead_letter_not_failed", false) {
+		t.Fatalf("duplicate redrive error=%v", err)
+	}
+	if page, err := binding.Administration().ListDeadLetters(t.Context(), full, "", 10); err != nil || len(page.Items) != 0 {
+		t.Fatalf("redriven dead letter remained listed: page=%+v err=%v", page, err)
+	}
+	if processed, err := workers.ProcessDueInboxEvents(t.Context(), 10); err != nil || processed != 1 {
+		t.Fatalf("manually redriven event processed=%d err=%v", processed, err)
+	}
+	if err := host.database.QueryRow(`SELECT COUNT(*) FROM _notification_inbox_items WHERE event_id = ?`, event.ID).Scan(&itemCount); err != nil || itemCount != 1 {
+		t.Fatalf("redriven inbox items=%d err=%v", itemCount, err)
+	}
+}
+
+func assertIntegrationInboxEventState(t *testing.T, database *sql.DB, eventID, wantStatus string, wantAttempts int, wantDisposition string) {
+	t.Helper()
+	var status, errorCode string
+	var attempts int
+	if err := database.QueryRow(`SELECT status, attempt_count, last_error_code FROM _notification_events WHERE id = ?`, eventID).Scan(&status, &attempts, &errorCode); err != nil {
+		t.Fatal(err)
+	}
+	if status != wantStatus || attempts != wantAttempts {
+		t.Fatalf("inbox event status=%q attempts=%d, want %q/%d", status, attempts, wantStatus, wantAttempts)
+	}
+	if wantStatus == "materialized" {
+		if errorCode != "" {
+			t.Fatalf("recovered event retained failure code %q", errorCode)
+		}
+	} else if errorCode != "backend.notification.inbox_materialization_failed" {
+		t.Fatalf("inbox event error code=%q", errorCode)
+	}
+	var recordedAttempt int
+	var disposition string
+	if err := database.QueryRow(`SELECT attempt, disposition FROM _notification_delivery_attempts WHERE event_id = ? AND attempt_kind = 'event' ORDER BY attempt DESC LIMIT 1`, eventID).Scan(&recordedAttempt, &disposition); err != nil {
+		t.Fatal(err)
+	}
+	if recordedAttempt != wantAttempts || disposition != wantDisposition {
+		t.Fatalf("failure evidence attempt=%d disposition=%q, want %d/%q", recordedAttempt, disposition, wantAttempts, wantDisposition)
 	}
 }
 

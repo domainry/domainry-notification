@@ -12,7 +12,7 @@ func TestAuthorizationActionsFreezeAsSingleExactManifest(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(definitions) != 41 {
+	if len(definitions) != 43 {
 		t.Fatalf("Action count=%d", len(definitions))
 	}
 	registry := actioncontract.NewRegistry()
@@ -23,7 +23,7 @@ func TestAuthorizationActionsFreezeAsSingleExactManifest(t *testing.T) {
 		t.Fatal(err)
 	}
 	permissions := registry.PermissionDefinitions()
-	if len(permissions) != 41 {
+	if len(permissions) != 43 {
 		t.Fatalf("Permission count=%d", len(permissions))
 	}
 	for _, definition := range registry.Definitions() {

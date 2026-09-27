@@ -32,6 +32,8 @@ const (
 	ActionDeliveryMetricsRead          = "notification.delivery_metrics.read"
 	ActionGovernanceCatalogRead        = "notification.governance.catalog.read"
 	ActionGovernanceInboxMetricsRead   = "notification.governance.inbox_metrics.read"
+	ActionGovernanceDeadLettersList    = "notification.governance.dead_letters.list"
+	ActionGovernanceDeadLettersRedrive = "notification.governance.dead_letters.redrive"
 )
 
 type notificationHTTPActionSpec struct {
@@ -67,6 +69,8 @@ func AuthorizationActions() ([]actioncontract.ActionDefinition, error) {
 		{Key: ActionDeliveryMetricsRead, Pattern: "GET /notification/metrics", Label: "Read notification delivery metrics", Effect: actioncontract.EffectRead, Risk: actioncontract.RiskLow},
 		{Key: ActionGovernanceCatalogRead, Pattern: "GET /notification/governance/catalog", Label: "Read notification governance catalog", Effect: actioncontract.EffectRead, Risk: actioncontract.RiskLow},
 		{Key: ActionGovernanceInboxMetricsRead, Pattern: "GET /notification/governance/inbox-metrics", Label: "Read Inbox governance metrics", Effect: actioncontract.EffectRead, Risk: actioncontract.RiskLow},
+		{Key: ActionGovernanceDeadLettersList, Pattern: "GET /notification/governance/dead-letters", Label: "List notification dead letters", Effect: actioncontract.EffectRead, Risk: actioncontract.RiskMedium},
+		{Key: ActionGovernanceDeadLettersRedrive, Pattern: "POST /notification/governance/dead-letters/{eventID}/redrive", Label: "Redrive notification dead letter", Effect: actioncontract.EffectWrite, Risk: actioncontract.RiskHigh},
 	}
 	definitions := make([]actioncontract.ActionDefinition, 0, len(management)+20)
 	for _, spec := range management {

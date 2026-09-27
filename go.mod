@@ -9,7 +9,7 @@ require (
 	github.com/domainry/domainry-foundation v0.1.41
 	github.com/domainry/domainry-identity-sdk v0.1.18
 	github.com/domainry/domainry-metadata-sdk v0.1.8
-	github.com/domainry/domainry-notification-sdk v0.1.9
+	github.com/domainry/domainry-notification-sdk v0.1.10
 	github.com/domainry/domainry-orm v0.1.32
 	github.com/go-sql-driver/mysql v1.10.0
 	github.com/jackc/pgx/v5 v5.10.0

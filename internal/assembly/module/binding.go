@@ -45,6 +45,7 @@ type binding struct {
 	eventTypes           []inbox.EventType
 	rules                []inbox.Rule
 	metrics              modulehost.DeliveryMetrics
+	workNotifier         modulehost.WorkNotifier
 	clock                modulehost.Clock
 	templateCapabilities []contract.NotificationTemplateCapability
 	migrationMu          sync.RWMutex

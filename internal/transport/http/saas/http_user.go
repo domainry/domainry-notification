@@ -199,9 +199,12 @@ func serveBindingRoute(response http.ResponseWriter, request *http.Request, bind
 			output, err = binding.Delivery().Metrics(ctx, authority, deliveryInput.Since)
 		}
 		return writeRouteResult(response, output, err)
-	case "/notification/v1/governance/catalog:get", "/notification/v1/governance/inbox-metrics:get":
+	case "/notification/v1/governance/catalog:get", "/notification/v1/governance/inbox-metrics:get", "/notification/v1/governance/dead-letters:list", "/notification/v1/governance/dead-letters:redrive":
 		var input struct {
-			Since string `json:"since,omitempty"`
+			Since   string `json:"since,omitempty"`
+			Cursor  string `json:"cursor,omitempty"`
+			Limit   int    `json:"limit,omitempty"`
+			EventID string `json:"event_id,omitempty"`
 		}
 		if request.ContentLength != 0 {
 			if err := decodeJSON(request.Body, &input); err != nil {
@@ -210,10 +213,15 @@ func serveBindingRoute(response http.ResponseWriter, request *http.Request, bind
 			}
 		}
 		var output any
-		if request.URL.Path == "/notification/v1/governance/catalog:get" {
+		switch request.URL.Path {
+		case "/notification/v1/governance/catalog:get":
 			output, err = binding.Administration().GovernanceCatalog(ctx, authority)
-		} else {
+		case "/notification/v1/governance/inbox-metrics:get":
 			output, err = binding.Administration().InboxGovernanceMetrics(ctx, authority, input.Since)
+		case "/notification/v1/governance/dead-letters:list":
+			output, err = binding.Administration().ListDeadLetters(ctx, authority, input.Cursor, input.Limit)
+		case "/notification/v1/governance/dead-letters:redrive":
+			output, err = binding.Administration().RedriveDeadLetter(ctx, authority, input.EventID)
 		}
 		return writeRouteResult(response, output, err)
 	default:

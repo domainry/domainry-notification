@@ -183,7 +183,7 @@ func TestModuleFactoryContractAndBorrowedDatabaseLifecycle(t *testing.T) {
 	}
 	adapter := provider.HTTPAdapters()[0]
 	routes := adapter.Routes()
-	if len(routes) != 41 {
+	if len(routes) != 43 {
 		t.Fatalf("Notification routes=%d", len(routes))
 	}
 	actions, err := notificationapplication.AuthorizationActions()

@@ -195,7 +195,7 @@ func TestRemotePublicationReconcilesResponseLossWithoutDuplicateIngest(t *testin
 		t.Fatal(err)
 	}
 	provider, ok := remoteBinding.(modulehttp.Provider)
-	if !ok || len(provider.HTTPAdapters()) != 1 || len(provider.HTTPAdapters()[0].Routes()) != 41 {
+	if !ok || len(provider.HTTPAdapters()) != 1 || len(provider.HTTPAdapters()[0].Routes()) != 43 {
 		t.Fatalf("SaaS Notification HTTP adapters=%v", provider)
 	}
 	actionProvider, ok := remoteBinding.(actioncontract.Provider)
