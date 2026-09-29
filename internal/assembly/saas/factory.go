@@ -42,6 +42,7 @@ type bindingWithHTTPAdapter struct {
 	systemTemplates notificationsdk.SystemTemplates
 	systemSubjects  notificationsdk.SystemSubjects
 	systemRetention notificationsdk.SystemRetention
+	systemAlerts    notificationsdk.SystemAlerts
 	systemMigration notificationsdk.SystemMigration
 	adapters        []modulehttp.Adapter
 }
@@ -56,6 +57,9 @@ func newBindingWithHTTPAdapter(binding notificationsdk.Binding, adapter moduleht
 	}
 	if value, ok := binding.(notificationsdk.SystemRetentionBinding); ok {
 		result.systemRetention = value.SystemRetention()
+	}
+	if value, ok := binding.(notificationsdk.SystemAlertBinding); ok {
+		result.systemAlerts = value.SystemAlerts()
 	}
 	if value, ok := binding.(notificationsdk.SystemMigrationBinding); ok {
 		result.systemMigration = value.SystemMigration()
@@ -72,6 +76,9 @@ func (b *bindingWithHTTPAdapter) SystemSubjects() notificationsdk.SystemSubjects
 func (b *bindingWithHTTPAdapter) SystemRetention() notificationsdk.SystemRetention {
 	return b.systemRetention
 }
+func (b *bindingWithHTTPAdapter) SystemAlerts() notificationsdk.SystemAlerts {
+	return b.systemAlerts
+}
 func (b *bindingWithHTTPAdapter) SystemMigration() notificationsdk.SystemMigration {
 	return b.systemMigration
 }
@@ -86,6 +93,7 @@ var _ notificationsdk.Factory = (*RemoteFactory)(nil)
 var _ notificationsdk.SystemTemplateBinding = (*bindingWithHTTPAdapter)(nil)
 var _ notificationsdk.SystemSubjectBinding = (*bindingWithHTTPAdapter)(nil)
 var _ notificationsdk.SystemRetentionBinding = (*bindingWithHTTPAdapter)(nil)
+var _ notificationsdk.SystemAlertBinding = (*bindingWithHTTPAdapter)(nil)
 var _ notificationsdk.SystemMigrationBinding = (*bindingWithHTTPAdapter)(nil)
 var _ modulehttp.Provider = (*bindingWithHTTPAdapter)(nil)
 var _ actioncontract.Provider = (*bindingWithHTTPAdapter)(nil)

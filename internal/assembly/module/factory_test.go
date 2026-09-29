@@ -220,6 +220,24 @@ func TestModuleSystemTemplatesSynchronizeThroughOwnedStore(t *testing.T) {
 	}
 }
 
+func TestModuleSystemAlertsReadOnlyExactApplicationScope(t *testing.T) {
+	host := newTestHost(t)
+	binding, err := NewFactory(Options{}).OpenModule(t.Context(), notificationsdk.ApplicationRef{WorkspaceID: "workspace", ApplicationKey: "runtime"}, host)
+	if err != nil {
+		t.Fatal(err)
+	}
+	alerts, ok := binding.(notificationsdk.SystemAlertBinding)
+	if !ok || alerts.SystemAlerts() == nil {
+		t.Fatal("Module Binding did not expose system alert groups")
+	}
+	if _, found, err := alerts.SystemAlerts().GetAlertGroup(t.Context(), "workspace", "admin-1", "installation.integration.health.dead_letter"); err != nil || found {
+		t.Fatalf("empty group found=%v err=%v", found, err)
+	}
+	if _, _, err := alerts.SystemAlerts().GetAlertGroup(t.Context(), "another-workspace", "admin-1", "installation.integration.health.dead_letter"); err == nil {
+		t.Fatal("cross-application alert group read was accepted")
+	}
+}
+
 func TestModuleSystemMigrationExportsAndIdempotentlyReconcilesExactApplication(t *testing.T) {
 	host := newTestHost(t)
 	application := notificationsdk.ApplicationRef{WorkspaceID: "workspace", ApplicationKey: "runtime"}

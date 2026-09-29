@@ -175,6 +175,24 @@ func (s *Store) upsertInboxItem(ctx context.Context, tx *sql.Tx, item inbox.Item
 }
 
 func (s *Store) insertChannelPlan(ctx context.Context, tx *sql.Tx, plan delivery.Plan) error {
+	lookup, lookupArgs, err := query.NewWorkspaceSelectBuilder(s.Renderer, notificationDeliveriesTable, plan.WorkspaceID.String()).
+		Columns("payload_json").Where(query.And(query.Equal("id", plan.ID), query.Equal("row_kind", "delivery"))).Build()
+	if err != nil {
+		return err
+	}
+	var existingRaw string
+	if err = tx.QueryRowContext(ctx, lookup, lookupArgs...).Scan(&existingRaw); err == nil {
+		var existing delivery.Plan
+		if decodeErr := timejson.Unmarshal([]byte(existingRaw), &existing); decodeErr != nil {
+			return fmt.Errorf("decode existing notification channel plan: %w", decodeErr)
+		}
+		if !sameChannelPlanIdentity(existing, plan) {
+			return fmt.Errorf("notification channel plan identity conflict")
+		}
+		return nil
+	} else if err != sql.ErrNoRows {
+		return fmt.Errorf("read existing notification channel plan: %w", err)
+	}
 	raw, err := timejson.Marshal(plan)
 	if err != nil {
 		return fmt.Errorf("encode notification channel plan: %w", err)
@@ -186,6 +204,13 @@ func (s *Store) insertChannelPlan(ctx context.Context, tx *sql.Tx, plan delivery
 		return fmt.Errorf("insert notification channel plan: %w", err)
 	}
 	return nil
+}
+
+func sameChannelPlanIdentity(left, right delivery.Plan) bool {
+	return left.ID == right.ID && left.WorkspaceID == right.WorkspaceID && left.EventID == right.EventID &&
+		left.Channel == right.Channel && left.TemplateKey == right.TemplateKey && left.ConnectorKey == right.ConnectorKey &&
+		left.ConnectionKey == right.ConnectionKey && left.Operation == right.Operation && left.DedupeKey == right.DedupeKey &&
+		left.EscalationStep == right.EscalationStep
 }
 
 func inboxSearchText(item inbox.Item) string {

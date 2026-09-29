@@ -43,6 +43,31 @@ func TestEngineRendersPortableSnapshotAndResolvesRecipients(t *testing.T) {
 	}
 }
 
+func TestEngineResolvesFeishuCollaborationRecipientByIdentityEmail(t *testing.T) {
+	value := template.Template{
+		Key: "task.reminder.feishu", Name: "Feishu task reminder", Channel: "collaboration", Provider: "feishu",
+		Status: "published", Version: 1, DefaultLocale: "zh-CN",
+		Variables: []template.Variable{{Key: "task", Type: "text", Required: true}},
+		Locales:   map[string]template.Content{"zh-CN": {Title: "任务提醒", Markdown: "请处理 {{task}}"}},
+	}
+	engine, err := template.NewEngine("zh-CN", []template.Template{value}, collaborationValidator(t), recipientResolver{
+		"user-1": {ID: "user-1", Email: "Sales.User@Example.test"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	workspace, _ := notification.NewWorkspaceID("workspace-1")
+	rendered, err := engine.Render(t.Context(), template.RenderRequest{
+		WorkspaceID: workspace, TemplateKey: value.Key, Recipients: []notification.UserID{"user-1"}, Variables: map[string]any{"task": "发送报价"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rendered.Recipients) != 1 || rendered.Recipients[0] != "sales.user@example.test" || rendered.Provider != "feishu" {
+		t.Fatalf("rendered=%+v", rendered)
+	}
+}
+
 func TestEngineCatalogDoesNotLeakMutableTemplateState(t *testing.T) {
 	value := validEmailTemplate()
 	engine, err := template.NewEngine("en-US", []template.Template{value}, emailValidator(t), nil)

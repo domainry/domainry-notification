@@ -21,6 +21,7 @@ type moduleTemplates struct{ b *binding }
 type moduleSystemTemplates struct{ b *binding }
 type moduleSystemSubjects struct{ b *binding }
 type moduleSystemRetention struct{ b *binding }
+type moduleSystemAlerts struct{ b *binding }
 type moduleSystemMigration struct{ b *binding }
 
 func (s moduleSystemMigration) Status(ctx context.Context) (contract.NotificationMigrationStatus, error) {
@@ -163,6 +164,21 @@ func (s moduleSystemRetention) ProcessBatch(ctx context.Context, request contrac
 		return contract.NotificationRetentionBatchResult{}, &notificationsdk.Error{StatusCode: 503, Code: "notification.system_retention_unavailable"}
 	}
 	return s.b.store.ProcessRetentionBatch(ctx, request)
+}
+
+func (s moduleSystemAlerts) GetAlertGroup(ctx context.Context, workspaceID, recipientUserID, groupKey string) (contract.NotificationAlertGroup, bool, error) {
+	if s.b == nil || s.b.store == nil {
+		return contract.NotificationAlertGroup{}, false, &notificationsdk.Error{StatusCode: 503, Code: "notification.system_alerts_unavailable"}
+	}
+	if strings.TrimSpace(workspaceID) != s.b.application.WorkspaceID || strings.TrimSpace(recipientUserID) == "" || strings.TrimSpace(groupKey) == "" {
+		return contract.NotificationAlertGroup{}, false, &notificationsdk.Error{StatusCode: 403, Code: "notification.application_scope_mismatch"}
+	}
+	value, found, err := s.b.store.GetAlertGroup(ctx, notification.WorkspaceID(workspaceID), notification.UserID(recipientUserID), groupKey)
+	if err != nil || !found {
+		return contract.NotificationAlertGroup{}, found, moduleError(err)
+	}
+	converted, err := convert[contract.NotificationAlertGroup](value)
+	return converted, true, err
 }
 
 func (s moduleSystemSubjects) PreviewSubject(ctx context.Context, workspaceID, subjectID string) (json.RawMessage, error) {
@@ -640,3 +656,4 @@ var _ notificationsdk.LocalWorkers = moduleWorkers{}
 var _ notificationsdk.SystemTemplates = moduleSystemTemplates{}
 var _ notificationsdk.SystemSubjects = moduleSystemSubjects{}
 var _ notificationsdk.SystemRetention = moduleSystemRetention{}
+var _ notificationsdk.SystemAlerts = moduleSystemAlerts{}

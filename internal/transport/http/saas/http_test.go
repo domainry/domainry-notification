@@ -77,6 +77,7 @@ type httpBindingStub struct {
 	system    *httpSystemTemplatesStub
 	subjects  *httpSystemSubjectsStub
 	retention *httpSystemRetentionStub
+	alerts    *httpSystemAlertsStub
 	migration *httpSystemMigrationStub
 	closed    int
 }
@@ -90,6 +91,7 @@ func (*httpBindingStub) Administration() notificationsdk.Administration     { re
 func (b *httpBindingStub) SystemTemplates() notificationsdk.SystemTemplates { return b.system }
 func (b *httpBindingStub) SystemSubjects() notificationsdk.SystemSubjects   { return b.subjects }
 func (b *httpBindingStub) SystemRetention() notificationsdk.SystemRetention { return b.retention }
+func (b *httpBindingStub) SystemAlerts() notificationsdk.SystemAlerts       { return b.alerts }
 func (b *httpBindingStub) SystemMigration() notificationsdk.SystemMigration { return b.migration }
 func (*httpBindingStub) LocalWorkers() (notificationsdk.LocalWorkers, bool) { return nil, false }
 func (b *httpBindingStub) Close(context.Context) error                      { b.closed++; return nil }
@@ -107,6 +109,7 @@ type httpSystemTemplatesStub struct {
 
 type httpSystemSubjectsStub struct{ calls int }
 type httpSystemRetentionStub struct{ calls int }
+type httpSystemAlertsStub struct{ calls int }
 type httpSystemMigrationStub struct{ imports int }
 
 func (*httpSystemMigrationStub) Status(context.Context) (contract.NotificationMigrationStatus, error) {
@@ -159,6 +162,37 @@ func (s *httpSystemRetentionStub) Preview(context.Context, contract.Notification
 func (s *httpSystemRetentionStub) ProcessBatch(context.Context, contract.NotificationRetentionBatchRequest) (contract.NotificationRetentionBatchResult, error) {
 	s.calls++
 	return contract.NotificationRetentionBatchResult{Scanned: 1, Done: true}, nil
+}
+
+func (s *httpSystemAlertsStub) GetAlertGroup(_ context.Context, workspaceID, recipientUserID, groupKey string) (contract.NotificationAlertGroup, bool, error) {
+	s.calls++
+	return contract.NotificationAlertGroup{WorkspaceID: workspaceID, RecipientUserID: recipientUserID, GroupKey: groupKey, State: contract.NotificationAlertFiring}, true, nil
+}
+
+func TestHandlerSystemAlertsEnforcesExactApplicationWorkspace(t *testing.T) {
+	alerts := &httpSystemAlertsStub{}
+	authenticator := &serviceAuthenticationStub{}
+	handler, _ := NewHandler(authenticator, &bindingResolverStub{binding: &httpBindingStub{publisher: &httpPublisherStub{}, alerts: alerts}})
+	for _, workspace := range []string{"workspace-a", "workspace-b"} {
+		body, _ := json.Marshal(map[string]any{"workspace_id": workspace, "recipient_user_id": "admin-1", "group_key": "installation.integration.health.dead_letter"})
+		request := httptest.NewRequest(http.MethodPost, "/notification/v1/system/alerts:get-group", bytes.NewReader(body))
+		request.Header.Set("X-Domainry-Service-Credential", "service-token")
+		request.Header.Set("X-Domainry-Tenant-ID", "tenant-a")
+		request.Header.Set("X-Domainry-Workspace-ID", "workspace-a")
+		request.Header.Set("X-Domainry-Application-Key", "runtime-a")
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, request)
+		want := http.StatusOK
+		if workspace != "workspace-a" {
+			want = http.StatusForbidden
+		}
+		if response.Code != want {
+			t.Fatalf("workspace=%s status=%d body=%s", workspace, response.Code, response.Body.String())
+		}
+	}
+	if alerts.calls != 1 || authenticator.request.Grant.Resource != "notification_governance" || authenticator.request.Grant.Action != "read" {
+		t.Fatalf("calls=%d grant=%+v", alerts.calls, authenticator.request.Grant)
+	}
 }
 
 func TestHandlerSystemRetentionEnforcesExactApplicationWorkspace(t *testing.T) {

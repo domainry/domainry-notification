@@ -17,6 +17,8 @@ github.com/domainry/domainry-metadata-sdk v0.1.8 h1:aTnNahl9Ef1zuhlfysM5fJCQGeip
 github.com/domainry/domainry-metadata-sdk v0.1.8/go.mod h1:qgXKxErvTsQxY7zhsmVl1XN3PTtJMTnXtJ7LBD0dqCY=
 github.com/domainry/domainry-notification-sdk v0.1.10 h1:W/O5UK7OI48UzacB+n5G6F4f3kcAhkEcum9wbsETX5A=
 github.com/domainry/domainry-notification-sdk v0.1.10/go.mod h1:oc0PXzWYE6+UUhpaF5YXA36xo6UcPlenh2NU1+F3PaE=
+github.com/domainry/domainry-notification-sdk v0.1.11 h1:x7O+hbAWg02iypdM1bRm/CA5hiO7LGuGv9GqgLX9lpk=
+github.com/domainry/domainry-notification-sdk v0.1.11/go.mod h1:oc0PXzWYE6+UUhpaF5YXA36xo6UcPlenh2NU1+F3PaE=
 github.com/domainry/domainry-orm v0.1.32 h1:rDLD7P5FidqXtmNefruEMiI5VMvFK/Lkhy9jwSGswjk=
 github.com/domainry/domainry-orm v0.1.32/go.mod h1:gB/ooN737tsBYHbeHqCpngEprvdvZKp0Zygtzv+IPJY=
 github.com/dustin/go-humanize v1.0.1 h1:GzkhY7T5VNhEkwH0PVJgjz+fX1rhBrR7pRT3mDkpeCY=

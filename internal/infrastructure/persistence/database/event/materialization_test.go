@@ -80,6 +80,39 @@ func TestMaterializeRollsBackWhenLeaseWasLost(t *testing.T) {
 	}
 }
 
+func TestMaterializeRedriveReusesExistingChannelPlan(t *testing.T) {
+	db, store, _ := materializationStore(t)
+	event := claimedEvent()
+	insertClaimedEvent(t, db, event)
+	item := inbox.Item{
+		ID: "item-1", WorkspaceID: event.WorkspaceID, RecipientUserID: "user-1", EventID: event.ID,
+		EventType: event.EventType, Source: event.Source, Category: event.Category, Severity: event.Severity,
+		Title: "Build failed", Body: "Open the run", GroupKey: event.GroupKey,
+		FirstOccurredAt: event.OccurredAt, LastOccurredAt: event.OccurredAt, CreatedAt: event.CreatedAt, UpdatedAt: event.UpdatedAt,
+	}
+	if err := store.Materialize(t.Context(), event, []inbox.Item{item}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`UPDATE _notification_deliveries SET status = 'planned', outbox_message_id = 'outbox-1' WHERE id = ?`, event.ChannelPlans[0].ID); err != nil {
+		t.Fatal(err)
+	}
+	event.LeaseOwner, event.FencingToken = "worker-2", event.FencingToken+1
+	if _, err := db.Exec(`UPDATE _notification_events SET status = 'processing', lease_owner = ?, fencing_token = ? WHERE id = ?`, event.LeaseOwner, event.FencingToken, event.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Materialize(t.Context(), event, []inbox.Item{item}); err != nil {
+		t.Fatal(err)
+	}
+	var count int
+	var status, outboxMessageID string
+	if err := db.QueryRow(`SELECT COUNT(*), status, outbox_message_id FROM _notification_deliveries WHERE id = ?`, event.ChannelPlans[0].ID).Scan(&count, &status, &outboxMessageID); err != nil {
+		t.Fatal(err)
+	}
+	if count != 1 || status != "planned" || outboxMessageID != "outbox-1" {
+		t.Fatalf("redrive channel plan count=%d status=%q outbox=%q", count, status, outboxMessageID)
+	}
+}
+
 func materializationStore(t *testing.T) (*sql.DB, *sqlstore.Store, *queueScopes) {
 	t.Helper()
 	db, err := sql.Open("sqlite", "file:"+t.Name()+"?mode=memory&cache=shared")

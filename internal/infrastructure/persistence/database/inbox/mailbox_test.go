@@ -63,6 +63,29 @@ func TestMailboxPersonalMutationsAndAlertAcknowledgement(t *testing.T) {
 	}
 }
 
+func TestGetAlertGroupRequiresExactWorkspaceRecipientAndGroup(t *testing.T) {
+	db, store := migratedStore(t)
+	event := claimedEvent()
+	insertClaimedEvent(t, db, event)
+	if err := store.Materialize(t.Context(), event, []inbox.Item{mailboxItem(event, "item-1", "user-1")}); err != nil {
+		t.Fatal(err)
+	}
+
+	group, found, err := store.GetAlertGroup(t.Context(), "workspace-1", "user-1", event.GroupKey)
+	if err != nil || !found || group.State != inbox.AlertFiring || group.LastEventID != event.ID || group.RecipientUserID != "user-1" {
+		t.Fatalf("group=%+v found=%v err=%v", group, found, err)
+	}
+	if _, found, err := store.GetAlertGroup(t.Context(), "workspace-1", "user-2", event.GroupKey); err != nil || found {
+		t.Fatalf("foreign recipient found=%v err=%v", found, err)
+	}
+	if _, found, err := store.GetAlertGroup(t.Context(), "workspace-1", "user-1", "another-group"); err != nil || found {
+		t.Fatalf("foreign group found=%v err=%v", found, err)
+	}
+	if _, _, err := store.GetAlertGroup(t.Context(), "workspace-2", "user-1", event.GroupKey); err == nil {
+		t.Fatal("expected cross-workspace read rejection")
+	}
+}
+
 func TestMailboxWorkspaceIsolationAndAtomicMarkAllRead(t *testing.T) {
 	db, store := migratedStore(t)
 	first := claimedEvent()

@@ -96,7 +96,7 @@ func (e *Engine) render(ctx context.Context, value Template, request RenderReque
 	if err != nil {
 		return Rendered{}, err
 	}
-	recipients, err := e.resolveRecipients(ctx, request.WorkspaceID, value.Channel, request.Recipients)
+	recipients, err := e.resolveRecipients(ctx, request.WorkspaceID, value.Channel, value.Provider, request.Recipients)
 	if err != nil {
 		return Rendered{}, err
 	}
@@ -167,14 +167,14 @@ func (e *Engine) render(ctx context.Context, value Template, request RenderReque
 	}, nil
 }
 
-func (e *Engine) resolveRecipients(ctx context.Context, workspaceID notification.WorkspaceID, channel string, values []notification.UserID) ([]string, error) {
+func (e *Engine) resolveRecipients(ctx context.Context, workspaceID notification.WorkspaceID, channel, provider string, values []notification.UserID) ([]string, error) {
 	seen, result := map[string]bool{}, []string{}
 	for _, userID := range values {
 		if userID == "" {
 			continue
 		}
 		address := userID.String()
-		if channel == "email" {
+		if channel == "email" || channel == "collaboration" && provider == "feishu" {
 			if e.recipients == nil {
 				return nil, invalid("backend.notification.recipient_resolver_unavailable", "recipient", userID.String())
 			}

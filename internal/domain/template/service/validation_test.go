@@ -23,6 +23,21 @@ func emailValidator(t *testing.T) *template.Validator {
 	return validator
 }
 
+func collaborationValidator(t *testing.T) *template.Validator {
+	t.Helper()
+	capabilities, err := template.NewCapabilities([]template.Provider{{Capability: template.Capability{
+		Channel: "collaboration", Provider: "feishu", SupportsMarkdown: true, SupportsFacts: true, SupportsURLActions: true, MaxFacts: 10, MaxActions: 5,
+	}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	validator, err := template.NewValidator(capabilities)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return validator
+}
+
 func validEmailTemplate() template.Template {
 	return template.Template{
 		Key: "workflow.task.opened", Name: "Workflow task opened", Channel: "email", Status: "published", Version: 1,

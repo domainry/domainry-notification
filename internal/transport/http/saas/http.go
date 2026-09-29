@@ -200,6 +200,38 @@ func (h *Handler) ServeHTTP(response http.ResponseWriter, request *http.Request)
 			return
 		}
 		writeJSON(response, http.StatusOK, output)
+	case "/notification/v1/system/alerts:get-group":
+		if request.Method != http.MethodPost {
+			writeHTTPError(response, &notificationsdk.Error{StatusCode: http.StatusMethodNotAllowed, Code: "notification.method_not_allowed"})
+			return
+		}
+		alertBinding, ok := binding.(notificationsdk.SystemAlertBinding)
+		if !ok || alertBinding.SystemAlerts() == nil {
+			writeHTTPError(response, &notificationsdk.Error{StatusCode: http.StatusNotImplemented, Code: "notification.system_alerts_unsupported"})
+			return
+		}
+		var input struct {
+			WorkspaceID     string `json:"workspace_id"`
+			RecipientUserID string `json:"recipient_user_id"`
+			GroupKey        string `json:"group_key"`
+		}
+		if err := decodeJSON(request.Body, &input); err != nil {
+			writeHTTPError(response, err)
+			return
+		}
+		if strings.TrimSpace(input.WorkspaceID) != application.WorkspaceID || strings.TrimSpace(input.RecipientUserID) == "" || strings.TrimSpace(input.GroupKey) == "" {
+			writeHTTPError(response, &notificationsdk.Error{StatusCode: http.StatusForbidden, Code: "notification.application_scope_mismatch"})
+			return
+		}
+		group, found, err := alertBinding.SystemAlerts().GetAlertGroup(request.Context(), input.WorkspaceID, input.RecipientUserID, input.GroupKey)
+		if err != nil {
+			writeHTTPError(response, err)
+			return
+		}
+		writeJSON(response, http.StatusOK, struct {
+			Group contract.NotificationAlertGroup `json:"group"`
+			Found bool                            `json:"found"`
+		}{Group: group, Found: found})
 	case "/notification/v1/system/migration:status", "/notification/v1/system/migration:freeze", "/notification/v1/system/migration:export", "/notification/v1/system/migration:import", "/notification/v1/system/migration:activate", "/notification/v1/system/migration:rollback":
 		if request.Method != http.MethodPost {
 			writeHTTPError(response, &notificationsdk.Error{StatusCode: http.StatusMethodNotAllowed, Code: "notification.method_not_allowed"})
