@@ -1,4 +1,4 @@
-package notification_test
+package architecture_test
 
 import (
 	"encoding/json"
@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -17,13 +18,24 @@ import (
 	storeschema "github.com/domainry/domainry-notification/internal/infrastructure/persistence/database/schema"
 )
 
+func repositoryRoot(t *testing.T) string {
+	t.Helper()
+	_, source, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("resolve Notification repository root")
+	}
+	return filepath.Clean(filepath.Join(filepath.Dir(source), "..", ".."))
+}
+
 func TestDDDPackageBoundaries(t *testing.T) {
+	root := repositoryRoot(t)
 	for _, legacy := range []string{"delivery", "inbox", "template", "sqlstore", "server", "application", "contract", "model", "repository", "service"} {
-		if _, err := os.Stat(legacy); !os.IsNotExist(err) {
+		if _, err := os.Stat(filepath.Join(root, legacy)); !os.IsNotExist(err) {
 			t.Errorf("legacy or horizontal top-level package %q must not exist", legacy)
 		}
 	}
 	command := exec.Command("go", "list", "-json", "./...")
+	command.Dir = root
 	output, err := command.StdoutPipe()
 	if err != nil {
 		t.Fatal(err)
@@ -61,14 +73,14 @@ func TestDDDPackageBoundaries(t *testing.T) {
 		"internal/domain/inbox/validation", "internal/domain/delivery/model", "internal/domain/delivery/policy", "internal/domain/delivery/repository", "internal/domain/delivery/service",
 		"internal/infrastructure/persistence", "internal/transport/http/saas",
 	} {
-		if info, err := os.Stat(filepath.FromSlash(required)); err != nil || !info.IsDir() {
+		if info, err := os.Stat(filepath.Join(root, filepath.FromSlash(required))); err != nil || !info.IsDir() {
 			t.Errorf("required DDD package directory %q is missing", required)
 		}
 	}
 }
 
 func TestModuleUsesTaggedDependencies(t *testing.T) {
-	content, err := os.ReadFile("go.mod")
+	content, err := os.ReadFile(filepath.Join(repositoryRoot(t), "go.mod"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -78,11 +90,12 @@ func TestModuleUsesTaggedDependencies(t *testing.T) {
 }
 
 func TestWorkspaceTablesCannotUseSystemBuilders(t *testing.T) {
+	root := repositoryRoot(t)
 	workspaceTables := map[string]bool{}
 	for _, table := range storeschema.SchemaOwnership() {
 		workspaceTables[table.Name] = table.WorkspaceScope == schemaownership.ScopeWorkspace
 	}
-	files, err := filepath.Glob("internal/infrastructure/persistence/database/**/*.go")
+	files, err := filepath.Glob(filepath.Join(root, "internal", "infrastructure", "persistence", "database", "**", "*.go"))
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -1,4 +1,4 @@
-package notification_test
+package architecture_test
 
 import (
 	"errors"

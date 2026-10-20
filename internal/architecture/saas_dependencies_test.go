@@ -1,4 +1,4 @@
-package notification_test
+package architecture_test
 
 import (
 	"os/exec"
@@ -8,6 +8,7 @@ import (
 
 func TestSaaSProductionDependencyClosureCannotAccessRuntimeOrPlane(t *testing.T) {
 	command := exec.Command("go", "list", "-deps", "./internal/assembly/saas", "./cmd/notification-server")
+	command.Dir = repositoryRoot(t)
 	output, err := command.CombinedOutput()
 	if err != nil {
 		t.Fatalf("list Notification SaaS dependencies: %v\n%s", err, output)
