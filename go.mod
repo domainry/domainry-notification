@@ -6,16 +6,14 @@ toolchain go1.26.6
 
 require (
 	github.com/DATA-DOG/go-sqlmock v1.5.2
-	github.com/domainry/domainry-foundation v0.1.44
+	github.com/domainry/domainry-foundation v0.2.0
 	github.com/domainry/domainry-identity-sdk v0.1.22
 	github.com/domainry/domainry-metadata-sdk v0.1.9
-	github.com/domainry/domainry-notification-sdk v0.1.13
+	github.com/domainry/domainry-notification-sdk v0.1.14
 	github.com/domainry/domainry-orm v0.1.33
 	github.com/go-sql-driver/mysql v1.10.0
 	github.com/jackc/pgx/v5 v5.10.0
 	go.opentelemetry.io/otel v1.44.0
-	go.opentelemetry.io/otel/sdk v1.44.0
-	go.opentelemetry.io/otel/trace v1.44.0
 	modernc.org/sqlite v1.57.0
 )
 
@@ -38,6 +36,8 @@ require (
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace v1.44.0 // indirect
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp v1.44.0 // indirect
 	go.opentelemetry.io/otel/metric v1.44.0 // indirect
+	go.opentelemetry.io/otel/sdk v1.44.0 // indirect
+	go.opentelemetry.io/otel/trace v1.44.0 // indirect
 	go.opentelemetry.io/proto/otlp v1.10.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
 	go.uber.org/zap v1.27.1 // indirect

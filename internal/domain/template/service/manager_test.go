@@ -275,7 +275,7 @@ func TestPublicationProcessorRejectsSelfApprovalAndSupersedesChangedCandidate(t 
 	changedRecord.Draft, changedRecord.UpdatedAt = &changed, "changed"
 	store.records[draft.Key] = changedRecord
 	processed, err := processor.Process(t.Context(), approved.ID)
-	if err != nil || !processed {
+	if notification.ErrorCode(err) != "backend.notification.publication_candidate_changed" || !processed {
 		t.Fatalf("processed=%v err=%v", processed, err)
 	}
 	finished := store.requests[approved.ID]
@@ -291,9 +291,10 @@ func TestPublicationProcessorReauthorizesReviewerBeforeResumedPublish(t *testing
 		authorErr   error
 		wantStatus  template.PublicationStatus
 		wantFailure string
+		wantError   string
 	}{
-		{name: "revoked", allowed: false, wantStatus: template.PublicationFailed, wantFailure: "backend.notification.publication_authorization_revoked"},
-		{name: "identity unavailable", authorErr: errors.New("identity unavailable"), wantStatus: template.PublicationPublishing},
+		{name: "revoked", allowed: false, wantStatus: template.PublicationFailed, wantFailure: "backend.notification.publication_authorization_revoked", wantError: "backend.notification.publication_authorization_revoked"},
+		{name: "identity unavailable", authorErr: errors.New("identity unavailable"), wantStatus: template.PublicationPublishing, wantError: "identity unavailable"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -319,7 +320,7 @@ func TestPublicationProcessorReauthorizesReviewerBeforeResumedPublish(t *testing
 			request, _ := processor.Request(t.Context(), draft.Key, "", record.UpdatedAt, "requester")
 			approved, _ := processor.Approve(t.Context(), request.ID, "reviewer")
 			processed, err := processor.Process(t.Context(), approved.ID)
-			if err != nil || !processed || seenActor != "reviewer" {
+			if err == nil || err.Error() != test.wantError || !processed || seenActor != "reviewer" {
 				t.Fatalf("processed=%v actor=%q err=%v", processed, seenActor, err)
 			}
 			finished := store.requests[approved.ID]

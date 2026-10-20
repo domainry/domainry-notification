@@ -64,7 +64,6 @@ type Options struct {
 type WorkerOptions struct {
 	PollInterval time.Duration
 	BatchSize    int
-	OnError      func(error)
 	Disabled     bool
 }
 
@@ -207,20 +206,23 @@ func (r *Runtime) Close(ctx context.Context) error {
 
 func (r *Runtime) runWorkers(ctx context.Context) {
 	defer r.workers.Done()
-	done := worker.StartNamedLoop(ctx, "notification", r.workerOptions.PollInterval, func() {
-		r.processDue(ctx)
+	done := worker.StartNamedLoop(ctx, worker.Identity{Owner: "notification", Name: "durable_processing"}, r.workerOptions.PollInterval, func(tickCtx context.Context) (worker.TickResult, error) {
+		result, err := r.processDue(tickCtx)
 		r.ready.Store(true)
+		return result, err
 	})
 	<-done
 }
 
-func (r *Runtime) processDue(ctx context.Context) {
+func (r *Runtime) processDue(ctx context.Context) (worker.TickResult, error) {
 	r.mu.Lock()
 	bindings := make([]notificationsdk.Binding, 0, len(r.bindings))
 	for _, binding := range r.bindings {
 		bindings = append(bindings, binding)
 	}
 	r.mu.Unlock()
+	result := worker.TickResult{}
+	var tickErr error
 	for _, binding := range bindings {
 		workers, local := binding.LocalWorkers()
 		if !local || workers == nil {
@@ -233,19 +235,22 @@ func (r *Runtime) processDue(ctx context.Context) {
 			started := time.Now()
 			workerContext, span := otel.Tracer("domainry.notification.worker").Start(ctx, "notification.worker."+work.kind)
 			processed, err := work.run(workerContext, r.workerOptions.BatchSize)
-			result := "success"
+			outcome := "success"
 			if err != nil {
-				result = "error"
+				outcome = "error"
 				span.SetStatus(codes.Error, "worker failed")
 			}
-			span.SetAttributes(attribute.String("notification.worker.kind", work.kind), attribute.Int("notification.worker.processed", processed), attribute.String("notification.worker.result", result))
+			span.SetAttributes(attribute.String("notification.worker.kind", work.kind), attribute.Int("notification.worker.processed", processed), attribute.String("notification.worker.result", outcome))
 			span.End()
-			r.metrics.ObserveWorker(work.kind, result, processed, time.Since(started))
-			if err != nil && ctx.Err() == nil && r.workerOptions.OnError != nil {
-				r.workerOptions.OnError(err)
+			r.metrics.ObserveWorker(work.kind, outcome, processed, time.Since(started))
+			if processed > 0 {
+				result.Worked = true
+				result.ProcessedCount += processed
 			}
+			tickErr = errors.Join(tickErr, err)
 		}
 	}
+	return result, tickErr
 }
 
 func applicationKey(application notificationsdk.ApplicationRef) string {

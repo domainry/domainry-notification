@@ -18,6 +18,7 @@ import (
 	_ "github.com/jackc/pgx/v5/stdlib"
 	_ "modernc.org/sqlite"
 
+	"github.com/domainry/domainry-foundation/processhost"
 	"github.com/domainry/domainry-foundation/telemetry"
 	"github.com/domainry/domainry-notification-sdk/deliverygateway"
 	"github.com/domainry/domainry-notification-sdk/modulehost"
@@ -29,24 +30,23 @@ import (
 )
 
 func main() {
-	if err := run(); err != nil {
-		_, _ = fmt.Fprintln(os.Stderr, err)
+	if run() != nil {
 		os.Exit(1)
 	}
 }
 
-func run() error {
+func run() (runErr error) {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 	config, err := configurationFromEnvironment()
 	if err != nil {
 		return err
 	}
-	shutdownTelemetry, err := telemetry.Initialize(ctx, config.telemetry)
+	observability, err := processhost.Open(ctx, processhost.Config{ServiceName: "domainry-notification", ServiceVersion: config.telemetry.ServiceVersion, Telemetry: config.telemetry})
 	if err != nil {
 		return err
 	}
-	defer shutdownTelemetry(context.Background())
+	defer func() { runErr = observability.Finish(context.Background(), nil, runErr) }()
 	database, err := openOwnedDatabase(ctx, config)
 	if err != nil {
 		return err
@@ -90,11 +90,13 @@ func run() error {
 	})
 	mux.Handle("GET /metrics", metrics.Handler())
 	mux.Handle("/", runtime.Handler())
-	httpServer := &http.Server{Addr: config.httpAddress, Handler: notificationhttp.ObserveHTTP(mux, metrics), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 30 * time.Second, WriteTimeout: 30 * time.Second, IdleTimeout: 60 * time.Second}
+	httpServer := &http.Server{Addr: config.httpAddress, Handler: observability.Handler("public", notificationhttp.ObserveHTTP(mux, metrics)), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 30 * time.Second, WriteTimeout: 30 * time.Second, IdleTimeout: 60 * time.Second}
 	serveErrors := make(chan error, 1)
 	go func() { serveErrors <- httpServer.ListenAndServe() }()
+	observability.Started(ctx, map[string]any{"listener_group": "public"})
 	select {
 	case <-ctx.Done():
+		observability.Stopping(context.Background(), map[string]any{"reason": "signal"})
 		shutdownContext, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
 		return httpServer.Shutdown(shutdownContext)

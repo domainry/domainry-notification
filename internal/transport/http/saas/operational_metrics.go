@@ -11,11 +11,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/codes"
-	"go.opentelemetry.io/otel/propagation"
-	"go.opentelemetry.io/otel/trace"
+	"github.com/domainry/domainry-foundation/telemetry"
 )
 
 type operationalHTTPMetric struct {
@@ -86,22 +82,15 @@ func ObserveHTTP(handler http.Handler, metrics *OperationalMetrics) http.Handler
 		return nil
 	}
 	return http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
-		ctx := otel.GetTextMapPropagator().Extract(request.Context(), propagation.HeaderCarrier(request.Header))
-		ctx, span := otel.Tracer("domainry.notification.http").Start(ctx, request.Method+" "+request.URL.Path, trace.WithSpanKind(trace.SpanKindServer), trace.WithAttributes(attribute.String("http.request.method", request.Method), attribute.String("url.path", request.URL.Path)))
-		defer span.End()
 		if metrics != nil {
 			metrics.inFlight.Add(1)
 			defer metrics.inFlight.Add(-1)
 		}
 		started := time.Now()
 		capture := &statusCapture{ResponseWriter: response, status: http.StatusOK}
-		handler.ServeHTTP(capture, request.WithContext(ctx))
-		if capture.status >= 500 {
-			span.SetStatus(codes.Error, http.StatusText(capture.status))
-		}
-		span.SetAttributes(attribute.Int("http.response.status_code", capture.status))
+		handler.ServeHTTP(capture, request)
 		if metrics != nil {
-			metrics.observeHTTP(request.Method, request.URL.Path, capture.status, time.Since(started))
+			metrics.observeHTTP(request.Method, telemetry.HTTPRoutePattern(request), capture.status, time.Since(started))
 		}
 	})
 }

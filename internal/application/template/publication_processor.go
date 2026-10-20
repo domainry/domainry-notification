@@ -211,7 +211,9 @@ func (p *PublicationProcessor) ProcessDue(ctx context.Context, limit int) (int, 
 		if !found {
 			continue
 		}
-		_, _ = p.publishClaimed(ctx, claimed)
+		if _, err = p.publishClaimed(ctx, claimed); err != nil {
+			return processed, err
+		}
 		processed++
 	}
 	return processed, nil
@@ -223,8 +225,8 @@ func (p *PublicationProcessor) Process(ctx context.Context, requestID string) (b
 	if err != nil || !found {
 		return false, err
 	}
-	_, _ = p.publishClaimed(ctx, claimed)
-	return true, nil
+	_, err = p.publishClaimed(ctx, claimed)
+	return true, err
 }
 
 func (p *PublicationProcessor) QueueStats(ctx context.Context, limit int) (int, time.Duration, error) {
