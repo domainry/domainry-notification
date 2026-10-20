@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/domainry/domainry-foundation/modulehttp"
+	"github.com/domainry/domainry-foundation/telemetry"
 	identitysdk "github.com/domainry/domainry-identity-sdk"
 	notificationsdk "github.com/domainry/domainry-notification-sdk"
 	"github.com/domainry/domainry-notification-sdk/contract"
@@ -120,7 +121,9 @@ func writeError(w http.ResponseWriter, err error) {
 			code = sdkError.Code
 		}
 	}
-	writeJSON(w, status, map[string]string{"code": "backend." + strings.TrimPrefix(code, "backend.")})
+	code = "backend." + strings.TrimPrefix(code, "backend.")
+	telemetry.RecordHTTPStatusError(w, status, code)
+	writeJSON(w, status, map[string]string{"code": code})
 }
 
 func (s *adapter) capabilities(w http.ResponseWriter, r *http.Request) {

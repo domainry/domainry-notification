@@ -328,6 +328,7 @@ func writeHTTPError(response http.ResponseWriter, err error) {
 	if status < 400 || status > 599 {
 		status = http.StatusInternalServerError
 	}
+	telemetry.RecordHTTPStatusError(response, status, sdkErr.Code)
 	writeJSON(response, status, sdkErr)
 }
 

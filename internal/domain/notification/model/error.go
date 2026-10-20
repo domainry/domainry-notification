@@ -41,6 +41,22 @@ func (e *Error) Unwrap() error {
 	return e.Err
 }
 
+func (e *Error) ApplicationErrorKind() string {
+	if e == nil {
+		return ""
+	}
+	return string(e.Kind)
+}
+
+func (e *Error) ErrorCode() string {
+	if e == nil {
+		return ""
+	}
+	return e.Code
+}
+
+func (*Error) ErrorParams() map[string]string { return nil }
+
 func NewError(kind ErrorKind, code string, cause error, params map[string]any) error {
 	return &Error{Kind: kind, Code: code, Params: cloneParams(params), Err: cause}
 }
