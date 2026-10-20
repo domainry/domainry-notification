@@ -2,13 +2,16 @@ package inbox
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
 
+	"github.com/domainry/domainry-foundation/logging"
 	"github.com/domainry/domainry-foundation/worker"
 	notification "github.com/domainry/domainry-notification/internal/domain/notification/model"
 	"github.com/domainry/domainry-notification/internal/domain/template/service"
+	"go.uber.org/zap"
 )
 
 const (
@@ -147,10 +150,35 @@ func (p *Processor) recordFailure(ctx context.Context, event Event, cause error,
 	attempt := event.AttemptCount + 1
 	policy := worker.RetryPolicy{MaxAttempts: maximumAttempts, BaseDelay: time.Minute, MaxDelay: 32 * time.Minute, Backoff: worker.BackoffExponential}
 	if !policy.Allows(attempt, now) {
-		return p.events.Fail(ctx, event, stage, code, updatedAt)
+		if err := p.events.Fail(ctx, event, stage, code, updatedAt); err != nil {
+			return errors.Join(cause, err)
+		}
+		logInboxTransition(ctx, cause, event, stage, attempt, "dead_letter", false)
+		return nil
 	}
 	next := notification.Timestamp(now.Add(policy.Delay(attempt, nil)))
-	return p.events.Retry(ctx, event, stage, code, next, updatedAt)
+	if err := p.events.Retry(ctx, event, stage, code, next, updatedAt); err != nil {
+		return errors.Join(cause, err)
+	}
+	logInboxTransition(ctx, cause, event, stage, attempt, "retry", true)
+	return nil
+}
+
+func logInboxTransition(ctx context.Context, cause error, event Event, stage string, attempt int, outcome string, retryable bool) {
+	fields := logging.ErrorFields(cause, logging.Failure{Stage: stage, Retryable: retryable})
+	fields = append(fields,
+		zap.String("task_kind", "notification_inbox"),
+		zap.String("task_id", event.ID),
+		zap.Int("attempt", attempt),
+		zap.Int("max_attempts", maximumAttempts),
+		zap.String("outcome", outcome),
+	)
+	logger := logging.FromContext(ctx)
+	if retryable {
+		logger.Warn("notification_inbox_retry_scheduled", fields...)
+		return
+	}
+	logger.Error("notification_inbox_dead_lettered", fields...)
 }
 
 func itemFromEvent(event Event, recipient notification.UserID, locale string) Item {

@@ -2,14 +2,17 @@ package delivery
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
 	"time"
 
+	"github.com/domainry/domainry-foundation/logging"
 	"github.com/domainry/domainry-foundation/worker"
 	notification "github.com/domainry/domainry-notification/internal/domain/notification/model"
 	"github.com/domainry/domainry-notification/internal/domain/template/service"
+	"go.uber.org/zap"
 )
 
 const (
@@ -106,7 +109,7 @@ func (p *Processor) processImmediate(ctx context.Context, candidate Plan, now ti
 	}
 	receipt, err := p.dispatch(ctx, claimed, now)
 	if err != nil {
-		if failureErr := p.recordFailure(ctx, claimed, now); failureErr != nil {
+		if failureErr := p.recordFailure(ctx, claimed, err, now); failureErr != nil {
 			return false, failureErr
 		}
 		return false, nil
@@ -154,7 +157,7 @@ func (p *Processor) processDigest(ctx context.Context, candidates []Plan, now ti
 	receipt, err := p.dispatch(ctx, aggregate, now)
 	if err != nil {
 		for _, plan := range claimed {
-			if failureErr := p.recordFailure(ctx, plan, now); failureErr != nil {
+			if failureErr := p.recordFailure(ctx, plan, err, now); failureErr != nil {
 				return 0, failureErr
 			}
 		}
@@ -218,14 +221,39 @@ func (p *Processor) renderFallbacks(ctx context.Context, plan Plan, content temp
 	return result, nil
 }
 
-func (p *Processor) recordFailure(ctx context.Context, plan Plan, now time.Time) error {
+func (p *Processor) recordFailure(ctx context.Context, plan Plan, cause error, now time.Time) error {
 	updatedAt := notification.Timestamp(now)
 	attempt := plan.AttemptCount + 1
 	policy := worker.RetryPolicy{MaxAttempts: maximumAttempts, BaseDelay: time.Minute, MaxDelay: 32 * time.Minute, Backoff: worker.BackoffExponential}
 	if !policy.Allows(attempt, now) {
-		return p.plans.FailPlan(ctx, plan, "backend.notification.channel_plan_failed", updatedAt)
+		if err := p.plans.FailPlan(ctx, plan, "backend.notification.channel_plan_failed", updatedAt); err != nil {
+			return errors.Join(cause, err)
+		}
+		logDeliveryTransition(ctx, cause, plan, attempt, "dead_letter", false)
+		return nil
 	}
-	return p.plans.RetryPlan(ctx, plan, "backend.notification.channel_plan_failed", notification.Timestamp(now.Add(policy.Delay(attempt, nil))), updatedAt)
+	if err := p.plans.RetryPlan(ctx, plan, "backend.notification.channel_plan_failed", notification.Timestamp(now.Add(policy.Delay(attempt, nil))), updatedAt); err != nil {
+		return errors.Join(cause, err)
+	}
+	logDeliveryTransition(ctx, cause, plan, attempt, "retry", true)
+	return nil
+}
+
+func logDeliveryTransition(ctx context.Context, cause error, plan Plan, attempt int, outcome string, retryable bool) {
+	fields := logging.ErrorFields(cause, logging.Failure{Stage: "notification_delivery", Dependency: plan.ConnectorKey, Retryable: retryable})
+	fields = append(fields,
+		zap.String("task_kind", "notification_delivery"),
+		zap.String("task_id", plan.ID),
+		zap.Int("attempt", attempt),
+		zap.Int("max_attempts", maximumAttempts),
+		zap.String("outcome", outcome),
+	)
+	logger := logging.FromContext(ctx)
+	if retryable {
+		logger.Warn("notification_delivery_retry_scheduled", fields...)
+		return
+	}
+	logger.Error("notification_delivery_dead_lettered", fields...)
 }
 
 func digestCandidates(plans []Plan, first Plan, consumed map[string]bool) []Plan {

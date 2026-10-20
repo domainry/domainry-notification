@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -19,6 +20,7 @@ import (
 	_ "modernc.org/sqlite"
 
 	"github.com/domainry/domainry-foundation/httpresponse"
+	"github.com/domainry/domainry-foundation/logging"
 	"github.com/domainry/domainry-foundation/processhost"
 	"github.com/domainry/domainry-foundation/telemetry"
 	"github.com/domainry/domainry-notification-sdk/deliverygateway"
@@ -41,39 +43,54 @@ func run() (runErr error) {
 	defer stop()
 	config, err := configurationFromEnvironment()
 	if err != nil {
+		logging.ReportBootstrapFailure("domainry-notification", err, logging.Failure{Stage: "configuration_load"})
 		return err
 	}
 	observability, err := processhost.Open(ctx, processhost.Config{ServiceName: "domainry-notification", ServiceVersion: config.telemetry.ServiceVersion, Telemetry: config.telemetry})
 	if err != nil {
 		return err
 	}
-	defer func() { runErr = observability.Finish(context.Background(), nil, runErr) }()
+	started := false
+	startupFailure := logging.Failure{Stage: "database_initialize", Dependency: "notification_database"}
+	defer func() {
+		if !started && runErr != nil {
+			observability.StartFailed(context.Background(), runErr, startupFailure)
+			runErr = errors.Join(runErr, observability.Close(context.Background(), nil))
+			return
+		}
+		runErr = observability.Finish(context.Background(), nil, runErr)
+	}()
 	database, err := openOwnedDatabase(ctx, config)
 	if err != nil {
 		return err
 	}
+	startupFailure = logging.Failure{Stage: "persistence_initialize", Dependency: "notification_database"}
 	persistence, err := server.NewSQLPersistence(server.SQLPersistenceOptions{Database: database, Driver: config.storeDriver, Schema: config.databaseSchema, OwnsDatabase: true})
 	if err != nil {
 		_ = database.Close()
 		return err
 	}
+	startupFailure = logging.Failure{Stage: "artifact_storage_initialize", Dependency: "artifact_storage"}
 	artifactContent, err := artifactkernel.NewContentFiles(config.artifactStoragePath)
 	if err != nil {
 		_ = persistence.Close()
 		return err
 	}
 	defer artifactContent.Close()
+	startupFailure = logging.Failure{Stage: "delivery_gateway_initialize", Dependency: "delivery_gateway"}
 	remoteGateway, err := deliverygateway.NewRemote(deliverygateway.RemoteConfig{BaseURL: config.deliveryGatewayURL, ServiceCredential: config.deliveryGatewayCredential, RequestTimeout: config.deliveryGatewayTimeout, MaxAttempts: config.deliveryGatewayAttempts})
 	if err != nil {
 		_ = persistence.Close()
 		return err
 	}
+	startupFailure = logging.Failure{Stage: "application_factory_initialize"}
 	applications, err := server.NewSQLApplicationFactory(server.SQLApplicationFactoryOptions{Persistence: persistence, Catalog: config.catalog, WorkerID: config.workerID, RemoteDeliveryGateway: remoteGateway, ArtifactContent: artifactContent})
 	if err != nil {
 		_ = persistence.Close()
 		return err
 	}
 	metrics := notificationhttp.NewOperationalMetrics()
+	startupFailure = logging.Failure{Stage: "module_assembly"}
 	runtime, err := server.Open(ctx, server.Options{Identity: server.IdentityOptionsFromEnvironment(), Applications: applications, Workers: server.WorkerOptions{PollInterval: config.workerPollInterval, BatchSize: config.workerBatchSize}, Metrics: metrics})
 	if err != nil {
 		_ = applications.Close(ctx)
@@ -92,8 +109,14 @@ func run() (runErr error) {
 	mux.Handle("GET /metrics", metrics.Handler())
 	mux.Handle("/", runtime.Handler())
 	httpServer := &http.Server{Addr: config.httpAddress, Handler: observability.Handler("public", notificationhttp.ObserveHTTP(mux, metrics)), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 30 * time.Second, WriteTimeout: 30 * time.Second, IdleTimeout: 60 * time.Second}
+	startupFailure = logging.Failure{Stage: "listener_bind", Dependency: "public_listener"}
+	listener, err := net.Listen("tcp", config.httpAddress)
+	if err != nil {
+		return err
+	}
 	serveErrors := make(chan error, 1)
-	go func() { serveErrors <- httpServer.ListenAndServe() }()
+	go func() { serveErrors <- httpServer.Serve(listener) }()
+	started = true
 	observability.Started(ctx, map[string]any{"listener_group": "public"})
 	select {
 	case <-ctx.Done():

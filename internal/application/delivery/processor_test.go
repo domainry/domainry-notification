@@ -9,6 +9,8 @@ import (
 	"github.com/domainry/domainry-notification/internal/application/delivery"
 	notification "github.com/domainry/domainry-notification/internal/domain/notification/model"
 	"github.com/domainry/domainry-notification/internal/domain/template/service"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zaptest/observer"
 )
 
 type planStore struct {
@@ -130,11 +132,19 @@ func TestProcessorRendersDispatchesAndCompletesImmediatePlan(t *testing.T) {
 }
 
 func TestProcessorRetriesDispatchFailureAndCancelsTerminalAction(t *testing.T) {
+	core, observed := observer.New(zap.WarnLevel)
+	previous := zap.L()
+	zap.ReplaceGlobals(zap.New(core))
+	t.Cleanup(func() { zap.ReplaceGlobals(previous) })
 	failedPlan := immediatePlan("plan-failed")
 	plans := &planStore{plans: []delivery.Plan{failedPlan}}
 	processor, _ := delivery.NewProcessor(delivery.ProcessorDependencies{Plans: plans, Renderer: &renderer{err: errors.New("render failed")}, Dispatcher: &dispatcher{}, Policy: allowPolicy{}, Clock: clock{now: time.Now()}, WorkerID: "worker-1"})
 	if done, err := processor.Process(t.Context(), failedPlan.WorkspaceID, failedPlan.ID); err != nil || done || len(plans.retried) != 1 {
 		t.Fatalf("done=%v retried=%+v err=%v", done, plans.retried, err)
+	}
+	entries := observed.FilterMessage("notification_delivery_retry_scheduled").All()
+	if len(entries) != 1 || entries[0].ContextMap()["task_id"] != "plan-failed" {
+		t.Fatalf("retry log=%v", entries)
 	}
 	terminal := immediatePlan("plan-terminal")
 	terminal.CancelWhenActionTerminal = true
@@ -144,6 +154,30 @@ func TestProcessorRetriesDispatchFailureAndCancelsTerminalAction(t *testing.T) {
 		t.Fatalf("done=%v cancelled=%+v err=%v", done, plans.cancelled, err)
 	}
 }
+
+func TestProcessorLogsDeadLetterAfterDurableTransition(t *testing.T) {
+	core, observed := observer.New(zap.WarnLevel)
+	previous := zap.L()
+	zap.ReplaceGlobals(zap.New(core))
+	t.Cleanup(func() { zap.ReplaceGlobals(previous) })
+
+	plan := immediatePlan("plan-dead")
+	plan.AttemptCount = maximumAttemptsForTest
+	plans := &planStore{plans: []delivery.Plan{plan}}
+	processor, err := delivery.NewProcessor(delivery.ProcessorDependencies{Plans: plans, Renderer: &renderer{err: errors.New("render failed")}, Dispatcher: &dispatcher{}, Policy: allowPolicy{}, Clock: clock{now: time.Now()}, WorkerID: "worker-1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if done, err := processor.Process(t.Context(), plan.WorkspaceID, plan.ID); err != nil || done || len(plans.failed) != 1 {
+		t.Fatalf("done=%v failed=%+v err=%v", done, plans.failed, err)
+	}
+	entries := observed.FilterMessage("notification_delivery_dead_lettered").All()
+	if len(entries) != 1 || entries[0].ContextMap()["task_id"] != "plan-dead" || entries[0].ContextMap()["outcome"] != "dead_letter" {
+		t.Fatalf("dead-letter log=%v", entries)
+	}
+}
+
+const maximumAttemptsForTest = 8
 
 func TestProcessorCombinesCompatibleDigestPlans(t *testing.T) {
 	first, second := immediatePlan("plan-1"), immediatePlan("plan-2")
