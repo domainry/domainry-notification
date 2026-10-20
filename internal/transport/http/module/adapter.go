@@ -122,7 +122,7 @@ func writeError(w http.ResponseWriter, err error) {
 		}
 	}
 	code = "backend." + strings.TrimPrefix(code, "backend.")
-	telemetry.RecordHTTPStatusError(w, status, code)
+	telemetry.RecordHTTPStatusError(w, status, code, err)
 	writeJSON(w, status, map[string]string{"code": code})
 }
 
