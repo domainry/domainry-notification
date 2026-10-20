@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/domainry/domainry-foundation/httpresponse"
 	notificationsdk "github.com/domainry/domainry-notification-sdk"
 	"github.com/domainry/domainry-notification-sdk/contract"
 )
@@ -41,7 +42,7 @@ func (s *adapter) inboxActionHandlers() map[string]http.HandlerFunc {
 
 func (s *adapter) inboxCall(w http.ResponseWriter, r *http.Request) (contract.NotificationInboxQuery, bool) {
 	if s.binding.Inbox() == nil {
-		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"code": "backend.notification.inbox_unavailable"})
+		httpresponse.WriteError(w, r, httpresponse.Failure{Status: http.StatusServiceUnavailable, Code: "backend.notification.inbox_unavailable"})
 		return contract.NotificationInboxQuery{}, false
 	}
 	return inboxQuery(r), true

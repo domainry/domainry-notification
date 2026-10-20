@@ -18,6 +18,7 @@ import (
 	_ "github.com/jackc/pgx/v5/stdlib"
 	_ "modernc.org/sqlite"
 
+	"github.com/domainry/domainry-foundation/httpresponse"
 	"github.com/domainry/domainry-foundation/processhost"
 	"github.com/domainry/domainry-foundation/telemetry"
 	"github.com/domainry/domainry-notification-sdk/deliverygateway"
@@ -81,9 +82,9 @@ func run() (runErr error) {
 	defer runtime.Close(context.Background())
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /live", func(response http.ResponseWriter, _ *http.Request) { response.WriteHeader(http.StatusNoContent) })
-	mux.HandleFunc("GET /ready", func(response http.ResponseWriter, _ *http.Request) {
+	mux.HandleFunc("GET /ready", func(response http.ResponseWriter, request *http.Request) {
 		if !runtime.Ready() {
-			http.Error(response, "not ready", http.StatusServiceUnavailable)
+			httpresponse.WriteError(response, request, httpresponse.Failure{Status: http.StatusServiceUnavailable, Code: "notification.not_ready"})
 			return
 		}
 		response.WriteHeader(http.StatusNoContent)

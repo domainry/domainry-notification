@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/domainry/domainry-foundation/httpresponse"
 	"github.com/domainry/domainry-foundation/modulehttp"
-	"github.com/domainry/domainry-foundation/telemetry"
 	identitysdk "github.com/domainry/domainry-identity-sdk"
 	notificationsdk "github.com/domainry/domainry-notification-sdk"
 	"github.com/domainry/domainry-notification-sdk/contract"
@@ -105,9 +105,7 @@ func authority(r *http.Request) (notificationsdk.UserAuthority, error) {
 }
 
 func writeJSON(w http.ResponseWriter, status int, value any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(value)
+	httpresponse.WriteJSON(w, status, value)
 }
 
 func writeError(w http.ResponseWriter, err error) {
@@ -122,8 +120,7 @@ func writeError(w http.ResponseWriter, err error) {
 		}
 	}
 	code = "backend." + strings.TrimPrefix(code, "backend.")
-	telemetry.RecordHTTPStatusError(w, status, code, err)
-	writeJSON(w, status, map[string]string{"code": code})
+	httpresponse.WriteError(w, nil, httpresponse.Failure{Status: status, Code: code, Cause: err})
 }
 
 func (s *adapter) capabilities(w http.ResponseWriter, r *http.Request) {
@@ -166,7 +163,7 @@ func (s *adapter) get(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !found {
-		writeJSON(w, http.StatusNotFound, map[string]string{"code": "backend.notification.template_not_found"})
+		httpresponse.WriteError(w, r, httpresponse.Failure{Status: http.StatusNotFound, Code: "backend.notification.template_not_found"})
 		return
 	}
 	writeJSON(w, http.StatusOK, value)
@@ -176,7 +173,7 @@ func decode(w http.ResponseWriter, r *http.Request, value any) bool {
 	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(value); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"code": "backend.request.invalid_json"})
+		httpresponse.WriteError(w, r, httpresponse.Failure{Status: http.StatusBadRequest, Code: "backend.request.invalid_json", Cause: err})
 		return false
 	}
 	return true
@@ -351,7 +348,7 @@ func (s *adapter) restoreVersion(w http.ResponseWriter, r *http.Request) {
 	}
 	version, err := strconv.Atoi(strings.TrimSpace(r.PathValue("version")))
 	if err != nil || version < 1 {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"code": "backend.notification.template_version_invalid"})
+		httpresponse.WriteError(w, r, httpresponse.Failure{Status: http.StatusBadRequest, Code: "backend.notification.template_version_invalid", Cause: err})
 		return
 	}
 	value, err := s.binding.Templates().RestoreVersionDraft(r.Context(), a, r.PathValue("templateKey"), version, input.ExpectedUpdatedAt)

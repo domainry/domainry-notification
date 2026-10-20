@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/domainry/domainry-foundation/httpresponse"
 	"github.com/domainry/domainry-foundation/telemetry"
 	notificationsdk "github.com/domainry/domainry-notification-sdk"
 	"github.com/domainry/domainry-notification-sdk/contract"
@@ -328,12 +329,9 @@ func writeHTTPError(response http.ResponseWriter, err error) {
 	if status < 400 || status > 599 {
 		status = http.StatusInternalServerError
 	}
-	telemetry.RecordHTTPStatusError(response, status, sdkErr.Code, err)
-	writeJSON(response, status, sdkErr)
+	httpresponse.WriteError(response, nil, httpresponse.Failure{Status: status, Code: sdkErr.Code, Message: sdkErr.Message, Cause: err})
 }
 
 func writeJSON(response http.ResponseWriter, status int, value any) {
-	response.Header().Set("Content-Type", "application/json")
-	response.WriteHeader(status)
-	_ = json.NewEncoder(response).Encode(value)
+	httpresponse.WriteJSON(response, status, value)
 }
