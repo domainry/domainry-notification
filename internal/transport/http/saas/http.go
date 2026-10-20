@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/domainry/domainry-foundation/telemetry"
 	notificationsdk "github.com/domainry/domainry-notification-sdk"
 	"github.com/domainry/domainry-notification-sdk/contract"
 	"github.com/domainry/domainry-notification/internal/application/authentication"
@@ -47,6 +48,9 @@ func (h *Handler) ServeHTTP(response http.ResponseWriter, request *http.Request)
 		writeHTTPError(response, err)
 		return
 	}
+	// ServiceGrantForRequest accepts only the source-owned protocol routes, so
+	// this value is a bounded route template rather than arbitrary request input.
+	telemetry.RecordHTTPRoute(request, request.Method+" "+request.URL.Path)
 	if _, err := h.authenticator.Authenticate(request.Context(), ServiceRequest{Credential: request.Header.Get("X-Domainry-Service-Credential"), Application: application, Grant: grant}); err != nil {
 		writeHTTPError(response, err)
 		return
