@@ -101,7 +101,7 @@ func (b *binding) authenticate(ctx context.Context, authority notificationsdk.Us
 	}
 	if !principal.Known || strings.TrimSpace(principal.WorkspaceID) != b.application.WorkspaceID || strings.TrimSpace(principal.UserID) == "" ||
 		principal.AccessBundle == nil {
-		return identitysdk.Principal{}, &notificationsdk.Error{StatusCode: 403, Code: "notification.application_scope_mismatch"}
+		return identitysdk.Principal{}, &notificationsdk.Error{Class: notificationsdk.ErrorClassForbidden, Code: "notification.application_scope_mismatch"}
 	}
 	return principal, nil
 }
@@ -114,7 +114,7 @@ func (b *binding) authorizeAction(ctx context.Context, authority notificationsdk
 	actionKey = strings.TrimSpace(actionKey)
 	separator := strings.LastIndex(actionKey, ".")
 	if separator <= 0 || separator == len(actionKey)-1 || !principal.HasPermission(actionKey) {
-		return identitysdk.Principal{}, &notificationsdk.Error{StatusCode: 403, Code: "notification.permission_denied"}
+		return identitysdk.Principal{}, &notificationsdk.Error{Class: notificationsdk.ErrorClassForbidden, Code: "notification.permission_denied"}
 	}
 	// The repository boundary validates the same exact key and rejects every
 	// canonical data scope except `all`. Workspace builders remain responsible
@@ -124,7 +124,7 @@ func (b *binding) authorizeAction(ctx context.Context, authority notificationsdk
 		now = b.clock.Now().UTC()
 	}
 	if err := sqlstore.ValidateExactPermission(principal, actionKey, notification.WorkspaceID(b.application.WorkspaceID), now); err != nil {
-		return identitysdk.Principal{}, &notificationsdk.Error{StatusCode: 403, Code: "notification.permission_denied", Cause: err}
+		return identitysdk.Principal{}, &notificationsdk.Error{Class: notificationsdk.ErrorClassForbidden, Code: "notification.permission_denied", Cause: err}
 	}
 	if !reauthorize {
 		return principal, nil
@@ -138,10 +138,10 @@ func (b *binding) authorizeAction(ctx context.Context, authority notificationsdk
 		Facts:    facts,
 	})
 	if err != nil {
-		return identitysdk.Principal{}, &notificationsdk.Error{StatusCode: 503, Code: "notification.identity_reauthorization_failed", Retryable: true, Cause: err}
+		return identitysdk.Principal{}, &notificationsdk.Error{Class: notificationsdk.ErrorClassUnavailable, Code: "notification.identity_reauthorization_failed", Retryable: true, Cause: err}
 	}
 	if !decision.Allowed {
-		return identitysdk.Principal{}, &notificationsdk.Error{StatusCode: 403, Code: "notification.permission_denied"}
+		return identitysdk.Principal{}, &notificationsdk.Error{Class: notificationsdk.ErrorClassForbidden, Code: "notification.permission_denied"}
 	}
 	principal.AuthorizationRevision = decision.AuthorizationRevision
 	return principal, nil
@@ -169,7 +169,7 @@ type modulePublisher struct{ b *binding }
 
 func (b *binding) beginMigrationSensitiveWrite(ctx context.Context) (func(), error) {
 	if b == nil || b.store == nil {
-		return nil, &notificationsdk.Error{StatusCode: 503, Code: "notification.binding_unavailable", Retryable: true}
+		return nil, &notificationsdk.Error{Class: notificationsdk.ErrorClassUnavailable, Code: "notification.binding_unavailable", Retryable: true}
 	}
 	b.migrationMu.RLock()
 	status, err := b.store.MigrationStatus(ctx, b.application.WorkspaceID)
@@ -179,7 +179,7 @@ func (b *binding) beginMigrationSensitiveWrite(ctx context.Context) (func(), err
 	}
 	if status.State == sqlstore.MigrationStateFrozen || status.State == sqlstore.MigrationStateImported {
 		b.migrationMu.RUnlock()
-		return nil, &notificationsdk.Error{StatusCode: 503, Code: "notification.migration_writes_frozen", Retryable: true}
+		return nil, &notificationsdk.Error{Class: notificationsdk.ErrorClassUnavailable, Code: "notification.migration_writes_frozen", Retryable: true}
 	}
 	return b.migrationMu.RUnlock, nil
 }
@@ -194,7 +194,7 @@ func (s modulePublisher) PublishIntent(ctx context.Context, value contract.Notif
 		return contract.NotificationEvent{}, false, err
 	}
 	if value.WorkspaceID != s.b.application.WorkspaceID {
-		return contract.NotificationEvent{}, false, &notificationsdk.Error{StatusCode: 403, Code: "notification.application_scope_mismatch"}
+		return contract.NotificationEvent{}, false, &notificationsdk.Error{Class: notificationsdk.ErrorClassForbidden, Code: "notification.application_scope_mismatch"}
 	}
 	source, err := convert[inbox.Intent](value)
 	if err != nil {
@@ -203,7 +203,7 @@ func (s modulePublisher) PublishIntent(ctx context.Context, value contract.Notif
 	stored, created, err := s.b.publisher.PublishIntent(ctx, source)
 	if err != nil {
 		if mutation.IsMutationConflict(err, mutation.MutationConflictIdempotency) {
-			return contract.NotificationEvent{}, false, &notificationsdk.Error{StatusCode: 409, Code: "notification.request_identity_conflict"}
+			return contract.NotificationEvent{}, false, &notificationsdk.Error{Class: notificationsdk.ErrorClassConflict, Code: "notification.request_identity_conflict"}
 		}
 		return contract.NotificationEvent{}, false, err
 	}

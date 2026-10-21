@@ -45,20 +45,20 @@ func moduleError(err error) error {
 	if !errors.As(err, &domainError) {
 		return err
 	}
-	status := 500
+	class := notificationsdk.ErrorClassInternal
 	switch domainError.Kind {
 	case notification.ErrorInvalid:
-		status = 400
+		class = notificationsdk.ErrorClassBadRequest
 	case notification.ErrorNotFound:
-		status = 404
+		class = notificationsdk.ErrorClassNotFound
 	case notification.ErrorConflict:
-		status = 409
+		class = notificationsdk.ErrorClassConflict
 	case notification.ErrorForbidden:
-		status = 403
+		class = notificationsdk.ErrorClassForbidden
 	case notification.ErrorUnavailable:
-		status = 503
+		class = notificationsdk.ErrorClassUnavailable
 	}
-	return &notificationsdk.Error{StatusCode: status, Code: domainError.Code, Cause: err, Retryable: domainError.Kind == notification.ErrorUnavailable}
+	return &notificationsdk.Error{Class: class, Code: domainError.Code, Cause: err, Retryable: domainError.Kind == notification.ErrorUnavailable}
 }
 
 func (m moduleTransactions) InsertEvent(ctx context.Context, executor modulehost.Executor, value contract.NotificationEvent) error {

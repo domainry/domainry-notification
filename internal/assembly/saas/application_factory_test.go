@@ -143,7 +143,7 @@ func TestSQLApplicationFactoryOpensSharedSaaSDomainApplication(t *testing.T) {
 		t.Fatal("conflicting retry was accepted")
 	} else {
 		var sdkError *notificationsdk.Error
-		if !errors.As(err, &sdkError) || sdkError.StatusCode != 409 || sdkError.Code != "notification.request_identity_conflict" {
+		if !errors.As(err, &sdkError) || sdkError.Class != notificationsdk.ErrorClassConflict || sdkError.Code != "notification.request_identity_conflict" {
 			t.Fatalf("conflicting retry error=%v", err)
 		}
 	}

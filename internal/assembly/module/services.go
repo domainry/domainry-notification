@@ -26,7 +26,7 @@ type moduleSystemMigration struct{ b *binding }
 
 func (s moduleSystemMigration) Status(ctx context.Context) (contract.NotificationMigrationStatus, error) {
 	if s.b == nil || s.b.store == nil {
-		return contract.NotificationMigrationStatus{}, &notificationsdk.Error{StatusCode: 503, Code: "notification.system_migration_unavailable"}
+		return contract.NotificationMigrationStatus{}, &notificationsdk.Error{Class: notificationsdk.ErrorClassUnavailable, Code: "notification.system_migration_unavailable"}
 	}
 	status, err := s.b.store.MigrationStatus(ctx, s.b.application.WorkspaceID)
 	if err != nil {
@@ -50,7 +50,7 @@ func (s moduleSystemMigration) Freeze(ctx context.Context, command contract.Noti
 
 func (s moduleSystemMigration) Export(ctx context.Context) (contract.NotificationPortableExport, error) {
 	if s.b == nil || s.b.store == nil {
-		return contract.NotificationPortableExport{}, &notificationsdk.Error{StatusCode: 503, Code: "notification.system_migration_unavailable"}
+		return contract.NotificationPortableExport{}, &notificationsdk.Error{Class: notificationsdk.ErrorClassUnavailable, Code: "notification.system_migration_unavailable"}
 	}
 	scope := sqlstore.PortableScope{WorkspaceID: s.b.application.WorkspaceID, ApplicationKey: s.b.application.ApplicationKey}
 	status, err := s.b.store.MigrationStatus(ctx, s.b.application.WorkspaceID)
@@ -58,7 +58,7 @@ func (s moduleSystemMigration) Export(ctx context.Context) (contract.Notificatio
 		return contract.NotificationPortableExport{}, err
 	}
 	if status.Role != sqlstore.MigrationRoleSource || status.State != sqlstore.MigrationStateFrozen || status.ActiveLeases != 0 {
-		return contract.NotificationPortableExport{}, &notificationsdk.Error{StatusCode: 409, Code: "notification.migration_not_quiescent", Retryable: status.ActiveLeases != 0}
+		return contract.NotificationPortableExport{}, &notificationsdk.Error{Class: notificationsdk.ErrorClassConflict, Code: "notification.migration_not_quiescent", Retryable: status.ActiveLeases != 0}
 	}
 	bundle, inventory, err := s.b.store.ExportPortableMigration(ctx, scope, status.MigrationID)
 	if err != nil {
@@ -77,7 +77,7 @@ func (s moduleSystemMigration) Export(ctx context.Context) (contract.Notificatio
 
 func (s moduleSystemMigration) Import(ctx context.Context, bundle contract.NotificationPortableBundle) (contract.NotificationPortableImportReceipt, error) {
 	if s.b == nil || s.b.store == nil {
-		return contract.NotificationPortableImportReceipt{}, &notificationsdk.Error{StatusCode: 503, Code: "notification.system_migration_unavailable"}
+		return contract.NotificationPortableImportReceipt{}, &notificationsdk.Error{Class: notificationsdk.ErrorClassUnavailable, Code: "notification.system_migration_unavailable"}
 	}
 	if err := bundle.ValidateEnvelope(); err != nil {
 		return contract.NotificationPortableImportReceipt{}, err
@@ -149,7 +149,7 @@ func portableRowCount(bundle contract.NotificationPortableBundle) int {
 
 func (s moduleSystemRetention) Preview(ctx context.Context, request contract.NotificationRetentionPreviewRequest) (contract.NotificationRetentionPreview, error) {
 	if s.b == nil || s.b.store == nil {
-		return contract.NotificationRetentionPreview{}, &notificationsdk.Error{StatusCode: 503, Code: "notification.system_retention_unavailable"}
+		return contract.NotificationRetentionPreview{}, &notificationsdk.Error{Class: notificationsdk.ErrorClassUnavailable, Code: "notification.system_retention_unavailable"}
 	}
 	return s.b.store.PreviewRetention(ctx, request)
 }
@@ -161,17 +161,17 @@ func (s moduleSystemRetention) ProcessBatch(ctx context.Context, request contrac
 	}
 	defer release()
 	if s.b == nil || s.b.store == nil {
-		return contract.NotificationRetentionBatchResult{}, &notificationsdk.Error{StatusCode: 503, Code: "notification.system_retention_unavailable"}
+		return contract.NotificationRetentionBatchResult{}, &notificationsdk.Error{Class: notificationsdk.ErrorClassUnavailable, Code: "notification.system_retention_unavailable"}
 	}
 	return s.b.store.ProcessRetentionBatch(ctx, request)
 }
 
 func (s moduleSystemAlerts) GetAlertGroup(ctx context.Context, workspaceID, recipientUserID, groupKey string) (contract.NotificationAlertGroup, bool, error) {
 	if s.b == nil || s.b.store == nil {
-		return contract.NotificationAlertGroup{}, false, &notificationsdk.Error{StatusCode: 503, Code: "notification.system_alerts_unavailable"}
+		return contract.NotificationAlertGroup{}, false, &notificationsdk.Error{Class: notificationsdk.ErrorClassUnavailable, Code: "notification.system_alerts_unavailable"}
 	}
 	if strings.TrimSpace(workspaceID) != s.b.application.WorkspaceID || strings.TrimSpace(recipientUserID) == "" || strings.TrimSpace(groupKey) == "" {
-		return contract.NotificationAlertGroup{}, false, &notificationsdk.Error{StatusCode: 403, Code: "notification.application_scope_mismatch"}
+		return contract.NotificationAlertGroup{}, false, &notificationsdk.Error{Class: notificationsdk.ErrorClassForbidden, Code: "notification.application_scope_mismatch"}
 	}
 	value, found, err := s.b.store.GetAlertGroup(ctx, notification.WorkspaceID(workspaceID), notification.UserID(recipientUserID), groupKey)
 	if err != nil || !found {
@@ -183,13 +183,13 @@ func (s moduleSystemAlerts) GetAlertGroup(ctx context.Context, workspaceID, reci
 
 func (s moduleSystemSubjects) PreviewSubject(ctx context.Context, workspaceID, subjectID string) (json.RawMessage, error) {
 	if s.b == nil || s.b.store == nil {
-		return nil, &notificationsdk.Error{StatusCode: 503, Code: "notification.system_subjects_unavailable"}
+		return nil, &notificationsdk.Error{Class: notificationsdk.ErrorClassUnavailable, Code: "notification.system_subjects_unavailable"}
 	}
 	return s.b.store.PreviewSubject(ctx, workspaceID, subjectID)
 }
 func (s moduleSystemSubjects) ExportSubject(ctx context.Context, workspaceID, subjectID string) (json.RawMessage, error) {
 	if s.b == nil || s.b.store == nil {
-		return nil, &notificationsdk.Error{StatusCode: 503, Code: "notification.system_subjects_unavailable"}
+		return nil, &notificationsdk.Error{Class: notificationsdk.ErrorClassUnavailable, Code: "notification.system_subjects_unavailable"}
 	}
 	return s.b.store.ExportSubject(ctx, workspaceID, subjectID)
 }
@@ -200,7 +200,7 @@ func (s moduleSystemSubjects) EraseSubject(ctx context.Context, workspaceID, sub
 	}
 	defer release()
 	if s.b == nil || s.b.store == nil {
-		return nil, &notificationsdk.Error{StatusCode: 503, Code: "notification.system_subjects_unavailable"}
+		return nil, &notificationsdk.Error{Class: notificationsdk.ErrorClassUnavailable, Code: "notification.system_subjects_unavailable"}
 	}
 	return s.b.store.EraseSubject(ctx, workspaceID, subjectID, holds)
 }
@@ -212,7 +212,7 @@ func (s moduleSystemTemplates) SyncPublished(ctx context.Context, values []contr
 	}
 	defer release()
 	if s.b == nil || s.b.store == nil {
-		return &notificationsdk.Error{StatusCode: 503, Code: "notification.system_templates_unavailable"}
+		return &notificationsdk.Error{Class: notificationsdk.ErrorClassUnavailable, Code: "notification.system_templates_unavailable"}
 	}
 	templates, err := convertSlice[template.Template](values)
 	if err != nil {
@@ -226,7 +226,7 @@ func (s moduleSystemTemplates) SyncPublished(ctx context.Context, values []contr
 
 func (s moduleSystemTemplates) ListPublished(ctx context.Context) ([]contract.NotificationTemplateRecord, error) {
 	if s.b == nil || s.b.store == nil {
-		return nil, &notificationsdk.Error{StatusCode: 503, Code: "notification.system_templates_unavailable"}
+		return nil, &notificationsdk.Error{Class: notificationsdk.ErrorClassUnavailable, Code: "notification.system_templates_unavailable"}
 	}
 	values, err := s.b.store.List(ctx)
 	if err != nil {
@@ -498,7 +498,7 @@ func (s moduleDelivery) SaveRecipientPreference(ctx context.Context, a notificat
 		return contract.NotificationRecipientPreference{}, err
 	}
 	if strings.TrimSpace(source.RecipientKey) == "" {
-		return contract.NotificationRecipientPreference{}, &notificationsdk.Error{StatusCode: 400, Code: "notification.preference_identity_required"}
+		return contract.NotificationRecipientPreference{}, &notificationsdk.Error{Class: notificationsdk.ErrorClassBadRequest, Code: "notification.preference_identity_required"}
 	}
 	stored, err := s.b.policy.SaveRecipientPreference(ctx, notification.WorkspaceID(p.WorkspaceID), source, p.UserID)
 	if err != nil {
@@ -512,7 +512,7 @@ func (s moduleDelivery) Metrics(ctx context.Context, a notificationsdk.UserAutho
 		return contract.NotificationDeliveryMetrics{}, err
 	}
 	if s.b.metrics == nil {
-		return contract.NotificationDeliveryMetrics{}, &notificationsdk.Error{StatusCode: 503, Code: "notification.delivery_metrics_unavailable"}
+		return contract.NotificationDeliveryMetrics{}, &notificationsdk.Error{Class: notificationsdk.ErrorClassUnavailable, Code: "notification.delivery_metrics_unavailable"}
 	}
 	return s.b.metrics.Metrics(ctx, p.WorkspaceID, since)
 }
@@ -546,7 +546,7 @@ func (s moduleAdministration) ListDeadLetters(ctx context.Context, a notificatio
 		limit = 25
 	}
 	if limit < 1 || limit > 100 || len(cursor) > 256 {
-		return contract.NotificationDeadLetterPage{}, &notificationsdk.Error{StatusCode: 400, Code: "notification.dead_letter_query_invalid"}
+		return contract.NotificationDeadLetterPage{}, &notificationsdk.Error{Class: notificationsdk.ErrorClassBadRequest, Code: "notification.dead_letter_query_invalid"}
 	}
 	items, next, err := s.b.store.ListDeadLetters(ctx, notification.WorkspaceID(p.WorkspaceID), cursor, limit)
 	if err != nil {
@@ -568,7 +568,7 @@ func (s moduleAdministration) RedriveDeadLetter(ctx context.Context, a notificat
 	}
 	eventID = strings.TrimSpace(eventID)
 	if eventID == "" || len(eventID) > 256 {
-		return contract.NotificationDeadLetterRedrive{}, &notificationsdk.Error{StatusCode: 400, Code: "notification.dead_letter_id_invalid"}
+		return contract.NotificationDeadLetterRedrive{}, &notificationsdk.Error{Class: notificationsdk.ErrorClassBadRequest, Code: "notification.dead_letter_id_invalid"}
 	}
 	release, err := s.b.beginMigrationSensitiveWrite(ctx)
 	if err != nil {
@@ -581,10 +581,10 @@ func (s moduleAdministration) RedriveDeadLetter(ctx context.Context, a notificat
 		return contract.NotificationDeadLetterRedrive{}, moduleError(err)
 	}
 	if !found {
-		return contract.NotificationDeadLetterRedrive{}, &notificationsdk.Error{StatusCode: 404, Code: "notification.dead_letter_not_found"}
+		return contract.NotificationDeadLetterRedrive{}, &notificationsdk.Error{Class: notificationsdk.ErrorClassNotFound, Code: "notification.dead_letter_not_found"}
 	}
 	if !changed {
-		return contract.NotificationDeadLetterRedrive{}, &notificationsdk.Error{StatusCode: 409, Code: "notification.dead_letter_not_failed"}
+		return contract.NotificationDeadLetterRedrive{}, &notificationsdk.Error{Class: notificationsdk.ErrorClassConflict, Code: "notification.dead_letter_not_failed"}
 	}
 	if s.b.workNotifier != nil {
 		s.b.workNotifier.Notify(ctx, modulehost.WorkLocator{Kind: string(notification.WorkInboxEvent), WorkspaceID: p.WorkspaceID, TaskID: eventID})

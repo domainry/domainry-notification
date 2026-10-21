@@ -808,5 +808,5 @@ func assertIntegrationCount(t *testing.T, database *sql.DB, query string, expect
 
 func isIntegrationSDKError(err error, status int, code string, retryable bool) bool {
 	var sdkError *notificationsdk.Error
-	return errors.As(err, &sdkError) && sdkError.StatusCode == status && sdkError.Code == code && sdkError.Retryable == retryable
+	return errors.As(err, &sdkError) && sdkError.Class == notificationSDKClassForStatus(status) && sdkError.Code == code && sdkError.Retryable == retryable
 }

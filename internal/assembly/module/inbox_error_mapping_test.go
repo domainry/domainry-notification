@@ -54,7 +54,7 @@ func TestPublicInboxBindingPreservesMissingAndForeignItemErrors(t *testing.T) {
 					_, err = binding.Inbox().ResolveAction(t.Context(), target.authority, target.id, "open", query)
 				}
 				var sdkError *notificationsdk.Error
-				if !errors.As(err, &sdkError) || sdkError.StatusCode != 404 || sdkError.Code != "backend.notification.inbox_item_not_found" {
+				if !errors.As(err, &sdkError) || sdkError.Class != notificationsdk.ErrorClassNotFound || sdkError.Code != "backend.notification.inbox_item_not_found" {
 					t.Fatalf("public error = %T %v; want SDK 404 inbox_item_not_found", err, err)
 				}
 			})

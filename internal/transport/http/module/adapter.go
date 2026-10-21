@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/domainry/domainry-foundation/apperror"
 	"github.com/domainry/domainry-foundation/httpresponse"
 	"github.com/domainry/domainry-foundation/modulehttp"
 	identitysdk "github.com/domainry/domainry-identity-sdk"
@@ -99,7 +100,7 @@ func (s *adapter) actionHandlers() map[string]http.HandlerFunc {
 func authority(r *http.Request) (notificationsdk.UserAuthority, error) {
 	identity, ok := identitysdk.RequestIdentityFromContext(r.Context())
 	if !ok || strings.TrimSpace(identity.AccessToken) == "" {
-		return notificationsdk.UserAuthority{}, &notificationsdk.Error{StatusCode: http.StatusUnauthorized, Code: "notification.user_authority_required"}
+		return notificationsdk.UserAuthority{}, &notificationsdk.Error{Class: notificationsdk.ErrorClassForbidden, Code: "notification.user_authority_required"}
 	}
 	return notificationsdk.UserAuthority{AccessToken: identity.AccessToken}, nil
 }
@@ -112,15 +113,32 @@ func writeError(w http.ResponseWriter, err error) {
 	status, code := http.StatusInternalServerError, "notification.internal"
 	var sdkError *notificationsdk.Error
 	if errors.As(err, &sdkError) {
-		if sdkError.StatusCode > 0 {
-			status = sdkError.StatusCode
-		}
+		status = notificationErrorHTTPStatus(apperror.KindOf(sdkError))
 		if strings.TrimSpace(sdkError.Code) != "" {
 			code = sdkError.Code
 		}
 	}
 	code = "backend." + strings.TrimPrefix(code, "backend.")
 	httpresponse.WriteError(w, nil, httpresponse.Failure{Status: status, Code: code, Cause: err})
+}
+
+func notificationErrorHTTPStatus(kind apperror.ErrorKind) int {
+	switch kind {
+	case apperror.KindBadRequest:
+		return http.StatusBadRequest
+	case apperror.KindForbidden:
+		return http.StatusForbidden
+	case apperror.KindNotFound:
+		return http.StatusNotFound
+	case apperror.KindConflict:
+		return http.StatusConflict
+	case apperror.KindRateLimited:
+		return http.StatusTooManyRequests
+	case apperror.KindUnavailable:
+		return http.StatusServiceUnavailable
+	default:
+		return http.StatusInternalServerError
+	}
 }
 
 func (s *adapter) capabilities(w http.ResponseWriter, r *http.Request) {
@@ -473,7 +491,7 @@ func (s *adapter) listDeadLetters(w http.ResponseWriter, r *http.Request) {
 		var err error
 		limit, err = strconv.Atoi(raw)
 		if err != nil {
-			writeError(w, &notificationsdk.Error{StatusCode: 400, Code: "notification.dead_letter_query_invalid"})
+			writeError(w, &notificationsdk.Error{Class: notificationsdk.ErrorClassBadRequest, Code: "notification.dead_letter_query_invalid"})
 			return
 		}
 	}

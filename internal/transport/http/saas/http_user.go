@@ -232,7 +232,7 @@ func serveBindingRoute(response http.ResponseWriter, request *http.Request, bind
 func userAuthority(request *http.Request) (notificationsdk.UserAuthority, error) {
 	value := strings.TrimSpace(request.Header.Get("Authorization"))
 	if len(value) < 8 || !strings.EqualFold(value[:7], "Bearer ") || strings.TrimSpace(value[7:]) == "" {
-		return notificationsdk.UserAuthority{}, &notificationsdk.Error{StatusCode: http.StatusUnauthorized, Code: "notification.user_authority_required"}
+		return notificationsdk.UserAuthority{}, &notificationsdk.Error{Class: notificationsdk.ErrorClassForbidden, Code: "notification.user_authority_required"}
 	}
 	authority := notificationsdk.UserAuthority{AccessToken: strings.TrimSpace(value[7:])}
 	if err := authority.Validate(); err != nil {
@@ -255,5 +255,5 @@ func writeRouteResult(response http.ResponseWriter, output any, err error) bool 
 }
 
 func invalidRequest() error {
-	return &notificationsdk.Error{StatusCode: http.StatusBadRequest, Code: "notification.request_invalid"}
+	return &notificationsdk.Error{Class: notificationsdk.ErrorClassBadRequest, Code: "notification.request_invalid"}
 }

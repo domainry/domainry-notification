@@ -371,7 +371,7 @@ func mapDefinitionConflict(err error) error {
 		return nil
 	}
 	var metadataError *metadatasdk.Error
-	if errors.As(err, &metadataError) && metadataError.StatusCode == 409 {
+	if errors.As(err, &metadataError) && metadataError.Kind == metadatasdk.ErrorKindConflict {
 		return template.ErrRecordConflict
 	}
 	return err

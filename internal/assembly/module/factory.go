@@ -39,7 +39,7 @@ type Factory struct{ options Options }
 
 func NewFactory(options Options) *Factory { return &Factory{options: options} }
 func (f *Factory) Open(context.Context, notificationsdk.ApplicationRef) (notificationsdk.Binding, error) {
-	return nil, &notificationsdk.Error{StatusCode: 500, Code: "notification.module_host_required"}
+	return nil, &notificationsdk.Error{Class: notificationsdk.ErrorClassInternal, Code: "notification.module_host_required"}
 }
 
 func (f *Factory) OpenModule(ctx context.Context, application notificationsdk.ApplicationRef, host modulehost.Host) (notificationsdk.Binding, error) {

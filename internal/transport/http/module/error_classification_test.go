@@ -18,22 +18,22 @@ func (capture *classificationCapture) RecordError(kind, code string) {
 
 func TestNotificationErrorClassificationMatrix(t *testing.T) {
 	tests := []struct {
-		status int
-		kind   string
-		code   string
+		class notificationsdk.ErrorClass
+		kind  string
+		code  string
 	}{
-		{503, "unavailable", "notification.database_unavailable"},
-		{502, "unavailable", "notification.provider_unavailable"},
-		{409, "conflict", "notification.publication_fence_rejected"},
-		{400, "bad_request", "notification.validation_failed"},
-		{403, "forbidden", "notification.permission_denied"},
+		{notificationsdk.ErrorClassUnavailable, "unavailable", "notification.database_unavailable"},
+		{notificationsdk.ErrorClassUnavailable, "unavailable", "notification.provider_unavailable"},
+		{notificationsdk.ErrorClassConflict, "conflict", "notification.publication_fence_rejected"},
+		{notificationsdk.ErrorClassBadRequest, "bad_request", "notification.validation_failed"},
+		{notificationsdk.ErrorClassForbidden, "forbidden", "notification.permission_denied"},
 	}
 	for _, test := range tests {
 		capture := &classificationCapture{ResponseRecorder: httptest.NewRecorder()}
-		writeError(capture, &notificationsdk.Error{StatusCode: test.status, Code: test.code})
+		writeError(capture, &notificationsdk.Error{Class: test.class, Code: test.code})
 		wantCode := "backend." + test.code
 		if capture.kind != test.kind || capture.code != wantCode {
-			t.Fatalf("status=%d kind=%q code=%q", test.status, capture.kind, capture.code)
+			t.Fatalf("class=%q kind=%q code=%q", test.class, capture.kind, capture.code)
 		}
 	}
 }

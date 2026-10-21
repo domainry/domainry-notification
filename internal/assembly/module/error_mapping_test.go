@@ -12,15 +12,15 @@ func TestModuleErrorPreservesDomainFailureSemantics(t *testing.T) {
 	tests := []struct {
 		name      string
 		kind      notification.ErrorKind
-		status    int
+		class     notificationsdk.ErrorClass
 		retryable bool
 	}{
-		{name: "invalid", kind: notification.ErrorInvalid, status: 400},
-		{name: "not found", kind: notification.ErrorNotFound, status: 404},
-		{name: "conflict", kind: notification.ErrorConflict, status: 409},
-		{name: "forbidden", kind: notification.ErrorForbidden, status: 403},
-		{name: "unavailable", kind: notification.ErrorUnavailable, status: 503, retryable: true},
-		{name: "internal", kind: notification.ErrorInternal, status: 500},
+		{name: "invalid", kind: notification.ErrorInvalid, class: notificationsdk.ErrorClassBadRequest},
+		{name: "not found", kind: notification.ErrorNotFound, class: notificationsdk.ErrorClassNotFound},
+		{name: "conflict", kind: notification.ErrorConflict, class: notificationsdk.ErrorClassConflict},
+		{name: "forbidden", kind: notification.ErrorForbidden, class: notificationsdk.ErrorClassForbidden},
+		{name: "unavailable", kind: notification.ErrorUnavailable, class: notificationsdk.ErrorClassUnavailable, retryable: true},
+		{name: "internal", kind: notification.ErrorInternal, class: notificationsdk.ErrorClassInternal},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -29,7 +29,7 @@ func TestModuleErrorPreservesDomainFailureSemantics(t *testing.T) {
 			if !errors.As(mapped, &sdkError) {
 				t.Fatalf("mapped error type = %T", mapped)
 			}
-			if sdkError.StatusCode != test.status || sdkError.Code != "backend.notification.test" || sdkError.Retryable != test.retryable {
+			if sdkError.Class != test.class || sdkError.Code != "backend.notification.test" || sdkError.Retryable != test.retryable {
 				t.Fatalf("mapped error = %#v", sdkError)
 			}
 		})

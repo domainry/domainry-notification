@@ -71,7 +71,7 @@ func (s *testDefinitionStore) Publish(_ context.Context, command metadatasdk.Def
 		expected = current.CurrentVersionID
 	}
 	if command.ExpectedCurrentVersionID != expected {
-		return metadatasdk.DefinitionPublishResult{}, &metadatasdk.Error{StatusCode: 409, Code: "metadata.definition_revision_conflict"}
+		return metadatasdk.DefinitionPublishResult{}, &metadatasdk.Error{Kind: metadatasdk.ErrorKindConflict, Code: "metadata.definition_revision_conflict"}
 	}
 	s.version++
 	versionID := fmt.Sprintf("definition-version-%d", s.version)

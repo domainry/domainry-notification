@@ -76,7 +76,7 @@ func (s *Store) SavePolicy(ctx context.Context, policy delivery.Policy) (deliver
 	})
 	if err != nil {
 		var metadataError *metadatasdk.Error
-		if errors.As(err, &metadataError) && metadataError.StatusCode == 409 {
+		if errors.As(err, &metadataError) && metadataError.Kind == metadatasdk.ErrorKindConflict {
 			return delivery.Policy{}, notification.NewError(notification.ErrorConflict, "backend.notification.policy_revision_conflict", err, nil)
 		}
 		return delivery.Policy{}, fmt.Errorf("publish notification delivery policy definition: %w", err)

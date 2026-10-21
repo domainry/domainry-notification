@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/domainry/domainry-foundation/apperror"
 	"github.com/domainry/domainry-foundation/httpresponse"
 	"github.com/domainry/domainry-foundation/telemetry"
 	notificationsdk "github.com/domainry/domainry-notification-sdk"
@@ -38,7 +39,7 @@ func NewHandler(authenticator ServiceAuthentication, bindings BindingResolver) (
 
 func (h *Handler) ServeHTTP(response http.ResponseWriter, request *http.Request) {
 	if request.Method != http.MethodGet && request.Method != http.MethodPost {
-		writeHTTPError(response, &notificationsdk.Error{StatusCode: http.StatusMethodNotAllowed, Code: "notification.method_not_allowed"})
+		writeHTTPError(response, &notificationsdk.Error{Class: notificationsdk.ErrorClassBadRequest, Code: "notification.method_not_allowed"})
 		return
 	}
 	application := notificationsdk.ApplicationRef{
@@ -62,19 +63,19 @@ func (h *Handler) ServeHTTP(response http.ResponseWriter, request *http.Request)
 		return
 	}
 	if binding == nil {
-		writeHTTPError(response, &notificationsdk.Error{StatusCode: http.StatusServiceUnavailable, Code: "notification.binding_unavailable", Retryable: true})
+		writeHTTPError(response, &notificationsdk.Error{Class: notificationsdk.ErrorClassUnavailable, Code: "notification.binding_unavailable", Retryable: true})
 		return
 	}
 	switch request.URL.Path {
 	case "/notification/v1/descriptor":
 		if request.Method != http.MethodGet {
-			writeHTTPError(response, &notificationsdk.Error{StatusCode: http.StatusMethodNotAllowed, Code: "notification.method_not_allowed"})
+			writeHTTPError(response, &notificationsdk.Error{Class: notificationsdk.ErrorClassBadRequest, Code: "notification.method_not_allowed"})
 			return
 		}
 		writeJSON(response, http.StatusOK, notificationsdk.Descriptor{ProtocolVersion: notificationsdk.CurrentProtocolVersion, Mode: notificationsdk.DeploymentModeSaaS, Audience: application.ApplicationKey, Capabilities: []string{"publication", "inbox", "templates", "delivery", "administration"}})
 	case "/notification/v1/events:publish":
 		if request.Method != http.MethodPost {
-			writeHTTPError(response, &notificationsdk.Error{StatusCode: http.StatusMethodNotAllowed, Code: "notification.method_not_allowed"})
+			writeHTTPError(response, &notificationsdk.Error{Class: notificationsdk.ErrorClassBadRequest, Code: "notification.method_not_allowed"})
 			return
 		}
 		var intent contract.NotificationIntent
@@ -83,7 +84,7 @@ func (h *Handler) ServeHTTP(response http.ResponseWriter, request *http.Request)
 			return
 		}
 		if intent.WorkspaceID != application.WorkspaceID {
-			writeHTTPError(response, &notificationsdk.Error{StatusCode: http.StatusForbidden, Code: "notification.application_scope_mismatch"})
+			writeHTTPError(response, &notificationsdk.Error{Class: notificationsdk.ErrorClassForbidden, Code: "notification.application_scope_mismatch"})
 			return
 		}
 		event, created, err := binding.Publisher().PublishIntent(request.Context(), intent)
@@ -97,12 +98,12 @@ func (h *Handler) ServeHTTP(response http.ResponseWriter, request *http.Request)
 		}{event, created})
 	case "/notification/v1/system/templates:sync-published", "/notification/v1/system/templates:list-published":
 		if request.Method != http.MethodPost {
-			writeHTTPError(response, &notificationsdk.Error{StatusCode: http.StatusMethodNotAllowed, Code: "notification.method_not_allowed"})
+			writeHTTPError(response, &notificationsdk.Error{Class: notificationsdk.ErrorClassBadRequest, Code: "notification.method_not_allowed"})
 			return
 		}
 		systemBinding, ok := binding.(notificationsdk.SystemTemplateBinding)
 		if !ok || systemBinding.SystemTemplates() == nil {
-			writeHTTPError(response, &notificationsdk.Error{StatusCode: http.StatusNotImplemented, Code: "notification.system_templates_unsupported"})
+			writeHTTPError(response, &notificationsdk.Error{Class: notificationsdk.ErrorClassUnavailable, Code: "notification.system_templates_unsupported"})
 			return
 		}
 		if request.URL.Path == "/notification/v1/system/templates:sync-published" {
@@ -128,12 +129,12 @@ func (h *Handler) ServeHTTP(response http.ResponseWriter, request *http.Request)
 		writeJSON(response, http.StatusOK, records)
 	case "/notification/v1/system/subjects:preview", "/notification/v1/system/subjects:export", "/notification/v1/system/subjects:erase":
 		if request.Method != http.MethodPost {
-			writeHTTPError(response, &notificationsdk.Error{StatusCode: http.StatusMethodNotAllowed, Code: "notification.method_not_allowed"})
+			writeHTTPError(response, &notificationsdk.Error{Class: notificationsdk.ErrorClassBadRequest, Code: "notification.method_not_allowed"})
 			return
 		}
 		systemBinding, ok := binding.(notificationsdk.SystemSubjectBinding)
 		if !ok || systemBinding.SystemSubjects() == nil {
-			writeHTTPError(response, &notificationsdk.Error{StatusCode: http.StatusNotImplemented, Code: "notification.system_subjects_unsupported"})
+			writeHTTPError(response, &notificationsdk.Error{Class: notificationsdk.ErrorClassUnavailable, Code: "notification.system_subjects_unsupported"})
 			return
 		}
 		var input struct {
@@ -146,7 +147,7 @@ func (h *Handler) ServeHTTP(response http.ResponseWriter, request *http.Request)
 			return
 		}
 		if strings.TrimSpace(input.WorkspaceID) != application.WorkspaceID || strings.TrimSpace(input.SubjectID) == "" {
-			writeHTTPError(response, &notificationsdk.Error{StatusCode: http.StatusForbidden, Code: "notification.application_scope_mismatch"})
+			writeHTTPError(response, &notificationsdk.Error{Class: notificationsdk.ErrorClassForbidden, Code: "notification.application_scope_mismatch"})
 			return
 		}
 		var output json.RawMessage
@@ -164,12 +165,12 @@ func (h *Handler) ServeHTTP(response http.ResponseWriter, request *http.Request)
 		writeJSON(response, http.StatusOK, output)
 	case "/notification/v1/system/retention:preview", "/notification/v1/system/retention:process-batch":
 		if request.Method != http.MethodPost {
-			writeHTTPError(response, &notificationsdk.Error{StatusCode: http.StatusMethodNotAllowed, Code: "notification.method_not_allowed"})
+			writeHTTPError(response, &notificationsdk.Error{Class: notificationsdk.ErrorClassBadRequest, Code: "notification.method_not_allowed"})
 			return
 		}
 		retentionBinding, ok := binding.(notificationsdk.SystemRetentionBinding)
 		if !ok || retentionBinding.SystemRetention() == nil {
-			writeHTTPError(response, &notificationsdk.Error{StatusCode: http.StatusNotImplemented, Code: "notification.system_retention_unsupported"})
+			writeHTTPError(response, &notificationsdk.Error{Class: notificationsdk.ErrorClassUnavailable, Code: "notification.system_retention_unsupported"})
 			return
 		}
 		if request.URL.Path == "/notification/v1/system/retention:preview" {
@@ -179,7 +180,7 @@ func (h *Handler) ServeHTTP(response http.ResponseWriter, request *http.Request)
 				return
 			}
 			if strings.TrimSpace(input.WorkspaceID) != application.WorkspaceID {
-				writeHTTPError(response, &notificationsdk.Error{StatusCode: http.StatusForbidden, Code: "notification.application_scope_mismatch"})
+				writeHTTPError(response, &notificationsdk.Error{Class: notificationsdk.ErrorClassForbidden, Code: "notification.application_scope_mismatch"})
 				return
 			}
 			output, err := retentionBinding.SystemRetention().Preview(request.Context(), input)
@@ -196,7 +197,7 @@ func (h *Handler) ServeHTTP(response http.ResponseWriter, request *http.Request)
 			return
 		}
 		if strings.TrimSpace(input.WorkspaceID) != application.WorkspaceID {
-			writeHTTPError(response, &notificationsdk.Error{StatusCode: http.StatusForbidden, Code: "notification.application_scope_mismatch"})
+			writeHTTPError(response, &notificationsdk.Error{Class: notificationsdk.ErrorClassForbidden, Code: "notification.application_scope_mismatch"})
 			return
 		}
 		output, err := retentionBinding.SystemRetention().ProcessBatch(request.Context(), input)
@@ -207,12 +208,12 @@ func (h *Handler) ServeHTTP(response http.ResponseWriter, request *http.Request)
 		writeJSON(response, http.StatusOK, output)
 	case "/notification/v1/system/alerts:get-group":
 		if request.Method != http.MethodPost {
-			writeHTTPError(response, &notificationsdk.Error{StatusCode: http.StatusMethodNotAllowed, Code: "notification.method_not_allowed"})
+			writeHTTPError(response, &notificationsdk.Error{Class: notificationsdk.ErrorClassBadRequest, Code: "notification.method_not_allowed"})
 			return
 		}
 		alertBinding, ok := binding.(notificationsdk.SystemAlertBinding)
 		if !ok || alertBinding.SystemAlerts() == nil {
-			writeHTTPError(response, &notificationsdk.Error{StatusCode: http.StatusNotImplemented, Code: "notification.system_alerts_unsupported"})
+			writeHTTPError(response, &notificationsdk.Error{Class: notificationsdk.ErrorClassUnavailable, Code: "notification.system_alerts_unsupported"})
 			return
 		}
 		var input struct {
@@ -225,7 +226,7 @@ func (h *Handler) ServeHTTP(response http.ResponseWriter, request *http.Request)
 			return
 		}
 		if strings.TrimSpace(input.WorkspaceID) != application.WorkspaceID || strings.TrimSpace(input.RecipientUserID) == "" || strings.TrimSpace(input.GroupKey) == "" {
-			writeHTTPError(response, &notificationsdk.Error{StatusCode: http.StatusForbidden, Code: "notification.application_scope_mismatch"})
+			writeHTTPError(response, &notificationsdk.Error{Class: notificationsdk.ErrorClassForbidden, Code: "notification.application_scope_mismatch"})
 			return
 		}
 		group, found, err := alertBinding.SystemAlerts().GetAlertGroup(request.Context(), input.WorkspaceID, input.RecipientUserID, input.GroupKey)
@@ -239,12 +240,12 @@ func (h *Handler) ServeHTTP(response http.ResponseWriter, request *http.Request)
 		}{Group: group, Found: found})
 	case "/notification/v1/system/migration:status", "/notification/v1/system/migration:freeze", "/notification/v1/system/migration:export", "/notification/v1/system/migration:import", "/notification/v1/system/migration:activate", "/notification/v1/system/migration:rollback":
 		if request.Method != http.MethodPost {
-			writeHTTPError(response, &notificationsdk.Error{StatusCode: http.StatusMethodNotAllowed, Code: "notification.method_not_allowed"})
+			writeHTTPError(response, &notificationsdk.Error{Class: notificationsdk.ErrorClassBadRequest, Code: "notification.method_not_allowed"})
 			return
 		}
 		migrationBinding, ok := binding.(notificationsdk.SystemMigrationBinding)
 		if !ok || migrationBinding.SystemMigration() == nil {
-			writeHTTPError(response, &notificationsdk.Error{StatusCode: http.StatusNotImplemented, Code: "notification.system_migration_unsupported"})
+			writeHTTPError(response, &notificationsdk.Error{Class: notificationsdk.ErrorClassUnavailable, Code: "notification.system_migration_unsupported"})
 			return
 		}
 		if request.URL.Path == "/notification/v1/system/migration:export" {
@@ -292,7 +293,7 @@ func (h *Handler) ServeHTTP(response http.ResponseWriter, request *http.Request)
 			return
 		}
 		if bundle.Source.WorkspaceID != application.WorkspaceID || bundle.Source.ApplicationKey != application.ApplicationKey {
-			writeHTTPError(response, &notificationsdk.Error{StatusCode: http.StatusForbidden, Code: "notification.application_scope_mismatch"})
+			writeHTTPError(response, &notificationsdk.Error{Class: notificationsdk.ErrorClassForbidden, Code: "notification.application_scope_mismatch"})
 			return
 		}
 		output, err := migrationBinding.SystemMigration().Import(request.Context(), bundle)
@@ -303,7 +304,7 @@ func (h *Handler) ServeHTTP(response http.ResponseWriter, request *http.Request)
 		writeJSON(response, http.StatusOK, output)
 	default:
 		if !serveBindingRoute(response, request, binding) {
-			writeHTTPError(response, &notificationsdk.Error{StatusCode: http.StatusNotFound, Code: "notification.route_not_found"})
+			writeHTTPError(response, &notificationsdk.Error{Class: notificationsdk.ErrorClassNotFound, Code: "notification.route_not_found"})
 		}
 	}
 }
@@ -312,10 +313,10 @@ func decodeJSON(reader io.Reader, output any) error {
 	decoder := json.NewDecoder(io.LimitReader(reader, 8<<20))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(output); err != nil {
-		return &notificationsdk.Error{StatusCode: http.StatusBadRequest, Code: "notification.request_invalid", Cause: err}
+		return &notificationsdk.Error{Class: notificationsdk.ErrorClassBadRequest, Code: "notification.request_invalid", Cause: err}
 	}
 	if decoder.Decode(&struct{}{}) != io.EOF {
-		return &notificationsdk.Error{StatusCode: http.StatusBadRequest, Code: "notification.request_invalid"}
+		return &notificationsdk.Error{Class: notificationsdk.ErrorClassBadRequest, Code: "notification.request_invalid"}
 	}
 	return nil
 }
@@ -323,13 +324,29 @@ func decodeJSON(reader io.Reader, output any) error {
 func writeHTTPError(response http.ResponseWriter, err error) {
 	var sdkErr *notificationsdk.Error
 	if !errors.As(err, &sdkErr) {
-		sdkErr = &notificationsdk.Error{StatusCode: http.StatusInternalServerError, Code: "notification.internal_error"}
+		sdkErr = &notificationsdk.Error{Class: notificationsdk.ErrorClassInternal, Code: "notification.internal_error"}
 	}
-	status := sdkErr.StatusCode
-	if status < 400 || status > 599 {
-		status = http.StatusInternalServerError
-	}
+	status := notificationHTTPStatus(apperror.KindOf(sdkErr))
 	httpresponse.WriteError(response, nil, httpresponse.Failure{Status: status, Code: sdkErr.Code, Message: sdkErr.Message, Cause: err})
+}
+
+func notificationHTTPStatus(kind apperror.ErrorKind) int {
+	switch kind {
+	case apperror.KindBadRequest:
+		return http.StatusBadRequest
+	case apperror.KindForbidden:
+		return http.StatusForbidden
+	case apperror.KindNotFound:
+		return http.StatusNotFound
+	case apperror.KindConflict:
+		return http.StatusConflict
+	case apperror.KindRateLimited:
+		return http.StatusTooManyRequests
+	case apperror.KindUnavailable:
+		return http.StatusServiceUnavailable
+	default:
+		return http.StatusInternalServerError
+	}
 }
 
 func writeJSON(response http.ResponseWriter, status int, value any) {

@@ -191,7 +191,26 @@ func TestInboxTeamScopeRejectsUserOutsideAuthenticatedReportingFacts(t *testing.
 func assertNotificationAuthorizationError(t *testing.T, err error, status int, code string, retryable bool) {
 	t.Helper()
 	var notificationErr *notificationsdk.Error
-	if !errors.As(err, &notificationErr) || notificationErr.StatusCode != status || notificationErr.Code != code || notificationErr.Retryable != retryable {
+	if !errors.As(err, &notificationErr) || notificationErr.Class != notificationSDKClassForStatus(status) || notificationErr.Code != code || notificationErr.Retryable != retryable {
 		t.Fatalf("unexpected error: %#v", err)
+	}
+}
+
+func notificationSDKClassForStatus(status int) notificationsdk.ErrorClass {
+	switch status {
+	case 400, 405, 413, 422:
+		return notificationsdk.ErrorClassBadRequest
+	case 401, 403:
+		return notificationsdk.ErrorClassForbidden
+	case 404:
+		return notificationsdk.ErrorClassNotFound
+	case 409, 412, 423:
+		return notificationsdk.ErrorClassConflict
+	case 429:
+		return notificationsdk.ErrorClassRateLimited
+	case 502, 503, 504:
+		return notificationsdk.ErrorClassUnavailable
+	default:
+		return notificationsdk.ErrorClassInternal
 	}
 }

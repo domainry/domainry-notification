@@ -28,17 +28,17 @@ func NewServiceAuthenticator(identity identitysdk.Binding) (*ServiceAuthenticato
 
 func (a *ServiceAuthenticator) Authenticate(ctx context.Context, request ServiceRequest) (ServiceAuthority, error) {
 	if a == nil || a.identity == nil {
-		return ServiceAuthority{}, &notificationsdk.Error{StatusCode: 503, Code: "notification.identity_unavailable", Retryable: true}
+		return ServiceAuthority{}, &notificationsdk.Error{Class: notificationsdk.ErrorClassUnavailable, Code: "notification.identity_unavailable", Retryable: true}
 	}
 	if err := request.Application.Validate(); err != nil {
 		return ServiceAuthority{}, err
 	}
 	if !request.Grant.Valid() {
-		return ServiceAuthority{}, &notificationsdk.Error{StatusCode: 400, Code: "notification.service_grant_invalid"}
+		return ServiceAuthority{}, &notificationsdk.Error{Class: notificationsdk.ErrorClassBadRequest, Code: "notification.service_grant_invalid"}
 	}
 	credential := strings.TrimSpace(request.Credential)
 	if credential == "" {
-		return ServiceAuthority{}, &notificationsdk.Error{StatusCode: 401, Code: "notification.service_credential_required"}
+		return ServiceAuthority{}, &notificationsdk.Error{Class: notificationsdk.ErrorClassForbidden, Code: "notification.service_credential_required"}
 	}
 	descriptor := a.identity.Descriptor()
 	verified, err := a.services.Verify(ctx, identitysdk.VerifyApplicationServiceTokenRequest{
@@ -46,10 +46,10 @@ func (a *ServiceAuthenticator) Authenticate(ctx context.Context, request Service
 		Grant: request.Grant,
 	})
 	if err != nil {
-		return ServiceAuthority{}, &notificationsdk.Error{StatusCode: 401, Code: "notification.service_credential_invalid", Cause: err}
+		return ServiceAuthority{}, &notificationsdk.Error{Class: notificationsdk.ErrorClassForbidden, Code: "notification.service_credential_invalid", Cause: err}
 	}
 	if string(verified.Application.WorkspaceID) != request.Application.WorkspaceID || string(verified.Application.ApplicationKey) != request.Application.ApplicationKey || string(verified.Audience) != descriptor.Audience || strings.TrimSpace(string(verified.SubjectID)) == "" {
-		return ServiceAuthority{}, &notificationsdk.Error{StatusCode: 403, Code: "notification.application_scope_mismatch"}
+		return ServiceAuthority{}, &notificationsdk.Error{Class: notificationsdk.ErrorClassForbidden, Code: "notification.application_scope_mismatch"}
 	}
 	return ServiceAuthority{Application: request.Application, SubjectID: string(verified.SubjectID), AuthorizationRevision: string(verified.AuthorizationRevision)}, nil
 }

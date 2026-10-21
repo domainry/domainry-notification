@@ -146,7 +146,7 @@ func (s *policyDefinitionStore) Publish(_ context.Context, command metadatasdk.D
 		expected = s.current.CurrentVersionID
 	}
 	if command.ExpectedCurrentVersionID != expected {
-		return metadatasdk.DefinitionPublishResult{}, &metadatasdk.Error{StatusCode: 409, Code: "metadata.definition_revision_conflict"}
+		return metadatasdk.DefinitionPublishResult{}, &metadatasdk.Error{Kind: metadatasdk.ErrorKindConflict, Code: "metadata.definition_revision_conflict"}
 	}
 	s.version++
 	versionID := fmt.Sprintf("policy-version-%d", s.version)

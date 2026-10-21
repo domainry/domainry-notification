@@ -176,7 +176,26 @@ func assertSaaSIntegrationErrorParity(t *testing.T, direct, remote error, status
 
 func isSaaSIntegrationSDKError(err error, status int, code string, retryable bool) bool {
 	var sdkError *notificationsdk.Error
-	return errors.As(err, &sdkError) && sdkError.StatusCode == status && sdkError.Code == code && sdkError.Retryable == retryable
+	return errors.As(err, &sdkError) && sdkError.Class == notificationSaaSClassForStatus(status) && sdkError.Code == code && sdkError.Retryable == retryable
+}
+
+func notificationSaaSClassForStatus(status int) notificationsdk.ErrorClass {
+	switch status {
+	case http.StatusBadRequest, http.StatusMethodNotAllowed, http.StatusRequestEntityTooLarge, http.StatusUnprocessableEntity:
+		return notificationsdk.ErrorClassBadRequest
+	case http.StatusUnauthorized, http.StatusForbidden:
+		return notificationsdk.ErrorClassForbidden
+	case http.StatusNotFound:
+		return notificationsdk.ErrorClassNotFound
+	case http.StatusConflict, http.StatusPreconditionFailed, http.StatusLocked:
+		return notificationsdk.ErrorClassConflict
+	case http.StatusTooManyRequests:
+		return notificationsdk.ErrorClassRateLimited
+	case http.StatusBadGateway, http.StatusServiceUnavailable, http.StatusGatewayTimeout:
+		return notificationsdk.ErrorClassUnavailable
+	default:
+		return notificationsdk.ErrorClassInternal
+	}
 }
 
 var _ http.RoundTripper = (*inMemoryHandlerTransport)(nil)
