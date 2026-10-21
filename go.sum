@@ -11,12 +11,12 @@ github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc h1:U9qPSI2PIWSS1
 github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/domainry/domainry-foundation v0.2.10 h1:/4MsUDjhGMC11KAk6D9XGpvAlzblNO80B+ELFRdWC70=
 github.com/domainry/domainry-foundation v0.2.10/go.mod h1:nCw272N/NTkHfJNWvAGL8vZybUtOpgw3ZyCIshRSqF4=
-github.com/domainry/domainry-identity-sdk v0.1.30 h1:Y6pjp2gKYNPmMlRsm2M3fS6eDK02knR3GFtpLjo2cTw=
-github.com/domainry/domainry-identity-sdk v0.1.30/go.mod h1:j/VQ4x7bAgEGQ6EyiFIybQFWP5+lAcxEWleXemWkPVY=
+github.com/domainry/domainry-identity-sdk v0.1.31 h1:6hNfQBl8E4LIEtnxpXSuNJ45VOpKYF8RV5W9wushEsY=
+github.com/domainry/domainry-identity-sdk v0.1.31/go.mod h1:j/VQ4x7bAgEGQ6EyiFIybQFWP5+lAcxEWleXemWkPVY=
 github.com/domainry/domainry-metadata-sdk v0.1.13 h1:HCr8kdQszfDWptOiynEcqSOYHmMriLOMzxyDLfBgBTQ=
 github.com/domainry/domainry-metadata-sdk v0.1.13/go.mod h1:RdpCGXDElQORIKaO4NMblNRp5ZrhhLdIRLELGqLPLJ8=
-github.com/domainry/domainry-notification-sdk v0.1.17 h1:mwQjeCI15oP0jJHodMuT8jzo3WmCGFTdjjufKwn1SzI=
-github.com/domainry/domainry-notification-sdk v0.1.17/go.mod h1:KUV6+pb8sKUtbHDQdpThbXM5Q45xYpBvsb9sk7qzXls=
+github.com/domainry/domainry-notification-sdk v0.1.18 h1:u63HQfO8dao202lvaV74a5SInYWcUBO2xtUjFDe2ciM=
+github.com/domainry/domainry-notification-sdk v0.1.18/go.mod h1:FPH5PAx/EAjS5RZRY6kqP361KiMIOqXEpUgqjkLK57A=
 github.com/domainry/domainry-orm v0.1.33 h1:gpCXkwDvJhJkiLMkA9awJ44KaFVtpBC6fh9v/EywT24=
 github.com/domainry/domainry-orm v0.1.33/go.mod h1:gB/ooN737tsBYHbeHqCpngEprvdvZKp0Zygtzv+IPJY=
 github.com/dustin/go-humanize v1.0.1 h1:GzkhY7T5VNhEkwH0PVJgjz+fX1rhBrR7pRT3mDkpeCY=
