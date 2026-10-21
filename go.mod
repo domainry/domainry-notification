@@ -6,7 +6,7 @@ toolchain go1.26.6
 
 require (
 	github.com/DATA-DOG/go-sqlmock v1.5.2
-	github.com/domainry/domainry-foundation v0.2.10
+	github.com/domainry/domainry-foundation v0.2.11
 	github.com/domainry/domainry-identity-sdk v0.1.31
 	github.com/domainry/domainry-metadata-sdk v0.1.13
 	github.com/domainry/domainry-notification-sdk v0.1.18
