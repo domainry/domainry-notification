@@ -14,7 +14,7 @@ import (
 	"github.com/domainry/domainry-orm/sqlhost"
 )
 
-var inboxItemReadColumns = []string{"payload_json", "event_id", "occurrence_count", "first_occurred_at", "last_occurred_at", "read_at", "archived_at", "alert_state", "updated_at"}
+var inboxItemReadColumns = []string{"id", "item_id", "payload_json", "event_id", "occurrence_count", "first_occurred_at", "last_occurred_at", "read_at", "archived_at", "alert_state", "updated_at"}
 
 func (s *Store) ListItems(ctx context.Context, queryValue inbox.Query) ([]inbox.Item, bool, error) {
 	queryValue, err := normalizeMailboxStoreQuery(queryValue)
@@ -128,7 +128,7 @@ func (s *Store) mailboxFacetRows(ctx context.Context, workspaceID string, predic
 }
 
 func (s *Store) getInboxItem(ctx context.Context, queryer sqlhost.Queryer, queryValue inbox.Query, itemID string) (inbox.Item, bool, error) {
-	predicate := query.And(mailboxAccessPredicate(queryValue), query.Equal("id", itemID))
+	predicate := query.And(mailboxAccessPredicate(queryValue), query.Equal("item_id", itemID))
 	statement, args, err := query.NewWorkspaceSelectBuilder(s.Renderer, "_notification_inbox_items", queryValue.WorkspaceID.String()).Columns(inboxItemReadColumns...).Where(predicate).Build()
 	if err != nil {
 		return inbox.Item{}, false, err
@@ -169,7 +169,7 @@ func mailboxPredicate(queryValue inbox.Query, includeCursor bool) query.Predicat
 	if queryValue.To != "" {
 		predicates = append(predicates, query.LessThanOrEqual("last_occurred_at", notification.TimestampMillis(queryValue.To)))
 	}
-	if includeCursor && queryValue.BeforeUpdatedAt != "" && queryValue.BeforeID != "" {
+	if includeCursor && queryValue.BeforeUpdatedAt != "" && queryValue.BeforeID > 0 {
 		before := notification.TimestampMillis(queryValue.BeforeUpdatedAt)
 		predicates = append(predicates, query.Or(query.LessThan("updated_at", before), query.And(query.Equal("updated_at", before), query.LessThan("id", queryValue.BeforeID))))
 	}
@@ -223,7 +223,7 @@ func scanInboxItem(row scanner) (inbox.Item, error) {
 	var raw, eventID, alertState string
 	var firstOccurredAt, lastOccurredAt, readAt, archivedAt, updatedAt int64
 	var occurrenceCount int
-	if err := row.Scan(&raw, &eventID, &occurrenceCount, &firstOccurredAt, &lastOccurredAt, &readAt, &archivedAt, &alertState, &updatedAt); err != nil {
+	if err := row.Scan(&value.ID, &value.ItemID, &raw, &eventID, &occurrenceCount, &firstOccurredAt, &lastOccurredAt, &readAt, &archivedAt, &alertState, &updatedAt); err != nil {
 		return value, err
 	}
 	if err := timejson.Unmarshal([]byte(raw), &value); err != nil {

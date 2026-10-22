@@ -2,9 +2,7 @@ package eventstore
 
 import (
 	"context"
-	"crypto/sha256"
 	"database/sql"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -37,7 +35,11 @@ func (s *Store) Enqueue(ctx context.Context, event inbox.Event) (inbox.Event, bo
 		err = tx.Commit()
 	}
 	if err == nil {
-		return event, true, nil
+		stored, found, readErr := s.eventBySource(ctx, event.WorkspaceID, event.Source, event.SourceEventID)
+		if readErr != nil || !found {
+			return inbox.Event{}, false, readErr
+		}
+		return stored, true, nil
 	}
 	_ = tx.Rollback()
 	existing, found, readErr := s.eventBySource(ctx, event.WorkspaceID, event.Source, event.SourceEventID)
@@ -46,7 +48,7 @@ func (s *Store) Enqueue(ctx context.Context, event inbox.Event) (inbox.Event, bo
 	}
 	if found {
 		if !sameIngest(existing, event) {
-			return inbox.Event{}, false, mutation.MutationConflict("notification_event", event.ID, mutation.MutationConflictIdempotency, nil)
+			return inbox.Event{}, false, mutation.MutationConflict("notification_event", event.EventID, mutation.MutationConflictIdempotency, nil)
 		}
 		return existing, false, nil
 	}
@@ -54,6 +56,8 @@ func (s *Store) Enqueue(ctx context.Context, event inbox.Event) (inbox.Event, bo
 }
 
 func sameIngest(left, right inbox.Event) bool {
+	left.ID, right.ID = 0, 0
+	left.EventID, right.EventID = "", ""
 	left.Status, right.Status = "", ""
 	left.AttemptCount, right.AttemptCount = 0, 0
 	left.NextAttemptAt, right.NextAttemptAt = "", ""
@@ -75,6 +79,9 @@ func sameIngest(left, right inbox.Event) bool {
 }
 
 func clearPlanLifecycle(plan *delivery.Plan) {
+	plan.ID = 0
+	plan.DeliveryID = ""
+	plan.EventID = ""
 	plan.Status = ""
 	plan.AttemptCount = 0
 	plan.NextAttemptAt = ""
@@ -118,7 +125,7 @@ func (s *Store) ListDue(ctx context.Context, now string, limit int) ([]inbox.Eve
 func (s *Store) listDueForWorkspace(ctx context.Context, workspaceID notification.WorkspaceID, now string, limit int) ([]inbox.Event, error) {
 	nowMillis := notification.TimestampMillis(now)
 	due := query.Or(query.And(query.Equal("status", "queued"), query.Or(query.Equal("next_attempt_at", int64(0)), query.LessThanOrEqual("next_attempt_at", nowMillis))), query.And(query.Equal("status", "processing"), query.LessThanOrEqual("lease_expires_at", nowMillis)))
-	queryValue, args, err := query.NewWorkspaceSelectBuilder(s.Renderer, "_notification_events", workspaceID.String()).Columns(eventColumns...).Where(due).OrderBy(query.Ascending("occurred_at")).Limit(limit).Build()
+	queryValue, args, err := query.NewWorkspaceSelectBuilder(s.Renderer, "_notification_events", workspaceID.String()).Columns(eventReadColumns...).Where(due).OrderBy(query.Ascending("occurred_at"), query.Ascending("id")).Limit(limit).Build()
 	if err != nil {
 		return nil, err
 	}
@@ -146,7 +153,7 @@ func (s *Store) Claim(ctx context.Context, workspaceID notification.WorkspaceID,
 	ctx = s.workspaceScope.Context(ctx, workspaceID)
 	nowMillis, expiresAtMillis := notification.TimestampMillis(now), notification.TimestampMillis(expiresAt)
 	due := query.Or(query.And(query.Equal("status", "queued"), query.Or(query.Equal("next_attempt_at", int64(0)), query.LessThanOrEqual("next_attempt_at", nowMillis))), query.And(query.Equal("status", "processing"), query.LessThanOrEqual("lease_expires_at", nowMillis)))
-	queryValue, args, err := query.NewWorkspaceUpdateBuilder(s.Renderer, "_notification_events", workspaceID.String()).Set("status", "processing").Set("lease_owner", owner).Set("lease_expires_at", expiresAtMillis).SetExpression("fencing_token", query.Add(query.Column("fencing_token"), query.Value(1))).Set("updated_at", nowMillis).Where(query.And(query.Equal("id", eventID), due)).Build()
+	queryValue, args, err := query.NewWorkspaceUpdateBuilder(s.Renderer, "_notification_events", workspaceID.String()).Set("status", "processing").Set("lease_owner", owner).Set("lease_expires_at", expiresAtMillis).SetExpression("fencing_token", query.Add(query.Column("fencing_token"), query.Value(1))).Set("updated_at", nowMillis).Where(query.And(query.Equal("event_id", eventID), due)).Build()
 	if err != nil {
 		return inbox.Event{}, false, err
 	}
@@ -180,7 +187,7 @@ func (s *Store) transitionFailure(ctx context.Context, event inbox.Event, status
 		return err
 	}
 	defer tx.Rollback()
-	queryValue, args, err := query.NewWorkspaceUpdateBuilder(s.Renderer, "_notification_events", event.WorkspaceID.String()).Set("status", string(status)).SetExpression("attempt_count", query.Add(query.Column("attempt_count"), query.Value(1))).Set("next_attempt_at", notification.TimestampMillis(nextAttemptAt)).Set("last_error_code", errorCode).Set("lease_owner", "").Set("lease_expires_at", int64(0)).Set("updated_at", notification.TimestampMillis(updatedAt)).Where(query.And(query.Equal("id", event.ID), query.Equal("status", "processing"), query.Equal("lease_owner", event.LeaseOwner), query.Equal("fencing_token", event.FencingToken))).Build()
+	queryValue, args, err := query.NewWorkspaceUpdateBuilder(s.Renderer, "_notification_events", event.WorkspaceID.String()).Set("status", string(status)).SetExpression("attempt_count", query.Add(query.Column("attempt_count"), query.Value(1))).Set("next_attempt_at", notification.TimestampMillis(nextAttemptAt)).Set("last_error_code", errorCode).Set("lease_owner", "").Set("lease_expires_at", int64(0)).Set("updated_at", notification.TimestampMillis(updatedAt)).Where(query.And(query.Equal("event_id", event.EventID), query.Equal("status", "processing"), query.Equal("lease_owner", event.LeaseOwner), query.Equal("fencing_token", event.FencingToken))).Build()
 	if err != nil {
 		return err
 	}
@@ -193,20 +200,19 @@ func (s *Store) transitionFailure(ctx context.Context, event inbox.Event, status
 		return err
 	}
 	if count != 1 {
-		return mutation.MutationConflict("notification_event", event.ID, mutation.MutationConflictLeaseLost, nil)
+		return mutation.MutationConflict("notification_event", event.EventID, mutation.MutationConflictLeaseLost, nil)
 	}
 	disposition, retryable := "retry_scheduled", 1
 	if status == inbox.EventFailed {
 		disposition, retryable = "dead_letter", 0
 	}
 	failure := inbox.EventFailure{
-		ID: failureID(event.WorkspaceID, event.ID, event.FencingToken), WorkspaceID: event.WorkspaceID,
-		EventID: event.ID, EventType: event.EventType, Source: event.Source, SourceEventID: event.SourceEventID,
+		WorkspaceID: event.WorkspaceID, EventID: event.EventID, EventType: event.EventType, Source: event.Source, SourceEventID: event.SourceEventID,
 		Stage: stage, ErrorCode: errorCode, Attempt: event.AttemptCount + 1, Disposition: disposition, Retryable: retryable == 1,
 		NextAttemptAt: strings.TrimSpace(nextAttemptAt), FencingToken: event.FencingToken, OccurredAt: strings.TrimSpace(updatedAt),
 	}
-	columns := []string{"id", "workspace_id", "attempt_kind", "event_id", "delivery_id", "event_type", "source", "source_event_id", "channel", "stage", "error_code", "attempt", "disposition", "retryable", "next_attempt_at", "fencing_token", "occurred_at"}
-	_, err = s.WorkspaceInsert(ctx, tx, failure.WorkspaceID.String(), "_notification_delivery_attempts", columns, failure.ID, failure.WorkspaceID.String(), "event", failure.EventID, "", failure.EventType, failure.Source, failure.SourceEventID, "", failure.Stage, failure.ErrorCode, failure.Attempt, failure.Disposition, retryable, notification.TimestampMillis(failure.NextAttemptAt), failure.FencingToken, notification.TimestampMillis(failure.OccurredAt))
+	columns := []string{"workspace_id", "attempt_kind", "event_id", "delivery_id", "event_type", "source", "source_event_id", "channel", "stage", "error_code", "attempt", "disposition", "retryable", "next_attempt_at", "fencing_token", "occurred_at"}
+	_, err = s.WorkspaceInsert(ctx, tx, failure.WorkspaceID.String(), "_notification_delivery_attempts", columns, failure.WorkspaceID.String(), "event", failure.EventID, "", failure.EventType, failure.Source, failure.SourceEventID, "", failure.Stage, failure.ErrorCode, failure.Attempt, failure.Disposition, retryable, notification.TimestampMillis(failure.NextAttemptAt), failure.FencingToken, notification.TimestampMillis(failure.OccurredAt))
 	if err != nil {
 		return fmt.Errorf("record notification event failure: %w", err)
 	}
@@ -215,7 +221,7 @@ func (s *Store) transitionFailure(ctx context.Context, event inbox.Event, status
 
 func (s *Store) eventByID(ctx context.Context, workspaceID notification.WorkspaceID, eventID string) (inbox.Event, bool, error) {
 	ctx = s.workspaceScope.Context(ctx, workspaceID)
-	queryValue, args, err := query.NewWorkspaceSelectBuilder(s.Renderer, "_notification_events", workspaceID.String()).Columns(eventColumns...).Where(query.Equal("id", strings.TrimSpace(eventID))).Build()
+	queryValue, args, err := query.NewWorkspaceSelectBuilder(s.Renderer, "_notification_events", workspaceID.String()).Columns(eventReadColumns...).Where(query.Equal("event_id", strings.TrimSpace(eventID))).Build()
 	if err != nil {
 		return inbox.Event{}, false, err
 	}
@@ -228,7 +234,7 @@ func (s *Store) eventByID(ctx context.Context, workspaceID notification.Workspac
 
 func (s *Store) eventBySource(ctx context.Context, workspaceID notification.WorkspaceID, source, sourceEventID string) (inbox.Event, bool, error) {
 	ctx = s.workspaceScope.Context(ctx, workspaceID)
-	queryValue, args, err := query.NewWorkspaceSelectBuilder(s.Renderer, "_notification_events", workspaceID.String()).Columns(eventColumns...).Where(query.And(query.Equal("source", strings.TrimSpace(source)), query.Equal("source_event_id", strings.TrimSpace(sourceEventID)))).Build()
+	queryValue, args, err := query.NewWorkspaceSelectBuilder(s.Renderer, "_notification_events", workspaceID.String()).Columns(eventReadColumns...).Where(query.And(query.Equal("source", strings.TrimSpace(source)), query.Equal("source_event_id", strings.TrimSpace(sourceEventID)))).Build()
 	if err != nil {
 		return inbox.Event{}, false, err
 	}
@@ -248,20 +254,21 @@ type scanner interface{ Scan(...any) error }
 
 func scanEvent(row scanner) (inbox.Event, error) {
 	var value inbox.Event
-	var id, workspaceID, source, sourceEventID, status, raw string
+	var physicalID int64
+	var eventID, workspaceID, source, sourceEventID, status, raw string
 	var attemptCount int
 	var lastErrorCode, leaseOwner string
 	var nextAttemptAt, leaseExpiresAt int64
 	var fencingToken int64
 	var occurredAt, createdAt, updatedAt int64
-	err := row.Scan(&id, &workspaceID, &source, &sourceEventID, &status, &raw, &attemptCount, &nextAttemptAt, &lastErrorCode, &leaseOwner, &leaseExpiresAt, &fencingToken, &occurredAt, &createdAt, &updatedAt)
+	err := row.Scan(&physicalID, &eventID, &workspaceID, &source, &sourceEventID, &status, &raw, &attemptCount, &nextAttemptAt, &lastErrorCode, &leaseOwner, &leaseExpiresAt, &fencingToken, &occurredAt, &createdAt, &updatedAt)
 	if err != nil {
 		return value, err
 	}
 	if err := timejson.Unmarshal([]byte(raw), &value); err != nil {
 		return value, fmt.Errorf("decode notification event: %w", err)
 	}
-	value.ID, value.WorkspaceID, value.Source, value.SourceEventID, value.Status = id, notification.WorkspaceID(workspaceID), source, sourceEventID, inbox.EventStatus(status)
+	value.ID, value.EventID, value.WorkspaceID, value.Source, value.SourceEventID, value.Status = physicalID, eventID, notification.WorkspaceID(workspaceID), source, sourceEventID, inbox.EventStatus(status)
 	value.AttemptCount, value.NextAttemptAt, value.LastErrorCode = attemptCount, notification.MillisTimestamp(nextAttemptAt), lastErrorCode
 	value.LeaseOwner, value.LeaseExpiresAt, value.FencingToken = leaseOwner, notification.MillisTimestamp(leaseExpiresAt), fencingToken
 	value.OccurredAt, value.CreatedAt, value.UpdatedAt = notification.MillisTimestamp(occurredAt), notification.MillisTimestamp(createdAt), notification.MillisTimestamp(updatedAt)
@@ -277,8 +284,3 @@ func (s *Store) columns(columns []string) string {
 }
 
 func workspaceScanLimit(eventLimit int) int { return min(256, max(32, eventLimit*2)) }
-
-func failureID(workspaceID notification.WorkspaceID, eventID string, fencingToken int64) string {
-	sum := sha256.Sum256([]byte(strings.Join([]string{workspaceID.String(), eventID, fmt.Sprint(fencingToken), "failure"}, "\x00")))
-	return "notification_failure_" + hex.EncodeToString(sum[:16])
-}

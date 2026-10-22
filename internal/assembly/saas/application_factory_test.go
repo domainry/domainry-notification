@@ -125,7 +125,7 @@ func TestSQLApplicationFactoryOpensSharedSaaSDomainApplication(t *testing.T) {
 	if workers, local := binding.LocalWorkers(); !local || workers == nil {
 		t.Fatal("server-owned workers are unavailable")
 	}
-	intent := contract.NotificationIntent{ID: "event", WorkspaceID: "another-workspace", SourceEventID: "source", EventType: "report.completed", RecipientUserIDs: []string{"user"}, OccurredAt: "2026-08-28T00:00:00.000000000Z", SubjectType: "report", SubjectID: "report", SubjectVersion: "one"}
+	intent := contract.NotificationIntent{WorkspaceID: "another-workspace", SourceEventID: "source", EventType: "report.completed", RecipientUserIDs: []string{"user"}, OccurredAt: "2026-08-28T00:00:00.000000000Z", SubjectType: "report", SubjectID: "report", SubjectVersion: "one"}
 	if _, _, err := binding.Publisher().PublishIntent(t.Context(), intent); err == nil {
 		t.Fatal("cross-workspace publication was accepted")
 	}
@@ -218,9 +218,9 @@ func TestRemotePublicationReconcilesResponseLossWithoutDuplicateIngest(t *testin
 			t.Fatalf("SaaS route %d drifted from the source-owned Action manifest", index)
 		}
 	}
-	intent := contract.NotificationIntent{ID: "event", WorkspaceID: "workspace", SourceEventID: "source", EventType: "report.completed", RecipientUserIDs: []string{"user"}, OccurredAt: "2026-08-29T00:00:00Z", SubjectType: "report", SubjectID: "report", SubjectVersion: "one"}
+	intent := contract.NotificationIntent{WorkspaceID: "workspace", SourceEventID: "source", EventType: "report.completed", RecipientUserIDs: []string{"user"}, OccurredAt: "2026-08-29T00:00:00Z", SubjectType: "report", SubjectID: "report", SubjectVersion: "one"}
 	event, created, err := remoteBinding.Publisher().PublishIntent(t.Context(), intent)
-	if err != nil || created || event.ID == "" || !transport.lost {
+	if err != nil || created || event.EventID == "" || !transport.lost {
 		t.Fatalf("event=%+v created=%v response_lost=%v err=%v", event, created, transport.lost, err)
 	}
 	var rows int

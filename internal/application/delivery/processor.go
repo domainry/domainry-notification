@@ -64,13 +64,13 @@ func (p *Processor) ProcessDue(ctx context.Context, limit int) (int, error) {
 	processed := 0
 	consumed := map[string]bool{}
 	for _, candidate := range plans {
-		if consumed[candidate.ID] {
+		if consumed[candidate.DeliveryID] {
 			continue
 		}
 		if candidate.DeliveryMode == "digest" && strings.TrimSpace(candidate.DigestKey) != "" {
 			batch := digestCandidates(plans, candidate, consumed)
 			for _, value := range batch {
-				consumed[value.ID] = true
+				consumed[value.DeliveryID] = true
 			}
 			count, processErr := p.processDigest(ctx, batch, now)
 			if processErr != nil {
@@ -79,7 +79,7 @@ func (p *Processor) ProcessDue(ctx context.Context, limit int) (int, error) {
 			processed += count
 			continue
 		}
-		consumed[candidate.ID] = true
+		consumed[candidate.DeliveryID] = true
 		done, processErr := p.processImmediate(ctx, candidate, now)
 		if processErr != nil {
 			return processed, processErr
@@ -121,7 +121,7 @@ func (p *Processor) processImmediate(ctx context.Context, candidate Plan, now ti
 }
 
 func (p *Processor) claimDeliverable(ctx context.Context, candidate Plan, now time.Time) (Plan, bool, error) {
-	claimed, found, err := p.plans.ClaimPlan(ctx, candidate.WorkspaceID, candidate.ID, p.workerID, notification.Timestamp(now), notification.Timestamp(now.Add(planLeaseDuration)))
+	claimed, found, err := p.plans.ClaimPlan(ctx, candidate.WorkspaceID, candidate.DeliveryID, p.workerID, notification.Timestamp(now), notification.Timestamp(now.Add(planLeaseDuration)))
 	if err != nil || !found {
 		return claimed, found, err
 	}
@@ -172,7 +172,7 @@ func (p *Processor) processDigest(ctx context.Context, candidates []Plan, now ti
 func (p *Processor) dispatch(ctx context.Context, plan Plan, now time.Time) (DispatchReceipt, error) {
 	decision, err := p.policy.EvaluateDelivery(ctx, Evaluation{
 		WorkspaceID: plan.WorkspaceID, TemplateKey: plan.TemplateKey, Channel: plan.Channel,
-		Recipients: append([]notification.UserID(nil), plan.RecipientUserIDs...), DedupeKey: plan.DedupeKey, ReservationKey: plan.ID,
+		Recipients: append([]notification.UserID(nil), plan.RecipientUserIDs...), DedupeKey: plan.DedupeKey, ReservationKey: planDispatchKey(plan),
 	})
 	if err != nil {
 		return DispatchReceipt{}, err
@@ -180,7 +180,7 @@ func (p *Processor) dispatch(ctx context.Context, plan Plan, now time.Time) (Dis
 	content, err := p.renderer.Render(ctx, template.RenderRequest{
 		WorkspaceID: plan.WorkspaceID, TemplateKey: plan.TemplateKey, Locale: plan.Locale,
 		Recipients: append([]notification.UserID(nil), plan.RecipientUserIDs...), Variables: cloneVariables(plan.Variables),
-		Metadata: map[string]any{"notification_event_id": plan.EventID, "notification_channel_plan_id": plan.ID, "dedupe_key": plan.DedupeKey},
+		Metadata: map[string]any{"notification_event_id": plan.EventID, "notification_channel_plan_id": planDispatchKey(plan), "dedupe_key": plan.DedupeKey},
 	})
 	if err != nil {
 		return DispatchReceipt{}, err
@@ -190,9 +190,9 @@ func (p *Processor) dispatch(ctx context.Context, plan Plan, now time.Time) (Dis
 		return DispatchReceipt{}, err
 	}
 	return p.dispatcher.Dispatch(ctx, DispatchRequest{
-		WorkspaceID: plan.WorkspaceID, PlanID: plan.ID, EventID: plan.EventID, Channel: plan.Channel,
+		WorkspaceID: plan.WorkspaceID, PlanID: planDispatchKey(plan), EventID: plan.EventID, Channel: plan.Channel,
 		ConnectorKey: plan.ConnectorKey, ConnectionKey: plan.ConnectionKey, Operation: plan.Operation,
-		DeduplicationKey: plan.ID, Content: content, Decision: decision, Fallbacks: fallbacks, CreatedAt: now,
+		DeduplicationKey: planDispatchKey(plan), Content: content, Decision: decision, Fallbacks: fallbacks, CreatedAt: now,
 	})
 }
 
@@ -202,7 +202,7 @@ func (p *Processor) renderFallbacks(ctx context.Context, plan Plan, content temp
 		rendered, err := p.renderer.Render(ctx, template.RenderRequest{
 			WorkspaceID: plan.WorkspaceID, TemplateKey: fallback.TemplateKey, Locale: plan.Locale,
 			Recipients: append([]notification.UserID(nil), plan.RecipientUserIDs...), Variables: cloneVariables(plan.Variables),
-			Metadata: map[string]any{"notification_event_id": plan.EventID, "notification_channel_plan_id": plan.ID, "dedupe_key": plan.DedupeKey},
+			Metadata: map[string]any{"notification_event_id": plan.EventID, "notification_channel_plan_id": planDispatchKey(plan), "dedupe_key": plan.DedupeKey},
 		})
 		if err != nil {
 			return nil, err
@@ -243,7 +243,7 @@ func logDeliveryTransition(ctx context.Context, cause error, plan Plan, attempt 
 	fields := logging.ErrorFields(cause, logging.Failure{Stage: "notification_delivery", Dependency: plan.ConnectorKey, Retryable: retryable})
 	fields = append(fields,
 		zap.String("task_kind", "notification_delivery"),
-		zap.String("task_id", plan.ID),
+		zap.String("task_id", plan.DeliveryID),
 		zap.Int("attempt", attempt),
 		zap.Int("max_attempts", maximumAttempts),
 		zap.String("outcome", outcome),
@@ -266,7 +266,7 @@ func digestCandidates(plans []Plan, first Plan, consumed map[string]bool) []Plan
 		if len(result) >= maximum {
 			break
 		}
-		if !consumed[plan.ID] && plan.WorkspaceID == first.WorkspaceID && plan.DeliveryMode == "digest" && plan.DigestKey == first.DigestKey &&
+		if !consumed[plan.DeliveryID] && plan.WorkspaceID == first.WorkspaceID && plan.DeliveryMode == "digest" && plan.DigestKey == first.DigestKey &&
 			plan.NextAttemptAt == first.NextAttemptAt && plan.Channel == first.Channel && plan.TemplateKey == first.TemplateKey && plan.Locale == first.Locale &&
 			plan.ConnectorKey == first.ConnectorKey && plan.ConnectionKey == first.ConnectionKey && plan.Operation == first.Operation && sameRecipients(plan.RecipientUserIDs, first.RecipientUserIDs) {
 			result = append(result, plan)
@@ -298,12 +298,19 @@ func digestPlan(plans []Plan) Plan {
 		}
 		lines = append(lines, line)
 	}
-	result.ID = "digest:" + result.DigestKey + ":" + result.NextAttemptAt
+	result.DispatchKey = "digest:" + result.DigestKey + ":" + result.NextAttemptAt
 	result.Variables = cloneVariables(result.Variables)
 	result.Variables["digest_count"] = len(plans)
 	result.Variables["digest_items_text"] = strings.Join(lines, "\n")
 	result.Variables["digest_event_ids"] = strings.Join(eventIDs, ",")
 	return result
+}
+
+func planDispatchKey(plan Plan) string {
+	if strings.TrimSpace(plan.DispatchKey) != "" {
+		return strings.TrimSpace(plan.DispatchKey)
+	}
+	return plan.DeliveryID
 }
 
 func cloneVariables(source map[string]any) map[string]any {

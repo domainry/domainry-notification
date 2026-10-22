@@ -119,17 +119,20 @@ func TestModuleAndRemoteSaaSPreserveBusinessAndCapabilitySemantics(t *testing.T)
 	}
 
 	intent := contract.NotificationIntent{
-		ID: "report-event", WorkspaceID: "workspace", SourceEventID: "report:one", EventType: "report.completed",
+		WorkspaceID: "workspace", SourceEventID: "report:one", EventType: "report.completed",
 		RecipientUserIDs: []string{"user"}, OccurredAt: "2026-09-03T11:59:00Z", SubjectType: "report", SubjectID: "one", SubjectVersion: "1",
 	}
 	moduleEvent, moduleCreated, moduleErr := moduleBinding.Publisher().PublishIntent(t.Context(), intent)
 	remoteEvent, remoteCreated, remoteErr := remoteBinding.Publisher().PublishIntent(t.Context(), intent)
-	if moduleErr != nil || remoteErr != nil || !moduleCreated || !remoteCreated || !reflect.DeepEqual(moduleEvent, remoteEvent) {
+	moduleComparable, remoteComparable := moduleEvent, remoteEvent
+	moduleComparable.ID, moduleComparable.EventID = 0, ""
+	remoteComparable.ID, remoteComparable.EventID = 0, ""
+	if moduleErr != nil || remoteErr != nil || !moduleCreated || !remoteCreated || moduleEvent.EventID == "" || remoteEvent.EventID == "" || !reflect.DeepEqual(moduleComparable, remoteComparable) {
 		t.Fatalf("publication parity module=(%+v,%v,%v) remote=(%+v,%v,%v)", moduleEvent, moduleCreated, moduleErr, remoteEvent, remoteCreated, remoteErr)
 	}
 	moduleDuplicate, moduleCreated, moduleErr := moduleBinding.Publisher().PublishIntent(t.Context(), intent)
 	remoteDuplicate, remoteCreated, remoteErr := remoteBinding.Publisher().PublishIntent(t.Context(), intent)
-	if moduleErr != nil || remoteErr != nil || moduleCreated || remoteCreated || !reflect.DeepEqual(moduleDuplicate, remoteDuplicate) {
+	if moduleErr != nil || remoteErr != nil || moduleCreated || remoteCreated || moduleDuplicate.EventID != moduleEvent.EventID || remoteDuplicate.EventID != remoteEvent.EventID {
 		t.Fatalf("idempotency parity module=(%+v,%v,%v) remote=(%+v,%v,%v)", moduleDuplicate, moduleCreated, moduleErr, remoteDuplicate, remoteCreated, remoteErr)
 	}
 	conflict := intent
@@ -138,14 +141,14 @@ func TestModuleAndRemoteSaaSPreserveBusinessAndCapabilitySemantics(t *testing.T)
 	_, _, remoteErr = remoteBinding.Publisher().PublishIntent(t.Context(), conflict)
 	assertSaaSIntegrationErrorParity(t, moduleErr, remoteErr, http.StatusConflict, "notification.request_identity_conflict", false)
 	crossWorkspace := intent
-	crossWorkspace.ID, crossWorkspace.SourceEventID, crossWorkspace.WorkspaceID = "other", "report:other", "other-workspace"
+	crossWorkspace.SourceEventID, crossWorkspace.WorkspaceID = "report:other", "other-workspace"
 	_, _, moduleErr = moduleBinding.Publisher().PublishIntent(t.Context(), crossWorkspace)
 	_, _, remoteErr = remoteBinding.Publisher().PublishIntent(t.Context(), crossWorkspace)
 	assertSaaSIntegrationErrorParity(t, moduleErr, remoteErr, http.StatusForbidden, "notification.application_scope_mismatch", false)
 
 	transport.fail("/notification/v1/events:publish", errors.New("transport disconnected"))
 	uncommitted := intent
-	uncommitted.ID, uncommitted.SourceEventID, uncommitted.SubjectID = "transport-event", "report:transport", "transport"
+	uncommitted.SourceEventID, uncommitted.SubjectID = "report:transport", "transport"
 	if _, _, err := remoteBinding.Publisher().PublishIntent(t.Context(), uncommitted); !isSaaSIntegrationSDKError(err, http.StatusServiceUnavailable, "notification.remote_unavailable", true) {
 		t.Fatalf("transport error=%v", err)
 	}

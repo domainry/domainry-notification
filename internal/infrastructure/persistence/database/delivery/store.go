@@ -39,13 +39,12 @@ var (
 )
 
 const (
-	notificationDeliveriesTable = "_notification_deliveries"
-	deliveryRowKind             = "delivery"
-	deliveryReservationRowKind  = "reservation"
+	notificationDeliveriesTable           = "_notification_deliveries"
+	notificationDeliveryReservationsTable = "_notification_delivery_reservations"
 )
 
 var channelPlanColumns = []string{
-	"id", "workspace_id", "event_id", "channel", "status", "payload_json", "attempt_count", "next_attempt_at",
+	"id", "delivery_id", "workspace_id", "event_id", "channel", "status", "payload_json", "attempt_count", "next_attempt_at",
 	"last_error_code", "outbox_message_id", "lease_owner", "lease_expires_at", "fencing_token", "created_at", "updated_at",
 }
 

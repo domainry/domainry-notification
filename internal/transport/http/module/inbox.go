@@ -257,7 +257,7 @@ func (s *adapter) saveDelegation(w http.ResponseWriter, r *http.Request) {
 	if !decode(w, r, &v) {
 		return
 	}
-	v.ID = r.PathValue("delegationID")
+	v.DelegationID = r.PathValue("delegationID")
 	x, e := s.binding.Inbox().SaveDelegation(r.Context(), a, v)
 	if e != nil {
 		writeError(w, e)
@@ -308,7 +308,7 @@ func (s *adapter) inboxState(r *http.Request, a notificationsdk.UserAuthority) (
 	v := inboxSync{Unread: f.Unread}
 	id := struct {
 		UpdatedAt string `json:"updated_at"`
-		ID        string `json:"id"`
+		ID        int64  `json:"id"`
 		Unread    int    `json:"unread"`
 	}{Unread: f.Unread}
 	if len(p.Items) > 0 {

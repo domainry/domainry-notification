@@ -12,7 +12,7 @@ func TestPublicSchemaOwnershipMatchesNotificationInventory(t *testing.T) {
 	if err := schemaownership.ValidateAll(tables); err != nil {
 		t.Fatal(err)
 	}
-	if len(tables) != 7 || !slices.Equal(OwnedTables(), schemaownership.Names(tables)) {
+	if len(tables) != 8 || !slices.Equal(OwnedTables(), schemaownership.Names(tables)) {
 		t.Fatalf("Notification schema ownership=%d tables=%v", len(tables), OwnedTables())
 	}
 }

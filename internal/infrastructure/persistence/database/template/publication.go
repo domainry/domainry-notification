@@ -261,7 +261,7 @@ func (s *Store) HasOpenPublicationRequest(ctx context.Context, templateKey strin
 }
 
 func (s *Store) publicationOperationIdentity(requestID string) notificationmodulehost.ManagedOperationIdentity {
-	return notificationmodulehost.ManagedOperationIdentity{ID: strings.TrimSpace(requestID), Scope: notificationmodulehost.OperationScope{WorkspaceID: s.workspaceID.String()}, Owner: templatePublicationOperationOwner, Kind: templatePublicationOperationKind}
+	return notificationmodulehost.ManagedOperationIdentity{OperationID: strings.TrimSpace(requestID), Scope: notificationmodulehost.OperationScope{WorkspaceID: s.workspaceID.String()}, Owner: templatePublicationOperationOwner, Kind: templatePublicationOperationKind}
 }
 
 func (s *Store) publicationOperation(request template.PublicationRequest) (notificationmodulehost.ManagedOperation, error) {
@@ -283,7 +283,7 @@ func (s *Store) publicationOperation(request template.PublicationRequest) (notif
 	}
 	return notificationmodulehost.ManagedOperation{
 		Command: notificationmodulehost.OperationCommand{
-			ID: request.ID, Scope: notificationmodulehost.OperationScope{WorkspaceID: s.workspaceID.String(), ResourceType: templatePublicationResourceType, ResourceID: request.TemplateKey},
+			OperationID: request.ID, Scope: notificationmodulehost.OperationScope{WorkspaceID: s.workspaceID.String(), ResourceType: templatePublicationResourceType, ResourceID: request.TemplateKey},
 			Owner: templatePublicationOperationOwner, Kind: templatePublicationOperationKind, ActionKey: templatePublicationActionKey,
 			IdempotencyKey: request.ID, RequestFingerprint: request.CandidateHash, RequestedBy: request.RequestedBy,
 			Reason: "Notification template publication", Reference: request.TemplateKey, StatusURL: "/notification/publications/" + request.ID, CreatedAt: createdAt,
@@ -298,7 +298,7 @@ func publicationRequestFromOperation(operation notificationmodulehost.ManagedOpe
 	if err := timejson.Unmarshal(operation.Metadata, &value); err != nil {
 		return value, fmt.Errorf("decode notification publication Operation: %w", err)
 	}
-	value.ID, value.TemplateKey = operation.Command.ID, operation.Command.Scope.ResourceID
+	value.ID, value.TemplateKey = operation.Command.OperationID, operation.Command.Scope.ResourceID
 	value.Status = template.PublicationStatus(operation.Status)
 	value.LeaseOwner, value.LeaseExpiresAt, value.FencingToken = operation.LeaseOwner, operation.LeaseExpiresAt, operation.FencingToken
 	value.UpdatedAt = operation.UpdatedAt.UTC().Format(time.RFC3339Nano)

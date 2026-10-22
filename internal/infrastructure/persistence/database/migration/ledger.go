@@ -30,14 +30,14 @@ func NewLedger(renderer ormdialect.Renderer) Ledger {
 }
 
 func (l Ledger) Ensure(ctx context.Context, executor Executor) error {
-	statement, args, err := ormschema.NewTable(l.renderer, LedgerTable).IfNotExists().Columns(
+	statement, args, err := ormschema.NewTableWithRequiredColumns(l.renderer, LedgerTable, ormschema.Column("id", ormschema.BigInt()).NotNull().AutoIncrement()).IfNotExists().Columns(
 		ormschema.Column("namespace", ormschema.TextKey(512)).NotNull(),
 		ormschema.Column("version", ormschema.BigInt()).NotNull(),
 		ormschema.Column("name", ormschema.TextKey(191)).NotNull(),
 		ormschema.Column("checksum", ormschema.TextKey(64)).NotNull(),
 		ormschema.Column("dirty", ormschema.Boolean()).NotNull(),
 		ormschema.Column("applied_at", ormschema.BigInt()).NotNull(),
-	).PrimaryKey("namespace", "version").Build()
+	).PrimaryKey("id").Unique("namespace", "version").Build()
 	if err != nil {
 		return fmt.Errorf("build Notification SaaS migration ledger: %w", err)
 	}

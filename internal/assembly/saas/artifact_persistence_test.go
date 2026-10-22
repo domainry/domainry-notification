@@ -46,14 +46,14 @@ func TestStandaloneRetentionArchiveUsesSharedArtifactPersistence(t *testing.T) {
 		t.Fatal(err)
 	}
 	created, err := archives.ArchivePayload(t.Context(), modulehost.RetentionArchiveOwnerNotification,
-		modulehost.RetentionArchiveJob{ID: "cleanup-one", WorkspaceID: application.WorkspaceID, ArchivedAt: time.Date(2026, 9, 23, 8, 0, 0, 0, time.UTC)},
+		modulehost.RetentionArchiveJob{JobID: "cleanup-one", WorkspaceID: application.WorkspaceID, ArchivedAt: time.Date(2026, 9, 23, 8, 0, 0, 0, time.UTC)},
 		modulehost.RetentionArchivePolicy{Key: "notification.history", Version: "one"},
 		"_notification_events", "event-one", []byte(`{"id":"event-one"}`))
 	if err != nil || !created {
 		t.Fatalf("archive created=%v err=%v", created, err)
 	}
 	created, err = archives.ArchivePayload(t.Context(), modulehost.RetentionArchiveOwnerNotification,
-		modulehost.RetentionArchiveJob{ID: "cleanup-one", WorkspaceID: application.WorkspaceID, ArchivedAt: time.Date(2026, 9, 23, 8, 0, 0, 0, time.UTC)},
+		modulehost.RetentionArchiveJob{JobID: "cleanup-one", WorkspaceID: application.WorkspaceID, ArchivedAt: time.Date(2026, 9, 23, 8, 0, 0, 0, time.UTC)},
 		modulehost.RetentionArchivePolicy{Key: "notification.history", Version: "one"},
 		"_notification_events", "event-one", []byte(`{"id":"event-one"}`))
 	if err != nil || created {

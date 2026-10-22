@@ -11,10 +11,12 @@ import (
 )
 
 var eventColumns = []string{
-	"id", "workspace_id", "source", "source_event_id", "status", "payload_json", "attempt_count",
+	"event_id", "workspace_id", "source", "source_event_id", "status", "payload_json", "attempt_count",
 	"next_attempt_at", "last_error_code", "lease_owner", "lease_expires_at", "fencing_token",
 	"occurred_at", "created_at", "updated_at",
 }
+
+var eventReadColumns = append([]string{"id"}, eventColumns...)
 
 // InsertEvent writes a compiled event through the caller's executor. Passing a
 // transaction preserves atomicity with Workflow, Record, Report, Automation,
@@ -24,7 +26,7 @@ func (s *Store) InsertEvent(ctx context.Context, executor sqlhost.Executor, even
 	if executor == nil {
 		return fmt.Errorf("notification event executor is required")
 	}
-	if event.WorkspaceID == "" || event.ID == "" {
+	if event.WorkspaceID == "" || event.EventID == "" {
 		return fmt.Errorf("notification event identity is required")
 	}
 	if err := s.queueScopes.Register(ctx, executor, notification.WorkInboxEvent, event.WorkspaceID, event.UpdatedAt); err != nil {
@@ -44,7 +46,7 @@ func (s *Store) InsertEvent(ctx context.Context, executor sqlhost.Executor, even
 
 func eventValues(event inbox.Event, raw string) []any {
 	return []any{
-		event.ID, event.WorkspaceID.String(), event.Source, event.SourceEventID, string(event.Status), raw, event.AttemptCount,
+		event.EventID, event.WorkspaceID.String(), event.Source, event.SourceEventID, string(event.Status), raw, event.AttemptCount,
 		notification.TimestampMillis(event.NextAttemptAt), event.LastErrorCode, event.LeaseOwner, notification.TimestampMillis(event.LeaseExpiresAt), event.FencingToken,
 		notification.TimestampMillis(event.OccurredAt), notification.TimestampMillis(event.CreatedAt), notification.TimestampMillis(event.UpdatedAt),
 	}

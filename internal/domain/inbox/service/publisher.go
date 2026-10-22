@@ -40,7 +40,7 @@ func (p *Publisher) PublishEvent(ctx context.Context, event Event) (Event, bool,
 		return Event{}, false, err
 	}
 	if created && p.notifier != nil {
-		p.notifier.Notify(ctx, notification.Work{Kind: notification.WorkInboxEvent, WorkspaceID: stored.WorkspaceID, TaskID: stored.ID})
+		p.notifier.Notify(ctx, notification.Work{Kind: notification.WorkInboxEvent, WorkspaceID: stored.WorkspaceID, TaskID: stored.EventID})
 	}
 	return stored, created, nil
 }

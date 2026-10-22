@@ -2,7 +2,6 @@ package template
 
 import (
 	"context"
-	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -11,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/domainry/domainry-foundation/entityid"
 	notification "github.com/domainry/domainry-notification/internal/domain/notification/model"
 )
 
@@ -317,11 +317,7 @@ func (p *PublicationProcessor) requireRequest(ctx context.Context, requestID str
 }
 
 func publicationRequestID() (string, error) {
-	value := make([]byte, 16)
-	if _, err := rand.Read(value); err != nil {
-		return "", err
-	}
-	return "ntpub_" + hex.EncodeToString(value), nil
+	return entityid.New("op")
 }
 
 func publicationStatusConflict(requestID string, cause error) error {

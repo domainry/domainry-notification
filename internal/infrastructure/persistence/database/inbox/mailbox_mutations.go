@@ -44,7 +44,7 @@ func (s *Store) updateInboxPersonalState(ctx context.Context, queryValue inbox.Q
 	if err != nil || !found {
 		return inbox.Item{}, found, err
 	}
-	predicate := query.And(mailboxAccessPredicate(queryValue), query.Equal("id", itemID))
+	predicate := query.And(mailboxAccessPredicate(queryValue), query.Equal("item_id", itemID))
 	statement, args, err := query.NewWorkspaceUpdateBuilder(s.Renderer, "_notification_inbox_items", queryValue.WorkspaceID.String()).Set(column, notification.TimestampMillis(value)).Set("updated_at", notification.TimestampMillis(updatedAt)).Where(predicate).Build()
 	if err != nil {
 		return inbox.Item{}, false, err
@@ -139,7 +139,7 @@ func (s *Store) AcknowledgeAlert(ctx context.Context, queryValue inbox.Query, it
 		if count != 1 {
 			return inbox.Item{}, false, mutation.MutationConflict("notification_alert_group", item.GroupKey, mutation.MutationConflictOptimistic, nil)
 		}
-		itemPredicate := query.And(query.Equal("recipient_user_id", item.RecipientUserID.String()), query.Equal("id", item.ID))
+		itemPredicate := query.And(query.Equal("recipient_user_id", item.RecipientUserID.String()), query.Equal("item_id", item.ItemID))
 		itemUpdate, itemArgs, buildErr := query.NewWorkspaceUpdateBuilder(s.Renderer, "_notification_inbox_items", item.WorkspaceID.String()).Set("alert_state", string(inbox.AlertAcknowledged)).Set("updated_at", acknowledgedAtMillis).Where(itemPredicate).Build()
 		if buildErr != nil {
 			return inbox.Item{}, false, buildErr

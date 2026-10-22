@@ -22,7 +22,7 @@ func (s *mailboxStore) ListItems(_ context.Context, query inbox.Query) ([]inbox.
 }
 func (s *mailboxStore) GetItem(_ context.Context, query inbox.Query, _ string) (inbox.Item, bool, error) {
 	s.query = query
-	return s.item, s.item.ID != "", nil
+	return s.item, s.item.ItemID != "", nil
 }
 func (s *mailboxStore) CountFacets(context.Context, inbox.Query) (inbox.Facets, error) {
 	return inbox.Facets{}, nil
@@ -76,7 +76,7 @@ func newMailboxManager(t *testing.T, mailboxes inbox.MailboxStore, delegations i
 }
 
 func TestMailboxManagerScopesPersonalMutationAndUsesUTC(t *testing.T) {
-	store := &mailboxStore{item: inbox.Item{ID: "item-1"}}
+	store := &mailboxStore{item: inbox.Item{ID: 1, ItemID: "item-1"}}
 	manager := newMailboxManager(t, store, nil)
 	query := inbox.Query{WorkspaceID: " workspace-1 ", ViewerUserID: " user-1 ", Scope: inbox.ScopeMine}
 	if _, err := manager.SetRead(t.Context(), query, "item-1", true); err != nil {
@@ -107,7 +107,7 @@ func TestMailboxManagerDelegationUsesStableIdentity(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if value.ID == "" || value.StartsAt != "2026-08-23T16:00:00.000000000Z" {
+	if value.DelegationID == "" || value.StartsAt != "2026-08-23T16:00:00.000000000Z" {
 		t.Fatalf("delegation=%+v", value)
 	}
 	if _, err := manager.SaveDelegation(t.Context(), inbox.Delegation{WorkspaceID: "workspace-1", OwnerUserID: "owner-1", DelegateUserID: "owner-1"}); notification.ErrorCode(err) != "backend.notification.inbox_delegation_invalid" {
@@ -131,7 +131,7 @@ func TestActionResolverReturnsSemanticRouteAndRejectsTeamActions(t *testing.T) {
 		t.Fatal(err)
 	}
 	resolver, err := inbox.NewActionResolver(itemReader{item: inbox.Item{
-		ID: "item-1", SubjectType: "ticket", ActionState: inbox.ActionOpen,
+		ID: 1, ItemID: "item-1", SubjectType: "ticket", ActionState: inbox.ActionOpen,
 		Actions:   []inbox.ActionRef{{Key: "workflow.task.open", Kind: "route", Label: "Open", ResourceType: "project_record", ResourceID: "record-1"}},
 		ExpiresAt: "2026-08-25T00:00:00Z",
 	}}, catalog, fixedClock{value: time.Date(2026, 8, 24, 0, 0, 0, 0, time.UTC)})

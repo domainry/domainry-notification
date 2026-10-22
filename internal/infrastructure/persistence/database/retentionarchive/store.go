@@ -57,7 +57,7 @@ func (s *Store) Archived(ctx context.Context, workspaceID, sourceTable, resource
 	if value.Owner != sharedartifact.OwnerLifecycle || value.Kind != "archive" || value.Status != sharedartifact.StatusAvailable {
 		return false, nil
 	}
-	bindings, err := s.artifacts.Bindings(ctx, workspaceID, value.ID)
+	bindings, err := s.artifacts.Bindings(ctx, workspaceID, value.ArtifactID)
 	if err != nil {
 		return false, err
 	}
@@ -74,10 +74,10 @@ func (s *Store) Archived(ctx context.Context, workspaceID, sourceTable, resource
 }
 
 func (s *Store) ArchivePayload(ctx context.Context, owner string, job modulehost.RetentionArchiveJob, policy modulehost.RetentionArchivePolicy, sourceTable, resourceID string, payload []byte) (created bool, err error) {
-	owner, job.ID, job.WorkspaceID = strings.TrimSpace(owner), strings.TrimSpace(job.ID), strings.TrimSpace(job.WorkspaceID)
+	owner, job.JobID, job.WorkspaceID = strings.TrimSpace(owner), strings.TrimSpace(job.JobID), strings.TrimSpace(job.WorkspaceID)
 	policy.Key, policy.Version = strings.TrimSpace(policy.Key), strings.TrimSpace(policy.Version)
 	sourceTable, resourceID = strings.TrimSpace(sourceTable), strings.TrimSpace(resourceID)
-	if s == nil || s.artifacts == nil || s.content == nil || owner == "" || job.ID == "" || job.WorkspaceID == "" || policy.Key == "" || policy.Version == "" || sourceTable == "" || resourceID == "" || len(payload) == 0 {
+	if s == nil || s.artifacts == nil || s.content == nil || owner == "" || job.JobID == "" || job.WorkspaceID == "" || policy.Key == "" || policy.Version == "" || sourceTable == "" || resourceID == "" || len(payload) == 0 {
 		return false, fmt.Errorf("shared Lifecycle archive payload command is invalid")
 	}
 	if exists, readErr := s.Archived(ctx, job.WorkspaceID, sourceTable, resourceID, policy.Key); readErr != nil || exists {
@@ -109,7 +109,7 @@ func (s *Store) ArchivePayload(ctx context.Context, owner string, job modulehost
 	}
 	metadata, err := json.Marshal(archiveArtifactMetadata{
 		Owner: owner, SourceTable: sourceTable, ResourceID: resourceID,
-		PolicyKey: policy.Key, PolicyVersion: policy.Version, JobID: job.ID,
+		PolicyKey: policy.Key, PolicyVersion: policy.Version, JobID: job.JobID,
 	})
 	if err != nil {
 		return false, err
@@ -119,7 +119,7 @@ func (s *Store) ArchivePayload(ctx context.Context, owner string, job modulehost
 		archivedAt = time.Now().UTC()
 	}
 	value := sharedartifact.Artifact{
-		ID: artifactID, WorkspaceID: job.WorkspaceID, Owner: sharedartifact.OwnerLifecycle, Kind: "archive", IdempotencyKey: artifactID,
+		ArtifactID: artifactID, WorkspaceID: job.WorkspaceID, Owner: sharedartifact.OwnerLifecycle, Kind: "archive", IdempotencyKey: artifactID,
 		CreatedBy: "notification_retention", Filename: artifactID + ".json", MediaType: "application/json",
 		ContentSHA256: content.SHA256, SizeBytes: content.Size, StorageReference: content.Reference,
 		Status: sharedartifact.StatusAvailable, ScanStatus: sharedartifact.ScanNotRequired, Metadata: metadata,
@@ -130,8 +130,8 @@ func (s *Store) ArchivePayload(ctx context.Context, owner string, job modulehost
 		return false, fmt.Errorf("register shared Lifecycle archive Artifact: %w", err)
 	}
 	jobBinding := sharedartifact.Binding{
-		ID: artifactID + ":job", WorkspaceID: job.WorkspaceID, ArtifactID: artifactID, Owner: sharedartifact.OwnerLifecycle,
-		Kind: sharedartifact.BindingJob, ResourceType: "lifecycle.cleanup_job", ResourceID: job.ID,
+		WorkspaceID: job.WorkspaceID, ArtifactID: artifactID, Owner: sharedartifact.OwnerLifecycle,
+		Kind: sharedartifact.BindingJob, ResourceType: "lifecycle.cleanup_job", ResourceID: job.JobID,
 		Metadata: json.RawMessage(`{}`), CreatedAt: archivedAt,
 	}
 	_, jobBindingCreated, err := s.artifacts.Bind(ctx, jobBinding)
@@ -139,7 +139,7 @@ func (s *Store) ArchivePayload(ctx context.Context, owner string, job modulehost
 		return false, fmt.Errorf("bind shared Lifecycle archive job Artifact: %w", err)
 	}
 	sourceBinding := sharedartifact.Binding{
-		ID: artifactID + ":source", WorkspaceID: job.WorkspaceID, ArtifactID: artifactID, Owner: sharedartifact.OwnerLifecycle,
+		WorkspaceID: job.WorkspaceID, ArtifactID: artifactID, Owner: sharedartifact.OwnerLifecycle,
 		Kind: sharedartifact.BindingObjectField, ResourceType: sourceTable, ResourceID: resourceID, FieldKey: policy.Key,
 		Metadata: json.RawMessage(`{}`), CreatedAt: archivedAt,
 	}

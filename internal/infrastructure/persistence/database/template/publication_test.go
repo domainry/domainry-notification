@@ -14,7 +14,7 @@ func TestTemplatePublicationRequestLockLeaseAndFencingLifecycle(t *testing.T) {
 		t.Fatal(err)
 	}
 	request := template.PublicationRequest{
-		ID: "request-1", TemplateKey: "workflow.failed", Snapshot: template.Template{Key: "workflow.failed", Version: 2},
+		ID: "op_00000000000000000000000000000001", TemplateKey: "workflow.failed", Snapshot: template.Template{Key: "workflow.failed", Version: 2},
 		CandidateHash: "hash-1", DraftUpdatedAt: "2026-08-24T00:59:00.000000000Z", Status: template.PublicationScheduled,
 		ScheduledFor: "2026-08-24T01:00:00.000000000Z", RequestedBy: "admin-1", RequestedAt: "2026-08-24T00:58:00.000000000Z",
 		UpdatedAt: "2026-08-24T00:58:00.000000000Z",
@@ -23,7 +23,7 @@ func TestTemplatePublicationRequestLockLeaseAndFencingLifecycle(t *testing.T) {
 		t.Fatal(err)
 	}
 	conflict := request
-	conflict.ID = "request-2"
+	conflict.ID = "op_00000000000000000000000000000002"
 	if err := store.CreatePublicationRequest(t.Context(), conflict); !errors.Is(err, template.ErrPublicationConflict) {
 		t.Fatalf("second open request err=%v", err)
 	}

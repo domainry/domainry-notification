@@ -12,10 +12,10 @@ import (
 
 func TestChannelPlanClaimAndRetryAreFenced(t *testing.T) {
 	db, store, _ := materializationStore(t)
-	plan := delivery.Plan{ID: "plan-1", WorkspaceID: "workspace-1", EventID: "event-1", Channel: "slack", Status: "queued",
+	plan := delivery.Plan{DeliveryID: "delivery_00000000000000000000000000000001", WorkspaceID: "workspace-1", EventID: "event-1", Channel: "slack", Status: "queued",
 		CreatedAt: "2026-08-24T01:00:00.000000000Z", UpdatedAt: "2026-08-24T01:00:00.000000000Z"}
 	insertPlan(t, db, plan)
-	claimed, found, err := store.ClaimPlan(t.Context(), plan.WorkspaceID, plan.ID, "worker-1", "2026-08-24T01:01:00.000000000Z", "2026-08-24T01:01:30.000000000Z")
+	claimed, found, err := store.ClaimPlan(t.Context(), plan.WorkspaceID, plan.DeliveryID, "worker-1", "2026-08-24T01:01:00.000000000Z", "2026-08-24T01:01:30.000000000Z")
 	if err != nil || !found || claimed.FencingToken != 1 || claimed.LeaseOwner != "worker-1" {
 		t.Fatalf("claimed=%+v found=%v err=%v", claimed, found, err)
 	}
@@ -23,10 +23,10 @@ func TestChannelPlanClaimAndRetryAreFenced(t *testing.T) {
 		t.Fatal(err)
 	}
 	var attemptKind, deliveryID, stage, disposition string
-	if err := db.QueryRow(`SELECT attempt_kind, delivery_id, stage, disposition FROM _notification_delivery_attempts WHERE workspace_id = ? AND event_id = ?`, plan.WorkspaceID.String(), plan.EventID).Scan(&attemptKind, &deliveryID, &stage, &disposition); err != nil || attemptKind != "channel" || deliveryID != plan.ID || stage != "channel_dispatch" || disposition != "retry_scheduled" {
+	if err := db.QueryRow(`SELECT attempt_kind, delivery_id, stage, disposition FROM _notification_delivery_attempts WHERE workspace_id = ? AND event_id = ?`, plan.WorkspaceID.String(), plan.EventID).Scan(&attemptKind, &deliveryID, &stage, &disposition); err != nil || attemptKind != "channel" || deliveryID != plan.DeliveryID || stage != "channel_dispatch" || disposition != "retry_scheduled" {
 		t.Fatalf("attempt kind=%q delivery=%q stage=%q disposition=%q err=%v", attemptKind, deliveryID, stage, disposition, err)
 	}
-	stored, found, err := store.GetPlan(t.Context(), plan.WorkspaceID, plan.ID)
+	stored, found, err := store.GetPlan(t.Context(), plan.WorkspaceID, plan.DeliveryID)
 	if err != nil || !found || stored.Status != "queued" || stored.AttemptCount != 1 || stored.LeaseOwner != "" {
 		t.Fatalf("stored=%+v found=%v err=%v", stored, found, err)
 	}
@@ -38,8 +38,8 @@ func TestChannelPlanClaimAndRetryAreFenced(t *testing.T) {
 func TestChannelPlanBatchRejectsCrossWorkspaceMutation(t *testing.T) {
 	_, store, _ := materializationStore(t)
 	err := store.CompletePlanBatch(t.Context(), []delivery.Plan{
-		{ID: "plan-1", WorkspaceID: "workspace-1"},
-		{ID: "plan-2", WorkspaceID: "workspace-2"},
+		{DeliveryID: "delivery_00000000000000000000000000000001", WorkspaceID: "workspace-1"},
+		{DeliveryID: "delivery_00000000000000000000000000000002", WorkspaceID: "workspace-2"},
 	}, "outbox-1", "2026-08-24T01:01:00.000000000Z")
 	if err == nil {
 		t.Fatal("expected cross-workspace batch rejection")
@@ -52,8 +52,8 @@ func insertPlan(t *testing.T, executor *sql.DB, plan delivery.Plan) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = executor.Exec(`INSERT INTO _notification_deliveries VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, plan.ID, plan.WorkspaceID.String(), "delivery", plan.EventID, "", plan.TemplateKey, plan.Channel, plan.DedupeKey,
-		plan.Status, string(raw), plan.AttemptCount, notification.TimestampMillis(plan.NextAttemptAt), plan.LastErrorCode, plan.OutboxMessageID, plan.LeaseOwner, notification.TimestampMillis(plan.LeaseExpiresAt), plan.FencingToken, notification.TimestampMillis(plan.CreatedAt), notification.TimestampMillis(plan.UpdatedAt))
+	_, err = executor.Exec(`INSERT INTO _notification_deliveries (delivery_id,workspace_id,event_id,channel,status,payload_json,attempt_count,next_attempt_at,last_error_code,outbox_message_id,lease_owner,lease_expires_at,fencing_token,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		plan.DeliveryID, plan.WorkspaceID.String(), plan.EventID, plan.Channel, plan.Status, string(raw), plan.AttemptCount, notification.TimestampMillis(plan.NextAttemptAt), plan.LastErrorCode, plan.OutboxMessageID, plan.LeaseOwner, notification.TimestampMillis(plan.LeaseExpiresAt), plan.FencingToken, notification.TimestampMillis(plan.CreatedAt), notification.TimestampMillis(plan.UpdatedAt))
 	if err != nil {
 		t.Fatal(err)
 	}

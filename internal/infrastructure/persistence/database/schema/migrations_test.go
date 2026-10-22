@@ -151,7 +151,9 @@ func TestBaseSchemaMatchesOwnershipAndRunsOnSQLite(t *testing.T) {
 		for index, column := range table.PrimaryKey {
 			quoted[index] = `"` + column + `"`
 		}
-		if primaryKey := "PRIMARY KEY (" + strings.Join(quoted, ", ") + ")"; !strings.Contains(statement, primaryKey) {
+		primaryKey := "PRIMARY KEY (" + strings.Join(quoted, ", ") + ")"
+		inlineAutoID := len(table.PrimaryKey) == 1 && table.PrimaryKey[0] == "id" && strings.Contains(statement, `"id" INTEGER PRIMARY KEY AUTOINCREMENT`)
+		if !inlineAutoID && !strings.Contains(statement, primaryKey) {
 			t.Fatalf("table %s primary key %v does not match DDL: %s", table.Name, table.PrimaryKey, statement)
 		}
 	}
@@ -221,7 +223,8 @@ func TestSchemaMigrationsRenderPhysicalNamesAndMySQLTypes(t *testing.T) {
 	joined := strings.Join(migrations[0].Statements, "\n")
 	for _, fragment := range []string{
 		"`tenant`.`domainry__notification_events`",
-		"PRIMARY KEY (`workspace_id`, `id`)",
+		"PRIMARY KEY (`id`)",
+		"`event_id` VARCHAR(191) NOT NULL",
 		"VARCHAR(191) CHARACTER SET ascii COLLATE ascii_bin",
 		"LONGTEXT",
 	} {
@@ -267,11 +270,11 @@ func TestApplicationSchemaMigrationsPersistExactOwnership(t *testing.T) {
 			}
 		}
 	}
-	if _, err := db.Exec(`INSERT INTO app_one__notification_events (id, workspace_id, source, source_event_id, status, payload_json, occurred_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, "event-one", scope.WorkspaceID, "test", "source-event-one", "pending", `{}`, int64(1), int64(1), int64(1)); err != nil {
+	if _, err := db.Exec(`INSERT INTO app_one__notification_events (event_id, workspace_id, source, source_event_id, status, payload_json, occurred_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, "event-one", scope.WorkspaceID, "test", "source-event-one", "pending", `{}`, int64(1), int64(1), int64(1)); err != nil {
 		t.Fatal(err)
 	}
 	var workspaceID, applicationKey string
-	if err := db.QueryRow(`SELECT workspace_id, application_key FROM app_one__notification_events WHERE id = ?`, "event-one").Scan(&workspaceID, &applicationKey); err != nil {
+	if err := db.QueryRow(`SELECT workspace_id, application_key FROM app_one__notification_events WHERE event_id = ?`, "event-one").Scan(&workspaceID, &applicationKey); err != nil {
 		t.Fatal(err)
 	}
 	if workspaceID != scope.WorkspaceID || applicationKey != scope.ApplicationKey {

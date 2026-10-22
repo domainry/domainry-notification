@@ -23,7 +23,7 @@ func inboxValidator(t *testing.T) *inbox.Validator {
 
 func validEvent() inbox.Event {
 	return inbox.Event{
-		ID: "event-1", WorkspaceID: "workspace-1", Source: "workflow", SourceEventID: "task-1:opened",
+		EventID: "event-1", WorkspaceID: "workspace-1", Source: "workflow", SourceEventID: "task-1:opened",
 		EventType: "workflow.task.opened", Category: "approval", Severity: "info",
 		RecipientUserIDs: []notification.UserID{" user-1 ", "user-1"}, ActionState: inbox.ActionOpen,
 		OccurredAt: time.Date(2026, 8, 24, 1, 2, 3, 0, time.FixedZone("offset", 8*60*60)).Format(time.RFC3339Nano),

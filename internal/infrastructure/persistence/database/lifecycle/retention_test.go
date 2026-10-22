@@ -15,7 +15,7 @@ func TestRetentionArchivesAndPurgesOnlyTerminalWorkspaceRows(t *testing.T) {
 	db, store, content := migratedStoreWithArtifactContent(t)
 	old := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC).UnixMilli()
 	for _, event := range []struct{ id, status string }{{"terminal", "materialized"}, {"active", "queued"}} {
-		if _, err := db.Exec(`INSERT INTO _notification_events (id, workspace_id, source, source_event_id, status, payload_json, occurred_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, event.id, "workspace-a", "test", event.id, event.status, `{}`, old, old, old); err != nil {
+		if _, err := db.Exec(`INSERT INTO _notification_events (event_id, workspace_id, source, source_event_id, status, payload_json, occurred_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, event.id, "workspace-a", "test", event.id, event.status, `{}`, old, old, old); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -35,7 +35,7 @@ func TestRetentionArchivesAndPurgesOnlyTerminalWorkspaceRows(t *testing.T) {
 	}
 	var artifactID, contentSHA256, storageReference, status, scanStatus, metadataJSON string
 	var sizeBytes int64
-	if err := db.QueryRow(`SELECT id, content_sha256, size_bytes, storage_reference, status, scan_status, metadata_json FROM _artifacts WHERE workspace_id = ? AND owner = 'lifecycle' AND kind = 'archive'`, "workspace-a").
+	if err := db.QueryRow(`SELECT artifact_id, content_sha256, size_bytes, storage_reference, status, scan_status, metadata_json FROM _artifacts WHERE workspace_id = ? AND owner = 'lifecycle' AND kind = 'archive'`, "workspace-a").
 		Scan(&artifactID, &contentSHA256, &sizeBytes, &storageReference, &status, &scanStatus, &metadataJSON); err != nil {
 		t.Fatal(err)
 	}
@@ -83,7 +83,7 @@ func TestRetentionArchivesAndPurgesOnlyTerminalWorkspaceRows(t *testing.T) {
 func TestRetentionLegalHoldFailsClosedForMatchingResource(t *testing.T) {
 	db, store := migratedStore(t)
 	old := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC).UnixMilli()
-	if _, err := db.Exec(`INSERT INTO _notification_events (id, workspace_id, source, source_event_id, status, payload_json, occurred_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, "held", "workspace-a", "test", "held", "failed", `{}`, old, old, old); err != nil {
+	if _, err := db.Exec(`INSERT INTO _notification_events (event_id, workspace_id, source, source_event_id, status, payload_json, occurred_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, "held", "workspace-a", "test", "held", "failed", `{}`, old, old, old); err != nil {
 		t.Fatal(err)
 	}
 	now := time.Date(2026, 8, 29, 1, 0, 0, 0, time.UTC)

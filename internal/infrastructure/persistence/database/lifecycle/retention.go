@@ -20,11 +20,11 @@ type retentionSpec struct {
 
 func (s *Store) retentionSpecs(policyKey string) []retentionSpec {
 	specs := []retentionSpec{
-		{policyKey: contract.NotificationRetentionHistoryPolicy, table: "_notification_inbox_items", idColumn: "id", workspaceColumn: "workspace_id", timeColumn: "updated_at", additionalPredicate: query.And(query.NotEqual("action_state", "open"), query.NotEqual("alert_state", "firing"))},
+		{policyKey: contract.NotificationRetentionHistoryPolicy, table: "_notification_inbox_items", idColumn: "item_id", workspaceColumn: "workspace_id", timeColumn: "updated_at", additionalPredicate: query.And(query.NotEqual("action_state", "open"), query.NotEqual("alert_state", "firing"))},
 		{policyKey: contract.NotificationRetentionHistoryPolicy, table: "_notification_alert_groups", idColumn: "last_event_id", workspaceColumn: "workspace_id", timeColumn: "updated_at", statusColumn: "state", eligibleStatuses: []string{"resolved"}},
-		{policyKey: contract.NotificationRetentionHistoryPolicy, table: "_notification_deliveries", idColumn: "id", workspaceColumn: "workspace_id", timeColumn: "updated_at", statusColumn: "status", eligibleStatuses: []string{"planned", "failed", "cancelled", "reserved"}},
-		{policyKey: contract.NotificationRetentionHistoryPolicy, table: "_notification_events", idColumn: "id", workspaceColumn: "workspace_id", timeColumn: "updated_at", statusColumn: "status", eligibleStatuses: []string{"materialized", "failed"}},
-		{policyKey: contract.NotificationRetentionHistoryPolicy, table: "_notification_delivery_attempts", idColumn: "id", workspaceColumn: "workspace_id", timeColumn: "occurred_at"},
+		{policyKey: contract.NotificationRetentionHistoryPolicy, table: "_notification_deliveries", idColumn: "delivery_id", workspaceColumn: "workspace_id", timeColumn: "updated_at", statusColumn: "status", eligibleStatuses: []string{"planned", "failed", "cancelled"}},
+		{policyKey: contract.NotificationRetentionHistoryPolicy, table: "_notification_events", idColumn: "event_id", workspaceColumn: "workspace_id", timeColumn: "updated_at", statusColumn: "status", eligibleStatuses: []string{"materialized", "failed"}},
+		{policyKey: contract.NotificationRetentionHistoryPolicy, table: "_notification_delivery_attempts", idColumn: "event_id", workspaceColumn: "workspace_id", timeColumn: "occurred_at"},
 	}
 	result := []retentionSpec{}
 	for _, spec := range specs {
@@ -292,7 +292,7 @@ func (s *Store) archiveRetentionCandidate(ctx context.Context, request contract.
 		return false, err
 	}
 	archived, err := s.archives.ArchivePayload(ctx, modulehost.RetentionArchiveOwnerNotification,
-		modulehost.RetentionArchiveJob{ID: request.JobID, WorkspaceID: request.WorkspaceID, ArchivedAt: request.Now},
+		modulehost.RetentionArchiveJob{JobID: request.JobID, WorkspaceID: request.WorkspaceID, ArchivedAt: request.Now},
 		modulehost.RetentionArchivePolicy{Key: request.Policy.Key, Version: request.Policy.Version},
 		spec.table, resourceID, raw)
 	if err != nil {

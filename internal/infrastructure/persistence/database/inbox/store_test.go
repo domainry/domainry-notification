@@ -68,18 +68,18 @@ func migratedStore(t *testing.T) (*sql.DB, *sqlstore.Store) {
 
 func claimedEvent() inbox.Event {
 	return inbox.Event{
-		ID: "event-1", WorkspaceID: "workspace-1", Source: "workflow", SourceEventID: "run-1", EventType: "workflow.run.failed",
+		EventID: "event-1", WorkspaceID: "workspace-1", Source: "workflow", SourceEventID: "run-1", EventType: "workflow.run.failed",
 		Category: "workflow", Severity: "error", GroupKey: "run-1", AlertState: inbox.AlertFiring,
 		Status: inbox.EventProcessing, LeaseOwner: "worker-1", FencingToken: 3, OccurredAt: "2026-08-24T01:00:00.000000000Z",
 		CreatedAt: "2026-08-24T01:00:00.000000000Z", UpdatedAt: "2026-08-24T01:00:00.000000000Z",
-		ChannelPlans: []delivery.Plan{{ID: "plan-1", WorkspaceID: "workspace-1", EventID: "event-1", Channel: "slack", Status: "queued", CreatedAt: "2026-08-24T01:00:00.000000000Z", UpdatedAt: "2026-08-24T01:00:00.000000000Z"}},
+		ChannelPlans: []delivery.Plan{{DeliveryID: "plan-1", WorkspaceID: "workspace-1", EventID: "event-1", Channel: "slack", Status: "queued", CreatedAt: "2026-08-24T01:00:00.000000000Z", UpdatedAt: "2026-08-24T01:00:00.000000000Z"}},
 	}
 }
 
 func insertClaimedEvent(t *testing.T, database *sql.DB, event inbox.Event) {
 	t.Helper()
 	raw := `{"id":"event-1"}`
-	_, err := database.Exec(`INSERT INTO _notification_events VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, event.ID, event.WorkspaceID, event.Source, event.SourceEventID, event.Status, raw, 0, "", "", event.LeaseOwner, "", event.FencingToken, event.OccurredAt, event.CreatedAt, event.UpdatedAt)
+	_, err := database.Exec(`INSERT INTO _notification_events (event_id,workspace_id,source,source_event_id,status,payload_json,attempt_count,next_attempt_at,last_error_code,lease_owner,lease_expires_at,fencing_token,occurred_at,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, event.EventID, event.WorkspaceID, event.Source, event.SourceEventID, event.Status, raw, 0, 0, "", event.LeaseOwner, 0, event.FencingToken, notification.TimestampMillis(event.OccurredAt), notification.TimestampMillis(event.CreatedAt), notification.TimestampMillis(event.UpdatedAt))
 	if err != nil {
 		t.Fatal(err)
 	}

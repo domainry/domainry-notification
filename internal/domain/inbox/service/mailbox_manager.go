@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"strconv"
 	"strings"
 
+	"github.com/domainry/domainry-foundation/entityid"
 	notification "github.com/domainry/domainry-notification/internal/domain/notification/model"
 )
 
@@ -218,8 +220,11 @@ func (m *MailboxManager) SaveDelegation(ctx context.Context, value Delegation) (
 	if value, err = m.validateDelegation(value); err != nil {
 		return value, err
 	}
-	if strings.TrimSpace(value.ID) == "" {
-		value.ID = stableID(value.WorkspaceID.String(), value.OwnerUserID.String(), value.DelegateUserID.String())
+	if strings.TrimSpace(value.DelegationID) == "" {
+		value.DelegationID, err = entityid.New("deleg")
+		if err != nil {
+			return value, err
+		}
 	}
 	now := notification.Timestamp(m.clock.Now().UTC())
 	if value.CreatedAt == "" {
@@ -303,19 +308,23 @@ func mailboxMutationResult(value Item, found bool, err error, id string) (Item, 
 	return value, nil
 }
 
-func encodeCursor(updatedAt, id string) string {
-	raw, _ := json.Marshal([]string{updatedAt, id})
+func encodeCursor(updatedAt string, id int64) string {
+	raw, _ := json.Marshal([]string{updatedAt, strconv.FormatInt(id, 10)})
 	return base64.RawURLEncoding.EncodeToString(raw)
 }
 
-func decodeCursor(value string) (string, string, error) {
+func decodeCursor(value string) (string, int64, error) {
 	raw, err := base64.RawURLEncoding.DecodeString(strings.TrimSpace(value))
 	if err != nil {
-		return "", "", invalid("backend.notification.inbox_cursor_invalid")
+		return "", 0, invalid("backend.notification.inbox_cursor_invalid")
 	}
 	var parts []string
 	if json.Unmarshal(raw, &parts) != nil || len(parts) != 2 || strings.TrimSpace(parts[0]) == "" || strings.TrimSpace(parts[1]) == "" {
-		return "", "", invalid("backend.notification.inbox_cursor_invalid")
+		return "", 0, invalid("backend.notification.inbox_cursor_invalid")
 	}
-	return parts[0], parts[1], nil
+	id, err := strconv.ParseInt(parts[1], 10, 64)
+	if err != nil || id <= 0 {
+		return "", 0, invalid("backend.notification.inbox_cursor_invalid")
+	}
+	return parts[0], id, nil
 }

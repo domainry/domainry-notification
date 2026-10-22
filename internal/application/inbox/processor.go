@@ -2,11 +2,14 @@ package inbox
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"strings"
 	"time"
 
+	"github.com/domainry/domainry-foundation/entityid"
 	"github.com/domainry/domainry-foundation/logging"
 	"github.com/domainry/domainry-foundation/worker"
 	notification "github.com/domainry/domainry-notification/internal/domain/notification/model"
@@ -69,7 +72,7 @@ func (p *Processor) ProcessDue(ctx context.Context, limit int) (int, error) {
 	}
 	processed := 0
 	for _, event := range events {
-		completed, processErr := p.processAt(ctx, event.WorkspaceID, event.ID, now)
+		completed, processErr := p.processAt(ctx, event.WorkspaceID, event.EventID, now)
 		if processErr != nil {
 			return processed, processErr
 		}
@@ -128,14 +131,18 @@ func (p *Processor) materialize(ctx context.Context, event Event) error {
 				return err
 			}
 		}
-		items = append(items, itemFromEvent(event, recipient, locale))
+		item, err := itemFromEvent(event, recipient, locale)
+		if err != nil {
+			return err
+		}
+		items = append(items, item)
 	}
 	if err := p.events.Materialize(ctx, event, items); err != nil {
 		return err
 	}
 	if p.notifier != nil {
 		for _, plan := range event.ChannelPlans {
-			p.notifier.Notify(ctx, notification.Work{Kind: notification.WorkChannelPlan, WorkspaceID: plan.WorkspaceID, TaskID: plan.ID})
+			p.notifier.Notify(ctx, notification.Work{Kind: notification.WorkChannelPlan, WorkspaceID: plan.WorkspaceID, TaskID: plan.DeliveryID})
 		}
 	}
 	return nil
@@ -168,7 +175,7 @@ func logInboxTransition(ctx context.Context, cause error, event Event, stage str
 	fields := logging.ErrorFields(cause, logging.Failure{Stage: stage, Retryable: retryable})
 	fields = append(fields,
 		zap.String("task_kind", "notification_inbox"),
-		zap.String("task_id", event.ID),
+		zap.String("task_id", event.EventID),
 		zap.Int("attempt", attempt),
 		zap.Int("max_attempts", maximumAttempts),
 		zap.String("outcome", outcome),
@@ -181,22 +188,35 @@ func logInboxTransition(ctx context.Context, cause error, event Event, stage str
 	logger.Error("notification_inbox_dead_lettered", fields...)
 }
 
-func itemFromEvent(event Event, recipient notification.UserID, locale string) Item {
-	identity := event.ID
+func itemFromEvent(event Event, recipient notification.UserID, locale string) (Item, error) {
+	itemID, err := entityid.New("inbox")
+	if err != nil {
+		return Item{}, err
+	}
+	identity := event.EventID
 	if event.GroupKey != "" {
 		identity = "group:" + event.GroupKey
 	}
 	snapshot := snapshotForLocale(event, locale)
 	return Item{
-		ID: stableID(event.WorkspaceID.String(), recipient.String(), identity), WorkspaceID: event.WorkspaceID, RecipientUserID: recipient,
-		EventID: event.ID, EventType: event.EventType, Source: event.Source, Category: event.Category, Severity: event.Severity,
+		ItemID: itemID, ItemKey: inboxItemKey(event.WorkspaceID.String(), recipient.String(), identity), WorkspaceID: event.WorkspaceID, RecipientUserID: recipient,
+		EventID: event.EventID, EventType: event.EventType, Source: event.Source, Category: event.Category, Severity: event.Severity,
 		Title: snapshot.Title, Body: snapshot.Body, Facts: append([]template.Fact(nil), snapshot.Facts...), Actions: append([]ActionRef(nil), snapshot.Actions...),
 		TemplateKey: snapshot.TemplateKey, TemplateVersion: snapshot.TemplateVersion, TemplateLocale: snapshot.TemplateLocale, TemplateContentHash: snapshot.TemplateContentHash,
 		SubjectType: event.SubjectType, SubjectID: event.SubjectID, SubjectVersion: event.SubjectVersion,
 		ActionState: event.ActionState, AlertState: event.AlertState, GroupKey: event.GroupKey, OccurrenceCount: 1,
 		FirstOccurredAt: event.OccurredAt, LastOccurredAt: event.OccurredAt, ExpiresAt: event.ExpiresAt,
 		CreatedAt: event.CreatedAt, UpdatedAt: event.UpdatedAt,
+	}, nil
+}
+
+func inboxItemKey(parts ...string) string {
+	hash := sha256.New()
+	for _, part := range parts {
+		_, _ = hash.Write([]byte(strings.TrimSpace(part)))
+		_, _ = hash.Write([]byte{0})
 	}
+	return "notifkey_" + hex.EncodeToString(hash.Sum(nil)[:16])
 }
 
 func snapshotForLocale(event Event, requested string) Snapshot {

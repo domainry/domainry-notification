@@ -69,7 +69,7 @@ func TestModuleToSaaSCutoverPreservesStateAndMovesTheOnlyWriter(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	intent := contract.NotificationIntent{ID: "event-one", WorkspaceID: "workspace", SourceEventID: "report:one", EventType: "report.completed", RecipientUserIDs: []string{"user"}, OccurredAt: "2026-08-29T03:00:00Z", SubjectType: "report", SubjectID: "one", SubjectVersion: "1"}
+	intent := contract.NotificationIntent{WorkspaceID: "workspace", SourceEventID: "report:one", EventType: "report.completed", RecipientUserIDs: []string{"user"}, OccurredAt: "2026-08-29T03:00:00Z", SubjectType: "report", SubjectID: "one", SubjectVersion: "1"}
 	sourceEvent, created, err := source.Publisher().PublishIntent(t.Context(), intent)
 	if err != nil || !created {
 		t.Fatalf("source event=%+v created=%v err=%v", sourceEvent, created, err)
@@ -112,7 +112,7 @@ func TestModuleToSaaSCutoverPreservesStateAndMovesTheOnlyWriter(t *testing.T) {
 	if err != nil || created || duplicate.ID != sourceEvent.ID {
 		t.Fatalf("target duplicate=%+v created=%v err=%v", duplicate, created, err)
 	}
-	intent.ID, intent.SourceEventID, intent.SubjectID = "event-two", "report:two", "two"
+	intent.SourceEventID, intent.SubjectID = "report:two", "two"
 	if _, created, err := target.Publisher().PublishIntent(t.Context(), intent); err != nil || !created {
 		t.Fatalf("target new publication created=%v err=%v", created, err)
 	}

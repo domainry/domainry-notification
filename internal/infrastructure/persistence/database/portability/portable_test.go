@@ -44,7 +44,7 @@ func TestPortableMigrationFiltersWorkspaceImportsOwnershipAndReconciles(t *testi
 		t.Fatalf("repeated=%+v err=%v", repeated, err)
 	}
 	var applicationKey, workspaceID string
-	if err := target.QueryRow(`SELECT application_key, workspace_id FROM application__notification_events WHERE id = ?`, "event-one").Scan(&applicationKey, &workspaceID); err != nil {
+	if err := target.QueryRow(`SELECT application_key, workspace_id FROM application__notification_events WHERE event_id = ?`, "event-one").Scan(&applicationKey, &workspaceID); err != nil {
 		t.Fatal(err)
 	}
 	if applicationKey != scope.ApplicationKey || workspaceID != scope.WorkspaceID {
@@ -100,7 +100,7 @@ func TestPortableMigrationReconcilesEachWorkspaceWithoutCrossContamination(t *te
 				t.Fatalf("receipt=%+v inventory=%+v", receipt, inventory)
 			}
 			var importedWorkspace, importedEvent string
-			if err := target.QueryRow(`SELECT workspace_id,id FROM application__notification_events`).Scan(&importedWorkspace, &importedEvent); err != nil {
+			if err := target.QueryRow(`SELECT workspace_id,event_id FROM application__notification_events`).Scan(&importedWorkspace, &importedEvent); err != nil {
 				t.Fatal(err)
 			}
 			if importedWorkspace != workspaceID || importedEvent != "event-"+workspaceID[len("workspace-"):] {
@@ -150,7 +150,7 @@ func applyPortableMigrations(t *testing.T, database *sql.DB, migrations []Schema
 
 func insertPortableEvent(t *testing.T, database *sql.DB, workspaceID, id, sourceEventID, leaseOwner string) {
 	t.Helper()
-	if _, err := database.Exec(`INSERT INTO _notification_events (id, workspace_id, source, source_event_id, status, payload_json, lease_owner, occurred_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, id, workspaceID, "test", sourceEventID, "queued", `{}`, leaseOwner, int64(1), int64(1), int64(1)); err != nil {
+	if _, err := database.Exec(`INSERT INTO _notification_events (event_id, workspace_id, source, source_event_id, status, payload_json, lease_owner, occurred_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, id, workspaceID, "test", sourceEventID, "queued", `{}`, leaseOwner, int64(1), int64(1), int64(1)); err != nil {
 		t.Fatal(err)
 	}
 }

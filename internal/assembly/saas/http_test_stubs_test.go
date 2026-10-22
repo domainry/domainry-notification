@@ -38,5 +38,5 @@ func (b *httpBindingStub) Close(context.Context) error { b.closed++; return nil 
 type httpPublisherStub struct{}
 
 func (*httpPublisherStub) PublishIntent(context.Context, contract.NotificationIntent) (contract.NotificationEvent, bool, error) {
-	return contract.NotificationEvent{ID: "remote-event"}, true, nil
+	return contract.NotificationEvent{EventID: "remote-event"}, true, nil
 }

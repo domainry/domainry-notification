@@ -47,12 +47,12 @@ func TestRemoteFactoryAndPublisherUseServerWireContract(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	intent := contract.NotificationIntent{ID: "request-a", WorkspaceID: "workspace-a", SourceEventID: "record-a:created", EventType: "record.created", RecipientUserIDs: []string{"user-a"}, OccurredAt: "2026-08-28T00:00:00Z"}
+	intent := contract.NotificationIntent{WorkspaceID: "workspace-a", SourceEventID: "record-a:created", EventType: "record.created", RecipientUserIDs: []string{"user-a"}, OccurredAt: "2026-08-28T00:00:00Z"}
 	event, created, err := binding.Publisher().PublishIntent(t.Context(), intent)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !created || event.ID != "remote-event" || publisher.intent.ID != intent.ID || authenticator.request.Credential != "service-token" || authenticator.request.Application != application || authenticator.request.Grant.Resource != "notification_event" || authenticator.request.Grant.Action != "publish" {
+	if !created || event.EventID != "remote-event" || publisher.intent.SourceEventID != intent.SourceEventID || authenticator.request.Credential != "service-token" || authenticator.request.Application != application || authenticator.request.Grant.Resource != "notification_event" || authenticator.request.Grant.Action != "publish" {
 		t.Fatalf("created=%v event=%+v published=%+v auth=%+v", created, event, publisher.intent, authenticator.request)
 	}
 }
@@ -100,7 +100,7 @@ type httpPublisherStub struct{ intent contract.NotificationIntent }
 
 func (p *httpPublisherStub) PublishIntent(_ context.Context, intent contract.NotificationIntent) (contract.NotificationEvent, bool, error) {
 	p.intent = intent
-	return contract.NotificationEvent{ID: "remote-event"}, true, nil
+	return contract.NotificationEvent{EventID: "remote-event"}, true, nil
 }
 
 type httpSystemTemplatesStub struct {
@@ -292,7 +292,7 @@ func TestHandlerAuthenticatesAndPublishesScopedIntent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	intent := contract.NotificationIntent{ID: "request-a", WorkspaceID: "workspace-a", SourceEventID: "record-a:created", EventType: "record.created", OccurredAt: "2026-08-28T00:00:00Z"}
+	intent := contract.NotificationIntent{WorkspaceID: "workspace-a", SourceEventID: "record-a:created", EventType: "record.created", OccurredAt: "2026-08-28T00:00:00Z"}
 	body, _ := json.Marshal(intent)
 	request := httptest.NewRequest(http.MethodPost, "/notification/v1/events:publish", bytes.NewReader(body))
 	request.Header.Set("X-Domainry-Service-Credential", "service-token")
@@ -301,7 +301,7 @@ func TestHandlerAuthenticatesAndPublishesScopedIntent(t *testing.T) {
 	request.Header.Set("X-Domainry-Application-Key", "runtime-a")
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, request)
-	if response.Code != http.StatusOK || publisher.intent.ID != intent.ID {
+	if response.Code != http.StatusOK || publisher.intent.SourceEventID != intent.SourceEventID {
 		t.Fatalf("status=%d body=%s intent=%+v", response.Code, response.Body.String(), publisher.intent)
 	}
 	application := notificationsdk.ApplicationRef{WorkspaceID: "workspace-a", ApplicationKey: "runtime-a"}
@@ -313,7 +313,7 @@ func TestHandlerAuthenticatesAndPublishesScopedIntent(t *testing.T) {
 func TestHandlerRejectsWorkspacePayloadMismatchBeforePublication(t *testing.T) {
 	publisher := &httpPublisherStub{}
 	handler, _ := NewHandler(&serviceAuthenticationStub{}, &bindingResolverStub{binding: &httpBindingStub{publisher: publisher}})
-	intent := contract.NotificationIntent{ID: "request-a", WorkspaceID: "workspace-b", SourceEventID: "record-a:created", EventType: "record.created", OccurredAt: "2026-08-28T00:00:00Z"}
+	intent := contract.NotificationIntent{WorkspaceID: "workspace-b", SourceEventID: "record-a:created", EventType: "record.created", OccurredAt: "2026-08-28T00:00:00Z"}
 	body, _ := json.Marshal(intent)
 	request := httptest.NewRequest(http.MethodPost, "/notification/v1/events:publish", bytes.NewReader(body))
 	request.Header.Set("X-Domainry-Service-Credential", "service-token")
@@ -322,7 +322,7 @@ func TestHandlerRejectsWorkspacePayloadMismatchBeforePublication(t *testing.T) {
 	request.Header.Set("X-Domainry-Application-Key", "runtime-a")
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, request)
-	if response.Code != http.StatusForbidden || publisher.intent.ID != "" {
+	if response.Code != http.StatusForbidden || publisher.intent.SourceEventID != "" {
 		t.Fatalf("status=%d body=%s published=%+v", response.Code, response.Body.String(), publisher.intent)
 	}
 }

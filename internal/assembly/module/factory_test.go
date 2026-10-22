@@ -251,7 +251,7 @@ func TestModuleSystemMigrationExportsAndIdempotentlyReconcilesExactApplication(t
 	}
 	const snapshotPayload = `{"recipient_user_ids":["user"],"snapshot":{"title":"Frozen title","body":"Frozen body","template_key":"report.completed","template_version":7,"template_content_hash":"sha256"}}`
 	storedAt := time.Date(2026, 8, 29, 1, 0, 0, 0, time.UTC).UnixMilli()
-	if _, err := host.database.Exec(`INSERT INTO _notification_events (id, workspace_id, source, source_event_id, status, payload_json, lease_owner, occurred_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, "leased-event", "workspace", "test", "source", "processing", snapshotPayload, "worker", storedAt, storedAt, storedAt); err != nil {
+	if _, err := host.database.Exec(`INSERT INTO _notification_events (event_id, workspace_id, source, source_event_id, status, payload_json, lease_owner, occurred_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, "leased-event", "workspace", "test", "source", "processing", snapshotPayload, "worker", storedAt, storedAt, storedAt); err != nil {
 		t.Fatal(err)
 	}
 	command := contract.NotificationMigrationCommand{MigrationID: "migration", At: time.Date(2026, 8, 29, 2, 0, 0, 0, time.UTC)}
@@ -348,14 +348,14 @@ func TestModuleSystemMigrationExportsAndIdempotentlyReconcilesExactApplication(t
 	if _, err := migration.SystemMigration().Export(t.Context()); err == nil {
 		t.Fatal("source exported while an active lease remained")
 	}
-	if _, err := host.database.Exec(`UPDATE _notification_events SET lease_owner = '' WHERE id = ?`, "leased-event"); err != nil {
+	if _, err := host.database.Exec(`UPDATE _notification_events SET lease_owner = '' WHERE event_id = ?`, "leased-event"); err != nil {
 		t.Fatal(err)
 	}
 	exported, err := migration.SystemMigration().Export(t.Context())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if exported.Bundle.Source != (contract.NotificationPortableScope{WorkspaceID: "workspace", ApplicationKey: "runtime"}) || exported.Bundle.Fingerprint == "" || len(exported.Bundle.Tables) != 7 {
+	if exported.Bundle.Source != (contract.NotificationPortableScope{WorkspaceID: "workspace", ApplicationKey: "runtime"}) || exported.Bundle.Fingerprint == "" || len(exported.Bundle.Tables) != 8 {
 		t.Fatalf("export=%+v", exported)
 	}
 	if status, err := migration.SystemMigration().Status(t.Context()); err != nil || status.BundleFingerprint != exported.Bundle.Fingerprint || status.ActiveLeases != 0 {
@@ -376,7 +376,7 @@ func TestModuleSystemMigrationExportsAndIdempotentlyReconcilesExactApplication(t
 		t.Fatalf("repeated receipt=%+v err=%v", repeated, err)
 	}
 	var importedSnapshot string
-	if err := targetHost.database.QueryRow(`SELECT payload_json FROM _notification_events WHERE workspace_id = ? AND id = ?`, "workspace", "leased-event").Scan(&importedSnapshot); err != nil {
+	if err := targetHost.database.QueryRow(`SELECT payload_json FROM _notification_events WHERE workspace_id = ? AND event_id = ?`, "workspace", "leased-event").Scan(&importedSnapshot); err != nil {
 		t.Fatal(err)
 	}
 	if importedSnapshot != snapshotPayload {

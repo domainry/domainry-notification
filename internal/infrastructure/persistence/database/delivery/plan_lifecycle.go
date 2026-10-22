@@ -2,9 +2,7 @@ package deliverystore
 
 import (
 	"context"
-	"crypto/sha256"
 	"database/sql"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"sort"
@@ -61,7 +59,7 @@ func (s *Store) listDuePlansForWorkspace(ctx context.Context, workspaceID notifi
 		query.And(query.Equal("status", "queued"), query.Or(query.Equal("next_attempt_at", int64(0)), query.LessThanOrEqual("next_attempt_at", nowMillis))),
 		query.And(query.Equal("status", "processing"), query.LessThanOrEqual("lease_expires_at", nowMillis)),
 	)
-	queryValue, args, err := query.NewWorkspaceSelectBuilder(s.Renderer, notificationDeliveriesTable, workspaceID.String()).Columns(channelPlanColumns...).Where(query.And(query.Equal("row_kind", deliveryRowKind), due)).OrderBy(query.Ascending("created_at")).Limit(limit).Build()
+	queryValue, args, err := query.NewWorkspaceSelectBuilder(s.Renderer, notificationDeliveriesTable, workspaceID.String()).Columns(channelPlanColumns...).Where(due).OrderBy(query.Ascending("id")).Limit(limit).Build()
 	if err != nil {
 		return nil, err
 	}
@@ -89,7 +87,7 @@ func (s *Store) ClaimPlan(ctx context.Context, workspaceID notification.Workspac
 	ctx = s.workspaceScope.Context(ctx, workspaceID)
 	nowMillis, expiresAtMillis := notification.TimestampMillis(now), notification.TimestampMillis(expiresAt)
 	due := query.Or(query.And(query.Equal("status", "queued"), query.Or(query.Equal("next_attempt_at", int64(0)), query.LessThanOrEqual("next_attempt_at", nowMillis))), query.And(query.Equal("status", "processing"), query.LessThanOrEqual("lease_expires_at", nowMillis)))
-	queryValue, args, err := query.NewWorkspaceUpdateBuilder(s.Renderer, notificationDeliveriesTable, workspaceID.String()).Set("status", "processing").Set("lease_owner", owner).Set("lease_expires_at", expiresAtMillis).SetExpression("fencing_token", query.Add(query.Column("fencing_token"), query.Value(1))).Set("updated_at", nowMillis).Where(query.And(query.Equal("id", planID), query.Equal("row_kind", deliveryRowKind), due)).Build()
+	queryValue, args, err := query.NewWorkspaceUpdateBuilder(s.Renderer, notificationDeliveriesTable, workspaceID.String()).Set("status", "processing").Set("lease_owner", owner).Set("lease_expires_at", expiresAtMillis).SetExpression("fencing_token", query.Add(query.Column("fencing_token"), query.Value(1))).Set("updated_at", nowMillis).Where(query.And(query.Equal("delivery_id", planID), due)).Build()
 	if err != nil {
 		return delivery.Plan{}, false, err
 	}
@@ -171,9 +169,9 @@ func (s *Store) transitionPlanFailure(ctx context.Context, plan delivery.Plan, s
 	if err := s.transitionPlanWith(ctx, tx, plan, status, 1, errorCode, "", nextAttemptAt, updatedAt); err != nil {
 		return err
 	}
-	columns := []string{"id", "workspace_id", "attempt_kind", "event_id", "delivery_id", "event_type", "source", "source_event_id", "channel", "stage", "error_code", "attempt", "disposition", "retryable", "next_attempt_at", "fencing_token", "occurred_at"}
+	columns := []string{"workspace_id", "attempt_kind", "event_id", "delivery_id", "event_type", "source", "source_event_id", "channel", "stage", "error_code", "attempt", "disposition", "retryable", "next_attempt_at", "fencing_token", "occurred_at"}
 	_, err = s.WorkspaceInsert(ctx, tx, plan.WorkspaceID.String(), "_notification_delivery_attempts", columns,
-		deliveryAttemptID(plan), plan.WorkspaceID.String(), "channel", plan.EventID, plan.ID, "", "", "", plan.Channel, "channel_dispatch",
+		plan.WorkspaceID.String(), "channel", plan.EventID, plan.DeliveryID, "", "", "", plan.Channel, "channel_dispatch",
 		strings.TrimSpace(errorCode), plan.AttemptCount+1, disposition, retryable, notification.TimestampMillis(nextAttemptAt), plan.FencingToken, notification.TimestampMillis(updatedAt))
 	if err != nil {
 		return fmt.Errorf("record notification channel delivery attempt: %w", err)
@@ -186,7 +184,7 @@ func (s *Store) transitionPlanWith(ctx context.Context, executor sqlhost.Executo
 	if errorCode != "" && !failureCodePattern.MatchString(errorCode) {
 		return fmt.Errorf("notification channel plan error code is invalid")
 	}
-	queryValue, args, err := query.NewWorkspaceUpdateBuilder(s.Renderer, notificationDeliveriesTable, plan.WorkspaceID.String()).Set("status", status).SetExpression("attempt_count", query.Add(query.Column("attempt_count"), query.Value(attemptIncrement))).Set("next_attempt_at", notification.TimestampMillis(nextAttemptAt)).Set("last_error_code", errorCode).Set("outbox_message_id", outboxMessageID).Set("lease_owner", "").Set("lease_expires_at", int64(0)).Set("updated_at", notification.TimestampMillis(updatedAt)).Where(query.And(query.Equal("id", plan.ID), query.Equal("row_kind", deliveryRowKind), query.Equal("status", "processing"), query.Equal("lease_owner", plan.LeaseOwner), query.Equal("fencing_token", plan.FencingToken))).Build()
+	queryValue, args, err := query.NewWorkspaceUpdateBuilder(s.Renderer, notificationDeliveriesTable, plan.WorkspaceID.String()).Set("status", status).SetExpression("attempt_count", query.Add(query.Column("attempt_count"), query.Value(attemptIncrement))).Set("next_attempt_at", notification.TimestampMillis(nextAttemptAt)).Set("last_error_code", errorCode).Set("outbox_message_id", outboxMessageID).Set("lease_owner", "").Set("lease_expires_at", int64(0)).Set("updated_at", notification.TimestampMillis(updatedAt)).Where(query.And(query.Equal("delivery_id", plan.DeliveryID), query.Equal("status", "processing"), query.Equal("lease_owner", plan.LeaseOwner), query.Equal("fencing_token", plan.FencingToken))).Build()
 	if err != nil {
 		return err
 	}
@@ -199,13 +197,13 @@ func (s *Store) transitionPlanWith(ctx context.Context, executor sqlhost.Executo
 		return err
 	}
 	if count != 1 {
-		return mutation.MutationConflict("notification_channel_plan", plan.ID, mutation.MutationConflictLeaseLost, nil)
+		return mutation.MutationConflict("notification_channel_plan", plan.DeliveryID, mutation.MutationConflictLeaseLost, nil)
 	}
 	return nil
 }
 
 func (s *Store) planByID(ctx context.Context, workspaceID notification.WorkspaceID, planID string) (delivery.Plan, bool, error) {
-	queryValue, args, err := query.NewWorkspaceSelectBuilder(s.Renderer, notificationDeliveriesTable, workspaceID.String()).Columns(channelPlanColumns...).Where(query.And(query.Equal("id", planID), query.Equal("row_kind", deliveryRowKind))).Build()
+	queryValue, args, err := query.NewWorkspaceSelectBuilder(s.Renderer, notificationDeliveriesTable, workspaceID.String()).Columns(channelPlanColumns...).Where(query.Equal("delivery_id", planID)).Build()
 	if err != nil {
 		return delivery.Plan{}, false, err
 	}
@@ -218,24 +216,20 @@ func (s *Store) planByID(ctx context.Context, workspaceID notification.Workspace
 
 func scanPlan(row scanner) (delivery.Plan, error) {
 	var plan delivery.Plan
-	var id, workspaceID, eventID, channel, status, raw, lastErrorCode, outboxMessageID, leaseOwner string
+	var physicalID int64
+	var deliveryID, workspaceID, eventID, channel, status, raw, lastErrorCode, outboxMessageID, leaseOwner string
 	var nextAttemptAt, leaseExpiresAt, createdAt, updatedAt int64
 	var attemptCount int
 	var fencingToken int64
-	if err := row.Scan(&id, &workspaceID, &eventID, &channel, &status, &raw, &attemptCount, &nextAttemptAt, &lastErrorCode, &outboxMessageID, &leaseOwner, &leaseExpiresAt, &fencingToken, &createdAt, &updatedAt); err != nil {
+	if err := row.Scan(&physicalID, &deliveryID, &workspaceID, &eventID, &channel, &status, &raw, &attemptCount, &nextAttemptAt, &lastErrorCode, &outboxMessageID, &leaseOwner, &leaseExpiresAt, &fencingToken, &createdAt, &updatedAt); err != nil {
 		return plan, err
 	}
 	if err := timejson.Unmarshal([]byte(raw), &plan); err != nil {
 		return plan, fmt.Errorf("decode notification channel plan: %w", err)
 	}
-	plan.ID, plan.WorkspaceID, plan.EventID, plan.Channel, plan.Status = id, notification.WorkspaceID(workspaceID), eventID, channel, status
+	plan.ID, plan.DeliveryID, plan.WorkspaceID, plan.EventID, plan.Channel, plan.Status = physicalID, deliveryID, notification.WorkspaceID(workspaceID), eventID, channel, status
 	plan.AttemptCount, plan.NextAttemptAt, plan.LastErrorCode, plan.OutboxMessageID = attemptCount, notification.MillisTimestamp(nextAttemptAt), lastErrorCode, outboxMessageID
 	plan.LeaseOwner, plan.LeaseExpiresAt, plan.FencingToken = leaseOwner, notification.MillisTimestamp(leaseExpiresAt), fencingToken
 	plan.CreatedAt, plan.UpdatedAt = notification.MillisTimestamp(createdAt), notification.MillisTimestamp(updatedAt)
 	return plan, nil
-}
-
-func deliveryAttemptID(plan delivery.Plan) string {
-	digest := sha256.Sum256([]byte(strings.Join([]string{plan.WorkspaceID.String(), plan.EventID, plan.ID, fmt.Sprint(plan.FencingToken), "channel_attempt"}, "\x00")))
-	return "notification_attempt_" + hex.EncodeToString(digest[:16])
 }

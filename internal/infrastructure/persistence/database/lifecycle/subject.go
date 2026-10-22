@@ -24,7 +24,7 @@ func (s *Store) PreviewSubject(ctx context.Context, workspaceID, subjectID strin
 	counts := map[string]int64{}
 	for key, tableColumn := range map[string][2]string{
 		"inbox_items":           {"_notification_inbox_items", "recipient_user_id"},
-		"delivery_reservations": {"_notification_deliveries", "recipient_key"},
+		"delivery_reservations": {"_notification_delivery_reservations", "recipient_key"},
 	} {
 		queryValue, args, err := query.NewWorkspaceSelectBuilder(s.Renderer, tableColumn[0], workspaceID).Projections(query.Project(query.CountAll())).Where(query.Equal(tableColumn[1], subjectID)).Build()
 		if err != nil {
@@ -63,7 +63,7 @@ func (s *Store) ExportSubject(ctx context.Context, workspaceID, subjectID string
 	if s == nil || s.Database == nil || strings.TrimSpace(workspaceID) == "" || strings.TrimSpace(subjectID) == "" {
 		return nil, fmt.Errorf("notification subject scope is required")
 	}
-	columns := []string{"id", "event_type", "source", "category", "severity", "title", "body", "action_state", "alert_state", "first_occurred_at", "last_occurred_at", "read_at", "archived_at"}
+	columns := []string{"id", "item_id", "event_type", "source", "category", "severity", "title", "body", "action_state", "alert_state", "first_occurred_at", "last_occurred_at", "read_at", "archived_at"}
 	queryValue, args, err := query.NewWorkspaceSelectBuilder(s.Renderer, "_notification_inbox_items", workspaceID).Columns(columns...).Where(query.Equal("recipient_user_id", subjectID)).OrderBy(query.Ascending("created_at")).Build()
 	if err != nil {
 		return nil, err
@@ -73,7 +73,7 @@ func (s *Store) ExportSubject(ctx context.Context, workspaceID, subjectID string
 		return nil, err
 	}
 	defer rows.Close()
-	timeColumns := map[string]bool{"first_occurred_at": true, "last_occurred_at": true, "read_at": true, "archived_at": true}
+	integerColumns := map[string]bool{"id": true, "first_occurred_at": true, "last_occurred_at": true, "read_at": true, "archived_at": true}
 	items := []map[string]any{}
 	for rows.Next() {
 		values := make([]any, len(columns))
@@ -81,7 +81,7 @@ func (s *Store) ExportSubject(ctx context.Context, workspaceID, subjectID string
 		textValues := make([]string, len(columns))
 		timeValues := make([]int64, len(columns))
 		for i, column := range columns {
-			if timeColumns[column] {
+			if integerColumns[column] {
 				destinations[i] = &timeValues[i]
 			} else {
 				destinations[i] = &textValues[i]
@@ -92,7 +92,7 @@ func (s *Store) ExportSubject(ctx context.Context, workspaceID, subjectID string
 		}
 		item := make(map[string]any, len(columns))
 		for i, column := range columns {
-			if timeColumns[column] {
+			if integerColumns[column] {
 				values[i] = timeValues[i]
 			} else {
 				values[i] = textValues[i]
@@ -163,7 +163,7 @@ func (s *Store) EraseSubject(ctx context.Context, workspaceID, subjectID string,
 	}); err != nil {
 		return nil, err
 	}
-	for _, update := range []struct{ key, table, column string }{{"alert_groups", "_notification_alert_groups", "recipient_user_id"}, {"delivery_reservations", "_notification_deliveries", "recipient_key"}} {
+	for _, update := range []struct{ key, table, column string }{{"alert_groups", "_notification_alert_groups", "recipient_user_id"}, {"delivery_reservations", "_notification_delivery_reservations", "recipient_key"}} {
 		queryValue, args, buildErr := query.NewWorkspaceUpdateBuilder(s.Renderer, update.table, workspaceID).Set(update.column, anonymous).Where(query.Equal(update.column, subjectID)).Build()
 		if buildErr != nil {
 			return nil, buildErr
@@ -212,7 +212,7 @@ func (s *Store) EraseSubject(ctx context.Context, workspaceID, subjectID string,
 }
 
 func (s *Store) anonymizeInboxItems(ctx context.Context, tx *sql.Tx, workspaceID, subjectID, anonymous string) (int64, error) {
-	queryValue, args, err := query.NewWorkspaceSelectBuilder(s.Renderer, "_notification_inbox_items", workspaceID).Columns("id", "payload_json").Where(query.Equal("recipient_user_id", subjectID)).Build()
+	queryValue, args, err := query.NewWorkspaceSelectBuilder(s.Renderer, "_notification_inbox_items", workspaceID).Columns("item_id", "payload_json").Where(query.Equal("recipient_user_id", subjectID)).Build()
 	if err != nil {
 		return 0, err
 	}
@@ -240,7 +240,7 @@ func (s *Store) anonymizeInboxItems(ctx context.Context, tx *sql.Tx, workspaceID
 		item.RecipientUserID, item.Title, item.Body, item.Facts, item.Actions = notification.UserID(anonymous), "[erased]", "[erased]", nil, nil
 		item.SubjectID, item.SubjectVersion, item.TemplateContentHash = "", "", ""
 		raw, _ := json.Marshal(item)
-		statement, updateArgs, err := query.NewWorkspaceUpdateBuilder(s.Renderer, "_notification_inbox_items", workspaceID).Set("recipient_user_id", anonymous).Set("title", "[erased]").Set("body", "[erased]").Set("search_text", "").Set("payload_json", string(raw)).Set("subject_id", "").Where(query.Equal("id", value[0])).Build()
+		statement, updateArgs, err := query.NewWorkspaceUpdateBuilder(s.Renderer, "_notification_inbox_items", workspaceID).Set("recipient_user_id", anonymous).Set("title", "[erased]").Set("body", "[erased]").Set("search_text", "").Set("payload_json", string(raw)).Set("subject_id", "").Where(query.Equal("item_id", value[0])).Build()
 		if err != nil {
 			return 0, err
 		}
@@ -252,7 +252,11 @@ func (s *Store) anonymizeInboxItems(ctx context.Context, tx *sql.Tx, workspaceID
 }
 
 func (s *Store) rewritePayloads(ctx context.Context, tx *sql.Tx, table, workspaceID string, rewrite func([]byte) ([]byte, bool, error)) (int64, error) {
-	statement, args, err := query.NewWorkspaceSelectBuilder(s.Renderer, table, workspaceID).Columns("id", "payload_json").Build()
+	idColumn := "event_id"
+	if table == "_notification_deliveries" {
+		idColumn = "delivery_id"
+	}
+	statement, args, err := query.NewWorkspaceSelectBuilder(s.Renderer, table, workspaceID).Columns(idColumn, "payload_json").Build()
 	if err != nil {
 		return 0, err
 	}
@@ -277,7 +281,7 @@ func (s *Store) rewritePayloads(ctx context.Context, tx *sql.Tx, table, workspac
 			return changed, rewriteErr
 		}
 		if matched {
-			statement, updateArgs, err := query.NewWorkspaceUpdateBuilder(s.Renderer, table, workspaceID).Set("payload_json", string(raw)).Where(query.Equal("id", value[0])).Build()
+			statement, updateArgs, err := query.NewWorkspaceUpdateBuilder(s.Renderer, table, workspaceID).Set("payload_json", string(raw)).Where(query.Equal(idColumn, value[0])).Build()
 			if err != nil {
 				return changed, err
 			}

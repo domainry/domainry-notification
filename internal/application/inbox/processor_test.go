@@ -65,13 +65,13 @@ func TestProcessorLogsRetryAndDeadLetterAfterPersistence(t *testing.T) {
 			t.Cleanup(func() { zap.ReplaceGlobals(previous) })
 
 			store := &eventStore{event: inbox.Event{
-				ID: "event-1", WorkspaceID: "workspace-1", AudienceResolverKeys: []string{"owners"}, AttemptCount: test.attempts,
+				EventID: "event-1", WorkspaceID: "workspace-1", AudienceResolverKeys: []string{"owners"}, AttemptCount: test.attempts,
 			}}
 			processor, err := inbox.NewProcessor(inbox.ProcessorDependencies{Events: store, Clock: fixedClock{now: time.Now()}, WorkerID: "worker-1", Audiences: audienceFailure{}})
 			if err != nil {
 				t.Fatal(err)
 			}
-			completed, err := processor.Process(t.Context(), store.event.WorkspaceID, store.event.ID)
+			completed, err := processor.Process(t.Context(), store.event.WorkspaceID, store.event.EventID)
 			if err != nil || completed || store.retried != test.wantRetry || store.deadLetter != test.wantFailed {
 				t.Fatalf("completed=%v retried=%v dead=%v err=%v", completed, store.retried, store.deadLetter, err)
 			}

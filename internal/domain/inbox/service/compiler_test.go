@@ -31,7 +31,7 @@ func TestCompilerProducesRetryStableDurableEvent(t *testing.T) {
 		t.Fatal(err)
 	}
 	intent := inbox.Intent{
-		ID: "event-1", WorkspaceID: "workspace-1", SourceEventID: "task-1:opened", EventType: eventType.Key, RecipientUserIDs: []notification.UserID{"user-1"}, AudienceResolverKeys: []string{"workflow_task_assignee"},
+		WorkspaceID: "workspace-1", SourceEventID: "task-1:opened", EventType: eventType.Key, RecipientUserIDs: []notification.UserID{"user-1"}, AudienceResolverKeys: []string{"workflow_task_assignee"},
 		SubjectType: "workflow_task", SubjectID: "task-1", OccurredAt: "2026-08-24T00:00:00Z", Locale: "en_US",
 		Variables: map[string]any{"task_title": "Approve order"},
 	}
@@ -46,7 +46,7 @@ func TestCompilerProducesRetryStableDurableEvent(t *testing.T) {
 	if first.Status != inbox.EventQueued || first.Snapshot.Title != "Approval" || first.Snapshot.Actions[0].ResourceID != "task-1" {
 		t.Fatalf("event=%+v", first)
 	}
-	if len(first.ChannelPlans) != 1 || first.ChannelPlans[0].ID == "" || first.ChannelPlans[0].ID != second.ChannelPlans[0].ID {
+	if len(first.ChannelPlans) != 1 || first.ChannelPlans[0].DeliveryID == "" || first.ChannelPlans[0].DeliveryID == second.ChannelPlans[0].DeliveryID {
 		t.Fatalf("first plans=%+v second plans=%+v", first.ChannelPlans, second.ChannelPlans)
 	}
 	if first.ChannelPlans[0].NextAttemptAt != "2026-08-24T00:01:00.000000000Z" {
@@ -67,7 +67,7 @@ func TestCompilerRejectsUnregisteredAudienceResolver(t *testing.T) {
 	}
 	compiler, _ := inbox.NewCompiler(catalog, validator, fixedClock{value: time.Now()})
 	_, err = compiler.Compile(inbox.Intent{
-		ID: "event-1", WorkspaceID: "workspace-1", SourceEventID: "source-1", EventType: eventType.Key, AudienceResolverKeys: []string{"unknown_resolver"}, OccurredAt: time.Now().UTC().Format(time.RFC3339Nano),
+		WorkspaceID: "workspace-1", SourceEventID: "source-1", EventType: eventType.Key, AudienceResolverKeys: []string{"unknown_resolver"}, OccurredAt: time.Now().UTC().Format(time.RFC3339Nano),
 		Variables: map[string]any{"task_title": "Task"},
 	})
 	if notification.ErrorCode(err) != "backend.notification.inbox_audience_resolver_not_allowed" {

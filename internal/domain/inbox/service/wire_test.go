@@ -10,7 +10,7 @@ import (
 
 func TestEventWireFormatExcludesFrontendShell(t *testing.T) {
 	const expected = `{
-		"id":"event-1","workspace_id":"workspace-1","source":"workflow",
+		"id":0,"event_id":"event-1","workspace_id":"workspace-1","source":"workflow",
 		"source_event_id":"task-1:opened","event_type":"workflow.task.opened",
 		"category":"approval","severity":"info",
 		"recipient_user_ids":["user-1"],"action_state":"open","occurred_at":"2026-08-24T00:00:00Z",

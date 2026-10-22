@@ -40,7 +40,7 @@ func TestMailboxPersonalMutationsAndAlertAcknowledgement(t *testing.T) {
 	if err != nil || facets.Unread != 2 || facets.ActionRequired != 2 || len(facets.Categories) != 1 {
 		t.Fatalf("facets=%+v err=%v", facets, err)
 	}
-	acknowledged, found, err := store.AcknowledgeAlert(t.Context(), query, item.ID, "user-1", "2026-08-24T01:01:00.000000000Z")
+	acknowledged, found, err := store.AcknowledgeAlert(t.Context(), query, item.ItemID, "user-1", "2026-08-24T01:01:00.000000000Z")
 	if err != nil || !found || acknowledged.AlertState != inbox.AlertAcknowledged {
 		t.Fatalf("acknowledged=%+v found=%v err=%v", acknowledged, found, err)
 	}
@@ -48,17 +48,17 @@ func TestMailboxPersonalMutationsAndAlertAcknowledgement(t *testing.T) {
 	if err != nil || marked != 2 {
 		t.Fatalf("marked=%d err=%v", marked, err)
 	}
-	read, found, err := store.SetRead(t.Context(), query, item.ID, "2026-08-24T01:02:00.000000000Z", "2026-08-24T01:02:00.000000000Z")
+	read, found, err := store.SetRead(t.Context(), query, item.ItemID, "2026-08-24T01:02:00.000000000Z", "2026-08-24T01:02:00.000000000Z")
 	if err != nil || !found || read.ReadAt == "" {
 		t.Fatalf("read=%+v found=%v err=%v", read, found, err)
 	}
-	archived, found, err := store.SetArchived(t.Context(), query, item.ID, "2026-08-24T01:03:00.000000000Z", "2026-08-24T01:03:00.000000000Z")
+	archived, found, err := store.SetArchived(t.Context(), query, item.ItemID, "2026-08-24T01:03:00.000000000Z", "2026-08-24T01:03:00.000000000Z")
 	if err != nil || !found || archived.ArchivedAt == "" {
 		t.Fatalf("archived=%+v found=%v err=%v", archived, found, err)
 	}
 	team := query
 	team.Scope, team.ViewerUserID, team.RecipientUserIDs = inbox.ScopeTeam, "manager-1", []notification.UserID{"user-1"}
-	if _, _, err := store.SetRead(t.Context(), team, item.ID, "now", "now"); err == nil {
+	if _, _, err := store.SetRead(t.Context(), team, item.ItemID, "now", "now"); err == nil {
 		t.Fatal("expected team-scope mutation rejection")
 	}
 }
@@ -72,7 +72,7 @@ func TestGetAlertGroupRequiresExactWorkspaceRecipientAndGroup(t *testing.T) {
 	}
 
 	group, found, err := store.GetAlertGroup(t.Context(), "workspace-1", "user-1", event.GroupKey)
-	if err != nil || !found || group.State != inbox.AlertFiring || group.LastEventID != event.ID || group.RecipientUserID != "user-1" {
+	if err != nil || !found || group.State != inbox.AlertFiring || group.LastEventID != event.EventID || group.RecipientUserID != "user-1" {
 		t.Fatalf("group=%+v found=%v err=%v", group, found, err)
 	}
 	if _, found, err := store.GetAlertGroup(t.Context(), "workspace-1", "user-2", event.GroupKey); err != nil || found {
@@ -94,7 +94,7 @@ func TestMailboxWorkspaceIsolationAndAtomicMarkAllRead(t *testing.T) {
 		t.Fatal(err)
 	}
 	second := claimedEvent()
-	second.ID, second.WorkspaceID, second.SourceEventID = "event-2", "workspace-2", "run-2"
+	second.EventID, second.WorkspaceID, second.SourceEventID = "event-2", "workspace-2", "run-2"
 	second.ChannelPlans = nil
 	insertClaimedEvent(t, db, second)
 	if err := store.Materialize(t.Context(), second, []inbox.Item{mailboxItem(second, "item-3", "user-1")}); err != nil {
@@ -131,7 +131,7 @@ func TestMailboxWorkspaceIsolationAndAtomicMarkAllRead(t *testing.T) {
 }
 
 func mailboxItem(event inbox.Event, id string, recipient notification.UserID) inbox.Item {
-	return inbox.Item{ID: id, WorkspaceID: event.WorkspaceID, RecipientUserID: recipient, EventID: event.ID,
+	return inbox.Item{ItemID: id, ItemKey: id, WorkspaceID: event.WorkspaceID, RecipientUserID: recipient, EventID: event.EventID,
 		EventType: event.EventType, Source: event.Source, Category: event.Category, Severity: event.Severity, Title: "Build failed", Body: "Open run",
 		ActionState: inbox.ActionOpen, AlertState: inbox.AlertFiring, GroupKey: event.GroupKey, OccurrenceCount: 1,
 		FirstOccurredAt: event.OccurredAt, LastOccurredAt: event.OccurredAt, CreatedAt: event.CreatedAt, UpdatedAt: event.UpdatedAt}

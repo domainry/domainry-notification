@@ -52,7 +52,7 @@ func TestFoundationOperationsCompositionSharesModuleDatabaseAndIsolatesSaaSDatab
 		t.Fatal(err)
 	}
 	command := sharedoperation.Command{
-		ID: "operation-1", Scope: sharedoperation.Scope{WorkspaceID: "workspace-1", ResourceType: "notification_template", ResourceID: "welcome"},
+		OperationID: "op_00000000000000000000000000000001", Scope: sharedoperation.Scope{WorkspaceID: "workspace-1", ResourceType: "notification_template", ResourceID: "welcome"},
 		Owner: "notification", Kind: "template_publication", ActionKey: "notification.template.publish",
 		IdempotencyKey: "publish-welcome", RequestFingerprint: "sha256:one", RequestedBy: "user-1",
 		Reason: "publish template", StatusURL: "/operations/operation-1", CreatedAt: time.Date(2026, 9, 23, 8, 0, 0, 0, time.UTC),
@@ -72,7 +72,7 @@ func TestFoundationOperationsCompositionSharesModuleDatabaseAndIsolatesSaaSDatab
 		t.Fatalf("first Module claim claimed=%v err=%v", claimed, err)
 	}
 	if err := moduleA.Complete(t.Context(), sharedoperation.Completion{
-		ID: command.ID, Scope: command.Scope, Owner: command.Owner, Kind: command.Kind,
+		OperationID: command.OperationID, Scope: command.Scope, Owner: command.Owner, Kind: command.Kind,
 		IdempotencyKey: command.IdempotencyKey, RequestFingerprint: command.RequestFingerprint,
 		Result: json.RawMessage(`{"published":true}`), CompletedAt: command.CreatedAt.Add(time.Minute),
 	}); err != nil {

@@ -555,7 +555,7 @@ func (s moduleAdministration) ListDeadLetters(ctx context.Context, a notificatio
 	page := contract.NotificationDeadLetterPage{Items: make([]contract.NotificationDeadLetter, 0, len(items)), NextCursor: next}
 	for _, item := range items {
 		page.Items = append(page.Items, contract.NotificationDeadLetter{
-			ID: item.ID, Source: item.Source, AttemptCount: item.AttemptCount, LastErrorCode: item.LastErrorCode, UpdatedAt: item.UpdatedAt,
+			EventID: item.EventID, Source: item.Source, AttemptCount: item.AttemptCount, LastErrorCode: item.LastErrorCode, UpdatedAt: item.UpdatedAt,
 		})
 	}
 	return page, nil
@@ -589,7 +589,7 @@ func (s moduleAdministration) RedriveDeadLetter(ctx context.Context, a notificat
 	if s.b.workNotifier != nil {
 		s.b.workNotifier.Notify(ctx, modulehost.WorkLocator{Kind: string(notification.WorkInboxEvent), WorkspaceID: p.WorkspaceID, TaskID: eventID})
 	}
-	return contract.NotificationDeadLetterRedrive{ID: eventID, QueuedAt: queuedAt}, nil
+	return contract.NotificationDeadLetterRedrive{EventID: eventID, QueuedAt: queuedAt}, nil
 }
 
 type moduleWorkers struct{ b *binding }

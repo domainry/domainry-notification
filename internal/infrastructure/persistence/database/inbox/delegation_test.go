@@ -8,7 +8,7 @@ import (
 
 func TestInboxDelegationLifecycleAndActiveWindow(t *testing.T) {
 	_, store := migratedStore(t)
-	delegation := inbox.Delegation{ID: "delegation-1", WorkspaceID: "workspace-1", OwnerUserID: "owner-1", DelegateUserID: "delegate-1", StartsAt: "2026-08-24T01:00:00.000000000Z", EndsAt: "2026-08-24T02:00:00.000000000Z", Enabled: true,
+	delegation := inbox.Delegation{DelegationID: "delegation-1", WorkspaceID: "workspace-1", OwnerUserID: "owner-1", DelegateUserID: "delegate-1", StartsAt: "2026-08-24T01:00:00.000000000Z", EndsAt: "2026-08-24T02:00:00.000000000Z", Enabled: true,
 		CreatedAt: "2026-08-24T00:59:00.000000000Z", UpdatedAt: "2026-08-24T00:59:00.000000000Z"}
 	if _, err := store.SaveDelegation(t.Context(), delegation); err != nil {
 		t.Fatal(err)
@@ -25,7 +25,7 @@ func TestInboxDelegationLifecycleAndActiveWindow(t *testing.T) {
 	if err != nil || len(expired) != 0 {
 		t.Fatalf("expired=%+v err=%v", expired, err)
 	}
-	deleted, err := store.DeleteDelegation(t.Context(), delegation.WorkspaceID, delegation.OwnerUserID, delegation.ID)
+	deleted, err := store.DeleteDelegation(t.Context(), delegation.WorkspaceID, delegation.OwnerUserID, delegation.DelegationID)
 	if err != nil || !deleted {
 		t.Fatalf("deleted=%v err=%v", deleted, err)
 	}

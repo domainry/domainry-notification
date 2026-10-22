@@ -33,7 +33,7 @@ func TestPublicInboxBindingPreservesMissingAndForeignItemErrors(t *testing.T) {
 	if err != nil || len(page.Items) != 1 {
 		t.Fatalf("owner page = %+v, error = %v", page, err)
 	}
-	id := page.Items[0].ID
+	id := page.Items[0].ItemID
 	for _, target := range []struct {
 		name      string
 		authority notificationsdk.UserAuthority

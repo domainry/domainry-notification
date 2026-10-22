@@ -37,7 +37,7 @@ func NewValidator(configuration *Configuration) (*Validator, error) {
 }
 
 func (v *Validator) ValidateEvent(value Event) (Event, error) {
-	value.ID = strings.TrimSpace(value.ID)
+	value.EventID = strings.TrimSpace(value.EventID)
 	value.WorkspaceID = notification.WorkspaceID(strings.TrimSpace(value.WorkspaceID.String()))
 	value.Source, value.SourceEventID = strings.TrimSpace(value.Source), strings.TrimSpace(value.SourceEventID)
 	value.EventType, value.Category = strings.TrimSpace(value.EventType), strings.TrimSpace(value.Category)
@@ -57,7 +57,7 @@ func (v *Validator) ValidateEvent(value Event) (Event, error) {
 			return value, invalid("backend.notification.inbox_audience_resolvers_invalid")
 		}
 	}
-	if value.ID == "" || value.WorkspaceID == "" || value.SourceEventID == "" {
+	if value.EventID == "" || value.WorkspaceID == "" || value.SourceEventID == "" {
 		return value, invalid("backend.notification.inbox_event_identity_required")
 	}
 	for field, text := range map[string]string{"source": value.Source, "event_type": value.EventType, "category": value.Category} {

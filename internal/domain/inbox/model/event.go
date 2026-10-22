@@ -10,7 +10,6 @@ import (
 // copy and routes are compiled inside this module. Provider payloads remain a
 // Connector responsibility downstream of delivery.Dispatcher.
 type Intent struct {
-	ID                   string                   `json:"id"`
 	WorkspaceID          notification.WorkspaceID `json:"workspace_id"`
 	SourceEventID        string                   `json:"source_event_id"`
 	EventType            string                   `json:"event_type"`
@@ -47,7 +46,8 @@ type Snapshot struct {
 
 // Event is the durable, retry-safe result of compiling an Intent.
 type Event struct {
-	ID                   string                   `json:"id"`
+	ID                   int64                    `json:"id"`
+	EventID              string                   `json:"event_id"`
 	WorkspaceID          notification.WorkspaceID `json:"workspace_id"`
 	Source               string                   `json:"source"`
 	SourceEventID        string                   `json:"source_event_id"`
@@ -83,7 +83,6 @@ type Event struct {
 
 // EventFailure is append-only, non-sensitive processing evidence.
 type EventFailure struct {
-	ID            string                   `json:"id"`
 	WorkspaceID   notification.WorkspaceID `json:"workspace_id"`
 	EventID       string                   `json:"event_id"`
 	EventType     string                   `json:"event_type"`

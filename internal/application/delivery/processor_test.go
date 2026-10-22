@@ -25,7 +25,7 @@ type planStore struct {
 
 func (s *planStore) GetPlan(_ context.Context, workspace notification.WorkspaceID, id string) (delivery.Plan, bool, error) {
 	for _, plan := range s.plans {
-		if plan.WorkspaceID == workspace && plan.ID == id {
+		if plan.WorkspaceID == workspace && plan.DeliveryID == id {
 			return plan, true, nil
 		}
 	}
@@ -122,11 +122,11 @@ func TestProcessorRendersDispatchesAndCompletesImmediatePlan(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	done, err := processor.Process(t.Context(), plan.WorkspaceID, plan.ID)
+	done, err := processor.Process(t.Context(), plan.WorkspaceID, plan.DeliveryID)
 	if err != nil || !done || len(plans.completed) != 1 || plans.outboxID != "outbox-1" {
 		t.Fatalf("done=%v completed=%+v err=%v", done, plans.completed, err)
 	}
-	if render.request.TemplateKey != plan.TemplateKey || dispatch.request.DeduplicationKey != plan.ID || dispatch.request.ConnectorKey != plan.ConnectorKey {
+	if render.request.TemplateKey != plan.TemplateKey || dispatch.request.DeduplicationKey != plan.DeliveryID || dispatch.request.ConnectorKey != plan.ConnectorKey {
 		t.Fatalf("render=%+v dispatch=%+v", render.request, dispatch.request)
 	}
 }
@@ -139,7 +139,7 @@ func TestProcessorRetriesDispatchFailureAndCancelsTerminalAction(t *testing.T) {
 	failedPlan := immediatePlan("plan-failed")
 	plans := &planStore{plans: []delivery.Plan{failedPlan}}
 	processor, _ := delivery.NewProcessor(delivery.ProcessorDependencies{Plans: plans, Renderer: &renderer{err: errors.New("render failed")}, Dispatcher: &dispatcher{}, Policy: allowPolicy{}, Clock: clock{now: time.Now()}, WorkerID: "worker-1"})
-	if done, err := processor.Process(t.Context(), failedPlan.WorkspaceID, failedPlan.ID); err != nil || done || len(plans.retried) != 1 {
+	if done, err := processor.Process(t.Context(), failedPlan.WorkspaceID, failedPlan.DeliveryID); err != nil || done || len(plans.retried) != 1 {
 		t.Fatalf("done=%v retried=%+v err=%v", done, plans.retried, err)
 	}
 	entries := observed.FilterMessage("notification_delivery_retry_scheduled").All()
@@ -150,7 +150,7 @@ func TestProcessorRetriesDispatchFailureAndCancelsTerminalAction(t *testing.T) {
 	terminal.CancelWhenActionTerminal = true
 	plans = &planStore{plans: []delivery.Plan{terminal}, terminal: true}
 	processor, _ = delivery.NewProcessor(delivery.ProcessorDependencies{Plans: plans, Renderer: &renderer{}, Dispatcher: &dispatcher{}, Policy: allowPolicy{}, Clock: clock{now: time.Now()}, WorkerID: "worker-1"})
-	if done, err := processor.Process(t.Context(), terminal.WorkspaceID, terminal.ID); err != nil || done || len(plans.cancelled) != 1 {
+	if done, err := processor.Process(t.Context(), terminal.WorkspaceID, terminal.DeliveryID); err != nil || done || len(plans.cancelled) != 1 {
 		t.Fatalf("done=%v cancelled=%+v err=%v", done, plans.cancelled, err)
 	}
 }
@@ -168,7 +168,7 @@ func TestProcessorLogsDeadLetterAfterDurableTransition(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if done, err := processor.Process(t.Context(), plan.WorkspaceID, plan.ID); err != nil || done || len(plans.failed) != 1 {
+	if done, err := processor.Process(t.Context(), plan.WorkspaceID, plan.DeliveryID); err != nil || done || len(plans.failed) != 1 {
 		t.Fatalf("done=%v failed=%+v err=%v", done, plans.failed, err)
 	}
 	entries := observed.FilterMessage("notification_delivery_dead_lettered").All()
@@ -182,7 +182,7 @@ const maximumAttemptsForTest = 8
 func TestProcessorCombinesCompatibleDigestPlans(t *testing.T) {
 	first, second := immediatePlan("plan-1"), immediatePlan("plan-2")
 	for _, plan := range []*delivery.Plan{&first, &second} {
-		plan.DeliveryMode, plan.DigestKey, plan.NextAttemptAt, plan.DigestItemTitle = "digest", "daily", "2026-08-24T02:00:00.000000000Z", plan.ID
+		plan.DeliveryMode, plan.DigestKey, plan.NextAttemptAt, plan.DigestItemTitle = "digest", "daily", "2026-08-24T02:00:00.000000000Z", plan.DeliveryID
 	}
 	plans, render, dispatch := &planStore{plans: []delivery.Plan{first, second}}, &renderer{}, &dispatcher{}
 	processor, _ := delivery.NewProcessor(delivery.ProcessorDependencies{Plans: plans, Renderer: render, Dispatcher: dispatch, Policy: allowPolicy{}, Clock: clock{now: time.Now()}, WorkerID: "worker-1"})
@@ -217,7 +217,7 @@ func TestProcessorEvaluatesPolicyAndSnapshotsFallbacksBeforeDispatch(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	if done, err := processor.Process(t.Context(), plan.WorkspaceID, plan.ID); err != nil || !done {
+	if done, err := processor.Process(t.Context(), plan.WorkspaceID, plan.DeliveryID); err != nil || !done {
 		t.Fatalf("done=%v err=%v", done, err)
 	}
 	if dispatch.request.Decision.DeliverAfter != decision.DeliverAfter || len(dispatch.request.Fallbacks) != 2 {
@@ -239,7 +239,7 @@ func (d *countingDispatcher) Dispatch(_ context.Context, request delivery.Dispat
 }
 
 func immediatePlan(id string) delivery.Plan {
-	return delivery.Plan{ID: id, WorkspaceID: "workspace-1", EventID: "event-" + id, Channel: "email", TemplateKey: "workflow.failed",
+	return delivery.Plan{DeliveryID: id, WorkspaceID: "workspace-1", EventID: "event-" + id, Channel: "email", TemplateKey: "workflow.failed",
 		ConnectorKey: "email", ConnectionKey: "primary", Operation: "send_email", RecipientUserIDs: []notification.UserID{"user-1"},
 		Variables: map[string]any{"name": "Ada"}, Status: "queued", CreatedAt: "2026-08-24T00:00:00.000000000Z", UpdatedAt: "2026-08-24T00:00:00.000000000Z"}
 }

@@ -8,12 +8,12 @@ import (
 	"github.com/domainry/domainry-notification/internal/infrastructure/persistence/database/schema"
 )
 
-func TestSchemaOwnershipCoversSevenWorkspaceTables(t *testing.T) {
+func TestSchemaOwnershipCoversWorkspaceTables(t *testing.T) {
 	ownership := schema.SchemaOwnership()
 	if err := schemaownership.ValidateAll(ownership); err != nil {
 		t.Fatal(err)
 	}
-	if len(ownership) != 7 {
+	if len(ownership) != 8 {
 		t.Fatalf("owned table count=%d", len(ownership))
 	}
 	for _, table := range ownership {

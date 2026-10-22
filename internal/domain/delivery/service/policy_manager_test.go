@@ -51,7 +51,7 @@ func TestPolicyManagerEvaluatesPreferencesReservationsAndQuietHours(t *testing.T
 	if err != nil || len(store.reservations) != 2 || decision.DeliverAfter != "2026-08-25T00:00:00.000000000Z" || len(decision.FallbackOrder) != 1 {
 		t.Fatalf("decision=%+v reservations=%+v err=%v", decision, store.reservations, err)
 	}
-	if store.reservations[0].ID == store.reservations[1].ID {
+	if store.reservations[0].ReservationKey == store.reservations[1].ReservationKey {
 		t.Fatal("recipient reservations must have distinct identities")
 	}
 }

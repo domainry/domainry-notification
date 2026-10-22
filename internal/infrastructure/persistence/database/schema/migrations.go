@@ -55,12 +55,13 @@ func SharedOperationSchemaMigrations(_ Profile, dialect modulehost.Dialect) ([]S
 }
 
 type schemaColumn struct {
-	name         string
-	kind         schemaColumnKind
-	nullable     bool
-	defaultValue any
-	defaultSet   bool
-	primaryKey   bool
+	name          string
+	kind          schemaColumnKind
+	nullable      bool
+	defaultValue  any
+	defaultSet    bool
+	primaryKey    bool
+	autoIncrement bool
 }
 
 type ColumnKind uint8
@@ -124,6 +125,9 @@ func renderSchema(profile Profile, indexPrefix string, dialect modulehost.Dialec
 			if column.defaultSet {
 				definition = definition.DefaultValue(column.defaultValue)
 			}
+			if column.autoIncrement {
+				definition = definition.AutoIncrement()
+			}
 			if column.primaryKey {
 				primaryColumns = append(primaryColumns, column.name)
 			}
@@ -131,6 +135,11 @@ func renderSchema(profile Profile, indexPrefix string, dialect modulehost.Dialec
 		}
 		primaryColumns = workspaceFirstPrimaryKey(primaryColumns)
 		create := ormschema.NewTable(dialect, table.name).Columns(definitions...)
+		for _, ownership := range SchemaOwnership() {
+			if ownership.Name == table.name && ownership.EntityIDColumn != "" {
+				create.IdentityColumns(ownership.EntityIDColumn)
+			}
+		}
 		if len(primaryColumns) > 0 {
 			create.PrimaryKey(primaryColumns...)
 		}

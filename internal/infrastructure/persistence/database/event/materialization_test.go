@@ -41,8 +41,8 @@ func TestMaterializeCommitsAllProjectionsAndFencedEvent(t *testing.T) {
 	event := claimedEvent()
 	insertClaimedEvent(t, db, event)
 	item := inbox.Item{
-		ID: "item-1", WorkspaceID: event.WorkspaceID, RecipientUserID: "user-1",
-		EventID: event.ID, EventType: event.EventType, Source: event.Source, Category: event.Category, Severity: event.Severity,
+		ItemID: "item-1", ItemKey: "item-1", WorkspaceID: event.WorkspaceID, RecipientUserID: "user-1",
+		EventID: event.EventID, EventType: event.EventType, Source: event.Source, Category: event.Category, Severity: event.Severity,
 		Title: "Build failed", Body: "Open the run", ActionState: inbox.ActionOpen, AlertState: inbox.AlertFiring, GroupKey: event.GroupKey,
 		OccurrenceCount: 1, FirstOccurredAt: event.OccurredAt, LastOccurredAt: event.OccurredAt, CreatedAt: event.CreatedAt, UpdatedAt: event.UpdatedAt,
 	}
@@ -56,7 +56,7 @@ func TestMaterializeCommitsAllProjectionsAndFencedEvent(t *testing.T) {
 		}
 	}
 	var status, owner string
-	if err := db.QueryRow("SELECT status, lease_owner FROM _notification_events WHERE id = ?", event.ID).Scan(&status, &owner); err != nil || status != "materialized" || owner != "" {
+	if err := db.QueryRow("SELECT status, lease_owner FROM _notification_events WHERE event_id = ?", event.EventID).Scan(&status, &owner); err != nil || status != "materialized" || owner != "" {
 		t.Fatalf("status=%q owner=%q err=%v", status, owner, err)
 	}
 	if len(scopes.registrations) != 1 || scopes.registrations[0].Kind != notification.WorkChannelPlan {
@@ -69,7 +69,7 @@ func TestMaterializeRollsBackWhenLeaseWasLost(t *testing.T) {
 	event := claimedEvent()
 	insertClaimedEvent(t, db, event)
 	event.FencingToken++
-	item := inbox.Item{ID: "item-1", WorkspaceID: event.WorkspaceID, RecipientUserID: "user-1", EventID: event.ID,
+	item := inbox.Item{ItemID: "item-1", ItemKey: "item-1", WorkspaceID: event.WorkspaceID, RecipientUserID: "user-1", EventID: event.EventID,
 		LastOccurredAt: event.OccurredAt, FirstOccurredAt: event.OccurredAt, CreatedAt: event.CreatedAt, UpdatedAt: event.UpdatedAt}
 	if err := store.Materialize(t.Context(), event, []inbox.Item{item}); !mutation.IsMutationConflict(err, mutation.MutationConflictLeaseLost) {
 		t.Fatalf("err=%v", err)
@@ -85,7 +85,7 @@ func TestMaterializeRedriveReusesExistingChannelPlan(t *testing.T) {
 	event := claimedEvent()
 	insertClaimedEvent(t, db, event)
 	item := inbox.Item{
-		ID: "item-1", WorkspaceID: event.WorkspaceID, RecipientUserID: "user-1", EventID: event.ID,
+		ItemID: "item-1", ItemKey: "item-1", WorkspaceID: event.WorkspaceID, RecipientUserID: "user-1", EventID: event.EventID,
 		EventType: event.EventType, Source: event.Source, Category: event.Category, Severity: event.Severity,
 		Title: "Build failed", Body: "Open the run", GroupKey: event.GroupKey,
 		FirstOccurredAt: event.OccurredAt, LastOccurredAt: event.OccurredAt, CreatedAt: event.CreatedAt, UpdatedAt: event.UpdatedAt,
@@ -93,11 +93,11 @@ func TestMaterializeRedriveReusesExistingChannelPlan(t *testing.T) {
 	if err := store.Materialize(t.Context(), event, []inbox.Item{item}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := db.Exec(`UPDATE _notification_deliveries SET status = 'planned', outbox_message_id = 'outbox-1' WHERE id = ?`, event.ChannelPlans[0].ID); err != nil {
+	if _, err := db.Exec(`UPDATE _notification_deliveries SET status = 'planned', outbox_message_id = 'outbox-1' WHERE delivery_id = ?`, event.ChannelPlans[0].DeliveryID); err != nil {
 		t.Fatal(err)
 	}
 	event.LeaseOwner, event.FencingToken = "worker-2", event.FencingToken+1
-	if _, err := db.Exec(`UPDATE _notification_events SET status = 'processing', lease_owner = ?, fencing_token = ? WHERE id = ?`, event.LeaseOwner, event.FencingToken, event.ID); err != nil {
+	if _, err := db.Exec(`UPDATE _notification_events SET status = 'processing', lease_owner = ?, fencing_token = ? WHERE event_id = ?`, event.LeaseOwner, event.FencingToken, event.EventID); err != nil {
 		t.Fatal(err)
 	}
 	if err := store.Materialize(t.Context(), event, []inbox.Item{item}); err != nil {
@@ -105,7 +105,7 @@ func TestMaterializeRedriveReusesExistingChannelPlan(t *testing.T) {
 	}
 	var count int
 	var status, outboxMessageID string
-	if err := db.QueryRow(`SELECT COUNT(*), status, outbox_message_id FROM _notification_deliveries WHERE id = ?`, event.ChannelPlans[0].ID).Scan(&count, &status, &outboxMessageID); err != nil {
+	if err := db.QueryRow(`SELECT COUNT(*), status, outbox_message_id FROM _notification_deliveries WHERE delivery_id = ?`, event.ChannelPlans[0].DeliveryID).Scan(&count, &status, &outboxMessageID); err != nil {
 		t.Fatal(err)
 	}
 	if count != 1 || status != "planned" || outboxMessageID != "outbox-1" {
@@ -122,11 +122,11 @@ func materializationStore(t *testing.T) (*sql.DB, *sqlstore.Store, *queueScopes)
 	db.SetMaxOpenConns(1)
 	t.Cleanup(func() { _ = db.Close() })
 	statements := []string{
-		`CREATE TABLE _notification_events (id TEXT, workspace_id TEXT, source TEXT, source_event_id TEXT, status TEXT, payload_json TEXT, attempt_count INTEGER, next_attempt_at BIGINT, last_error_code TEXT, lease_owner TEXT, lease_expires_at BIGINT, fencing_token INTEGER, occurred_at BIGINT, created_at BIGINT, updated_at BIGINT, UNIQUE(workspace_id,id), UNIQUE(workspace_id,source,source_event_id))`,
-		`CREATE TABLE _notification_inbox_items (id TEXT, workspace_id TEXT, recipient_user_id TEXT, event_id TEXT, event_type TEXT, source TEXT, category TEXT, severity TEXT, title TEXT, body TEXT, search_text TEXT, payload_json TEXT, subject_type TEXT, subject_id TEXT, action_state TEXT, alert_state TEXT, group_key TEXT, occurrence_count INTEGER, first_occurred_at BIGINT, last_occurred_at BIGINT, read_at BIGINT, archived_at BIGINT, expires_at BIGINT, created_at BIGINT, updated_at BIGINT, UNIQUE(workspace_id,id))`,
+		`CREATE TABLE _notification_events (id INTEGER PRIMARY KEY AUTOINCREMENT, event_id TEXT NOT NULL UNIQUE, workspace_id TEXT, source TEXT, source_event_id TEXT, status TEXT, payload_json TEXT, attempt_count INTEGER, next_attempt_at BIGINT, last_error_code TEXT, lease_owner TEXT, lease_expires_at BIGINT, fencing_token INTEGER, occurred_at BIGINT, created_at BIGINT, updated_at BIGINT, UNIQUE(workspace_id,source,source_event_id))`,
+		`CREATE TABLE _notification_inbox_items (id INTEGER PRIMARY KEY AUTOINCREMENT, item_id TEXT NOT NULL UNIQUE, item_key TEXT NOT NULL, workspace_id TEXT, recipient_user_id TEXT, event_id TEXT, event_type TEXT, source TEXT, category TEXT, severity TEXT, title TEXT, body TEXT, search_text TEXT, payload_json TEXT, subject_type TEXT, subject_id TEXT, action_state TEXT, alert_state TEXT, group_key TEXT, occurrence_count INTEGER, first_occurred_at BIGINT, last_occurred_at BIGINT, read_at BIGINT, archived_at BIGINT, expires_at BIGINT, created_at BIGINT, updated_at BIGINT, UNIQUE(workspace_id,item_key))`,
 		`CREATE TABLE _notification_alert_groups (workspace_id TEXT, recipient_user_id TEXT, group_key TEXT, state TEXT, occurrence_count INTEGER, first_occurred_at BIGINT, last_occurred_at BIGINT, acknowledged_at BIGINT, acknowledged_by TEXT, resolved_at BIGINT, last_event_id TEXT, updated_at BIGINT, UNIQUE(workspace_id,recipient_user_id,group_key))`,
-		`CREATE TABLE _notification_deliveries (id TEXT, workspace_id TEXT, row_kind TEXT, event_id TEXT, recipient_key TEXT, template_key TEXT, channel TEXT, dedupe_key TEXT, status TEXT, payload_json TEXT, attempt_count INTEGER, next_attempt_at BIGINT, last_error_code TEXT, outbox_message_id TEXT, lease_owner TEXT, lease_expires_at BIGINT, fencing_token INTEGER, created_at BIGINT, updated_at BIGINT, UNIQUE(workspace_id,id))`,
-		`CREATE TABLE _notification_delivery_attempts (id TEXT, workspace_id TEXT, attempt_kind TEXT, event_id TEXT, delivery_id TEXT, event_type TEXT, source TEXT, source_event_id TEXT, channel TEXT, stage TEXT, error_code TEXT, attempt INTEGER, disposition TEXT, retryable INTEGER, next_attempt_at BIGINT, fencing_token INTEGER, occurred_at BIGINT, UNIQUE(workspace_id,id), UNIQUE(workspace_id,attempt_kind,event_id,delivery_id,fencing_token))`,
+		`CREATE TABLE _notification_deliveries (id INTEGER PRIMARY KEY AUTOINCREMENT, delivery_id TEXT NOT NULL UNIQUE, workspace_id TEXT, event_id TEXT, channel TEXT, status TEXT, payload_json TEXT, attempt_count INTEGER, next_attempt_at BIGINT, last_error_code TEXT, outbox_message_id TEXT, lease_owner TEXT, lease_expires_at BIGINT, fencing_token INTEGER, created_at BIGINT, updated_at BIGINT)`,
+		`CREATE TABLE _notification_delivery_attempts (workspace_id TEXT, attempt_kind TEXT, event_id TEXT, delivery_id TEXT, event_type TEXT, source TEXT, source_event_id TEXT, channel TEXT, stage TEXT, error_code TEXT, attempt INTEGER, disposition TEXT, retryable INTEGER, next_attempt_at BIGINT, fencing_token INTEGER, occurred_at BIGINT, UNIQUE(workspace_id,attempt_kind,event_id,delivery_id,fencing_token))`,
 	}
 	for _, statement := range statements {
 		if _, err := db.Exec(statement); err != nil {
@@ -143,17 +143,17 @@ func materializationStore(t *testing.T) (*sql.DB, *sqlstore.Store, *queueScopes)
 }
 
 func claimedEvent() inbox.Event {
-	return inbox.Event{ID: "event-1", WorkspaceID: "workspace-1", Source: "workflow", SourceEventID: "run-1", EventType: "workflow.run.failed",
+	return inbox.Event{EventID: "event-1", WorkspaceID: "workspace-1", Source: "workflow", SourceEventID: "run-1", EventType: "workflow.run.failed",
 		Category: "workflow", Severity: "error", GroupKey: "run-1", AlertState: inbox.AlertFiring,
 		Status: inbox.EventProcessing, LeaseOwner: "worker-1", FencingToken: 3, OccurredAt: "2026-08-24T01:00:00.000000000Z",
 		CreatedAt: "2026-08-24T01:00:00.000000000Z", UpdatedAt: "2026-08-24T01:00:00.000000000Z",
-		ChannelPlans: []delivery.Plan{{ID: "plan-1", WorkspaceID: "workspace-1", EventID: "event-1", Channel: "slack", Status: "queued", CreatedAt: "2026-08-24T01:00:00.000000000Z", UpdatedAt: "2026-08-24T01:00:00.000000000Z"}}}
+		ChannelPlans: []delivery.Plan{{DeliveryID: "plan-1", WorkspaceID: "workspace-1", EventID: "event-1", Channel: "slack", Status: "queued", CreatedAt: "2026-08-24T01:00:00.000000000Z", UpdatedAt: "2026-08-24T01:00:00.000000000Z"}}}
 }
 
 func insertClaimedEvent(t *testing.T, db *sql.DB, event inbox.Event) {
 	t.Helper()
 	raw := `{"id":"event-1"}`
-	_, err := db.Exec(`INSERT INTO _notification_events VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, event.ID, event.WorkspaceID, event.Source, event.SourceEventID, event.Status, raw, 0, "", "", event.LeaseOwner, "", event.FencingToken, event.OccurredAt, event.CreatedAt, event.UpdatedAt)
+	_, err := db.Exec(`INSERT INTO _notification_events (event_id,workspace_id,source,source_event_id,status,payload_json,attempt_count,next_attempt_at,last_error_code,lease_owner,lease_expires_at,fencing_token,occurred_at,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, event.EventID, event.WorkspaceID, event.Source, event.SourceEventID, event.Status, raw, 0, 0, "", event.LeaseOwner, 0, event.FencingToken, notification.TimestampMillis(event.OccurredAt), notification.TimestampMillis(event.CreatedAt), notification.TimestampMillis(event.UpdatedAt))
 	if err != nil {
 		t.Fatal(err)
 	}

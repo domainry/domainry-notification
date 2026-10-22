@@ -260,7 +260,7 @@ func (a integrationAuthentication) CurrentSession(_ context.Context, request ide
 	if !found {
 		return identitysdk.SessionView{}, errors.New("unknown integration session")
 	}
-	return identitysdk.SessionView{WorkspaceID: identitysdk.WorkspaceID(profile.workspaceID), SubjectID: identitysdk.SubjectID(profile.userID), AuthorizationRevision: "revision-1", User: identitysdk.User{ID: profile.userID}}, nil
+	return identitysdk.SessionView{WorkspaceID: identitysdk.WorkspaceID(profile.workspaceID), SubjectID: identitysdk.SubjectID(profile.userID), AuthorizationRevision: "revision-1", User: identitysdk.User{UserID: profile.userID}}, nil
 }
 
 type integrationAuthorization struct {
@@ -439,7 +439,7 @@ func integrationApplication() notificationsdk.ApplicationRef {
 
 func integrationIntent() contract.NotificationIntent {
 	return contract.NotificationIntent{
-		ID: "invoice-event-1", WorkspaceID: "workspace-a", SourceEventID: "invoice-42:due", EventType: "invoice.due",
+		WorkspaceID: "workspace-a", SourceEventID: "invoice-42:due", EventType: "invoice.due",
 		RecipientUserIDs: []string{"user-a"}, SubjectType: "invoice", SubjectID: "invoice-42", SubjectVersion: "1", DedupeKey: "invoice-42:due",
 		OccurredAt: "2026-09-03T09:59:00Z", Locale: "en-US", Variables: map[string]any{"invoice_number": "INV-42"},
 	}
@@ -473,7 +473,7 @@ func TestPublicBindingRunsDurableNotificationLifecycleWithRetryRecovery(t *testi
 	if err != nil || !created || len(event.ChannelPlans) != 1 {
 		t.Fatalf("event=%+v created=%v err=%v", event, created, err)
 	}
-	if !host.notifier.contains("notification_inbox", event.ID) {
+	if !host.notifier.contains("notification_inbox", event.EventID) {
 		t.Fatalf("inbox work was not published after durable enqueue: %+v", host.notifier.work)
 	}
 	workers, local := binding.LocalWorkers()
@@ -483,7 +483,7 @@ func TestPublicBindingRunsDurableNotificationLifecycleWithRetryRecovery(t *testi
 	if processed, err := workers.ProcessDueInboxEvents(t.Context(), 10); err != nil || processed != 1 {
 		t.Fatalf("processed inbox events=%d err=%v", processed, err)
 	}
-	planID := event.ChannelPlans[0].ID
+	planID := event.ChannelPlans[0].DeliveryID
 	if !host.notifier.contains("notification_channel", planID) {
 		t.Fatalf("channel work was not published after atomic materialization: %+v", host.notifier.work)
 	}
@@ -527,12 +527,12 @@ func TestPublicBindingRunsDurableNotificationLifecycleWithRetryRecovery(t *testi
 		t.Fatal("completed plan crossed the gateway more than once")
 	}
 	var reservations int
-	if err := host.database.QueryRow(`SELECT COUNT(*) FROM _notification_deliveries WHERE workspace_id = ? AND row_kind = 'reservation'`, "workspace-a").Scan(&reservations); err != nil || reservations != 1 {
+	if err := host.database.QueryRow(`SELECT COUNT(*) FROM _notification_delivery_reservations WHERE workspace_id = ?`, "workspace-a").Scan(&reservations); err != nil || reservations != 1 {
 		t.Fatalf("delivery reservations=%d err=%v", reservations, err)
 	}
 
 	duplicate, created, err := binding.Publisher().PublishIntent(t.Context(), intent)
-	if err != nil || created || duplicate.ID != event.ID {
+	if err != nil || created || duplicate.EventID != event.EventID {
 		t.Fatalf("idempotent publish event=%+v created=%v err=%v", duplicate, created, err)
 	}
 	conflict := intent
@@ -566,7 +566,7 @@ func TestPublicBindingRetriesFailedInboxMaterializationAndRecovers(t *testing.T)
 	if processed, err := workers.ProcessDueInboxEvents(t.Context(), 10); err != nil || processed != 0 {
 		t.Fatalf("failed materialization processed=%d err=%v", processed, err)
 	}
-	assertIntegrationInboxEventState(t, host.database, event.ID, "queued", 1, "retry_scheduled")
+	assertIntegrationInboxEventState(t, host.database, event.EventID, "queued", 1, "retry_scheduled")
 	if _, err := host.database.Exec(`DROP TRIGGER fail_inbox_materialization`); err != nil {
 		t.Fatal(err)
 	}
@@ -577,12 +577,12 @@ func TestPublicBindingRetriesFailedInboxMaterializationAndRecovers(t *testing.T)
 	if processed, err := workers.ProcessDueInboxEvents(t.Context(), 10); err != nil || processed != 1 {
 		t.Fatalf("recovered materialization processed=%d err=%v", processed, err)
 	}
-	assertIntegrationInboxEventState(t, host.database, event.ID, "materialized", 1, "retry_scheduled")
+	assertIntegrationInboxEventState(t, host.database, event.EventID, "materialized", 1, "retry_scheduled")
 	page, err := binding.Inbox().List(t.Context(), notificationsdk.UserAuthority{AccessToken: "full-token"}, contract.NotificationInboxQuery{Scope: contract.NotificationInboxScopeMine}, "")
-	if err != nil || len(page.Items) != 1 || page.Items[0].EventID != event.ID {
+	if err != nil || len(page.Items) != 1 || page.Items[0].EventID != event.EventID {
 		t.Fatalf("recovered inbox page=%+v err=%v", page, err)
 	}
-	if processed, err := workers.ProcessInboxEvent(t.Context(), notificationsdk.WorkLocator{Kind: "notification_inbox", WorkspaceID: "workspace-a", TaskID: event.ID}); err != nil || processed {
+	if processed, err := workers.ProcessInboxEvent(t.Context(), notificationsdk.WorkLocator{Kind: "notification_inbox", WorkspaceID: "workspace-a", TaskID: event.EventID}); err != nil || processed {
 		t.Fatalf("materialized event ran twice: processed=%v err=%v", processed, err)
 	}
 }
@@ -613,7 +613,7 @@ func TestPublicBindingDeadLettersInboxAfterBoundedFailures(t *testing.T) {
 		if attempt == 8 {
 			status, disposition = "failed", "dead_letter"
 		}
-		assertIntegrationInboxEventState(t, host.database, event.ID, status, attempt, disposition)
+		assertIntegrationInboxEventState(t, host.database, event.EventID, status, attempt, disposition)
 		host.clock.Advance(time.Hour)
 	}
 	if _, err := host.database.Exec(`DROP TRIGGER fail_inbox_materialization`); err != nil {
@@ -627,7 +627,7 @@ func TestPublicBindingDeadLettersInboxAfterBoundedFailures(t *testing.T) {
 		t.Fatalf("dead-letter governance metrics=%+v err=%v", metrics.Failures, err)
 	}
 	var itemCount int
-	if err := host.database.QueryRow(`SELECT COUNT(*) FROM _notification_inbox_items WHERE event_id = ?`, event.ID).Scan(&itemCount); err != nil || itemCount != 0 {
+	if err := host.database.QueryRow(`SELECT COUNT(*) FROM _notification_inbox_items WHERE event_id = ?`, event.EventID).Scan(&itemCount); err != nil || itemCount != 0 {
 		t.Fatalf("dead-letter inbox items=%d err=%v", itemCount, err)
 	}
 	full := notificationsdk.UserAuthority{AccessToken: "full-token"}
@@ -638,16 +638,16 @@ func TestPublicBindingDeadLettersInboxAfterBoundedFailures(t *testing.T) {
 		t.Fatalf("other workspace listed dead letters: %v", err)
 	}
 	page, err := binding.Administration().ListDeadLetters(t.Context(), full, "", 10)
-	if err != nil || len(page.Items) != 1 || page.Items[0].ID != event.ID || page.Items[0].AttemptCount != 8 || page.NextCursor != "" {
+	if err != nil || len(page.Items) != 1 || page.Items[0].EventID != event.EventID || page.Items[0].AttemptCount != 8 || page.NextCursor != "" {
 		t.Fatalf("dead-letter page=%+v err=%v", page, err)
 	}
-	if _, err := binding.Administration().RedriveDeadLetter(t.Context(), notificationsdk.UserAuthority{AccessToken: "limited-token"}, event.ID); !isIntegrationSDKError(err, 403, "notification.permission_denied", false) {
+	if _, err := binding.Administration().RedriveDeadLetter(t.Context(), notificationsdk.UserAuthority{AccessToken: "limited-token"}, event.EventID); !isIntegrationSDKError(err, 403, "notification.permission_denied", false) {
 		t.Fatalf("limited token redrove dead letter: %v", err)
 	}
-	if _, err := binding.Administration().RedriveDeadLetter(t.Context(), full, event.ID); err != nil {
+	if _, err := binding.Administration().RedriveDeadLetter(t.Context(), full, event.EventID); err != nil {
 		t.Fatalf("authorized redrive: %v", err)
 	}
-	if _, err := binding.Administration().RedriveDeadLetter(t.Context(), full, event.ID); !isIntegrationSDKError(err, 409, "notification.dead_letter_not_failed", false) {
+	if _, err := binding.Administration().RedriveDeadLetter(t.Context(), full, event.EventID); !isIntegrationSDKError(err, 409, "notification.dead_letter_not_failed", false) {
 		t.Fatalf("duplicate redrive error=%v", err)
 	}
 	if page, err := binding.Administration().ListDeadLetters(t.Context(), full, "", 10); err != nil || len(page.Items) != 0 {
@@ -656,7 +656,7 @@ func TestPublicBindingDeadLettersInboxAfterBoundedFailures(t *testing.T) {
 	if processed, err := workers.ProcessDueInboxEvents(t.Context(), 10); err != nil || processed != 1 {
 		t.Fatalf("manually redriven event processed=%d err=%v", processed, err)
 	}
-	if err := host.database.QueryRow(`SELECT COUNT(*) FROM _notification_inbox_items WHERE event_id = ?`, event.ID).Scan(&itemCount); err != nil || itemCount != 1 {
+	if err := host.database.QueryRow(`SELECT COUNT(*) FROM _notification_inbox_items WHERE event_id = ?`, event.EventID).Scan(&itemCount); err != nil || itemCount != 1 {
 		t.Fatalf("redriven inbox items=%d err=%v", itemCount, err)
 	}
 }
@@ -665,7 +665,7 @@ func assertIntegrationInboxEventState(t *testing.T, database *sql.DB, eventID, w
 	t.Helper()
 	var status, errorCode string
 	var attempts int
-	if err := database.QueryRow(`SELECT status, attempt_count, last_error_code FROM _notification_events WHERE id = ?`, eventID).Scan(&status, &attempts, &errorCode); err != nil {
+	if err := database.QueryRow(`SELECT status, attempt_count, last_error_code FROM _notification_events WHERE event_id = ?`, eventID).Scan(&status, &attempts, &errorCode); err != nil {
 		t.Fatal(err)
 	}
 	if status != wantStatus || attempts != wantAttempts {
@@ -790,7 +790,7 @@ func assertIntegrationPlanState(t *testing.T, database *sql.DB, planID, wantStat
 	t.Helper()
 	var status, code, messageID string
 	var attempts int
-	if err := database.QueryRow(`SELECT status, attempt_count, last_error_code, outbox_message_id FROM _notification_deliveries WHERE workspace_id = ? AND row_kind = 'delivery' AND id = ?`, "workspace-a", planID).Scan(&status, &attempts, &code, &messageID); err != nil {
+	if err := database.QueryRow(`SELECT status, attempt_count, last_error_code, outbox_message_id FROM _notification_deliveries WHERE workspace_id = ? AND delivery_id = ?`, "workspace-a", planID).Scan(&status, &attempts, &code, &messageID); err != nil {
 		t.Fatal(err)
 	}
 	if status != wantStatus || attempts != wantAttempts || code != wantCode || messageID != wantMessageID {

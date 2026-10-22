@@ -49,7 +49,7 @@ func TestStandaloneArtifactKernelPersistsMetadataBindingsAndImmutableContent(t *
 	}
 	now := time.Now().UTC().Truncate(time.Millisecond)
 	value, created, err := store.Register(t.Context(), sharedartifact.Artifact{
-		ID: "lifecycle_archive_one", WorkspaceID: "workspace-a", Owner: sharedartifact.OwnerLifecycle, Kind: "archive",
+		ArtifactID: "lifecycle_archive_one", WorkspaceID: "workspace-a", Owner: sharedartifact.OwnerLifecycle, Kind: "archive",
 		IdempotencyKey: "lifecycle_archive_one", CreatedBy: "notification_retention", Filename: "archive.json", MediaType: "application/json",
 		ContentSHA256: info.SHA256, SizeBytes: info.Size, StorageReference: info.Reference,
 		Status: sharedartifact.StatusAvailable, ScanStatus: sharedartifact.ScanNotRequired,
@@ -62,7 +62,7 @@ func TestStandaloneArtifactKernelPersistsMetadataBindingsAndImmutableContent(t *
 		t.Fatalf("register replay created=%v err=%v", created, err)
 	}
 	binding := sharedartifact.Binding{
-		ID: value.ID + ":source", WorkspaceID: value.WorkspaceID, ArtifactID: value.ID,
+		WorkspaceID: value.WorkspaceID, ArtifactID: value.ArtifactID,
 		Owner: sharedartifact.OwnerLifecycle, Kind: sharedartifact.BindingObjectField,
 		ResourceType: "_notification_events", ResourceID: "notification-one", FieldKey: "notification.history",
 		Metadata: []byte(`{}`), CreatedAt: now,
@@ -73,12 +73,12 @@ func TestStandaloneArtifactKernelPersistsMetadataBindingsAndImmutableContent(t *
 	if _, created, err = store.Bind(t.Context(), binding); err != nil || created {
 		t.Fatalf("bind replay created=%v err=%v", created, err)
 	}
-	bindings, err := store.Bindings(t.Context(), value.WorkspaceID, value.ID)
+	bindings, err := store.Bindings(t.Context(), value.WorkspaceID, value.ArtifactID)
 	if err != nil || len(bindings) != 1 || bindings[0].ResourceID != binding.ResourceID {
 		t.Fatalf("bindings=%+v err=%v", bindings, err)
 	}
 	byToken, found, err := store.ByDownloadTokenHash(t.Context(), value.WorkspaceID, value.DownloadTokenSHA256)
-	if err != nil || !found || byToken.ID != value.ID {
+	if err != nil || !found || byToken.ArtifactID != value.ArtifactID {
 		t.Fatalf("by token=%+v found=%v err=%v", byToken, found, err)
 	}
 	reader, err := files.Open(t.Context(), value.WorkspaceID, value.StorageReference)

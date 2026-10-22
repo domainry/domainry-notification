@@ -6,7 +6,9 @@ import (
 )
 
 type Item struct {
-	ID                  string                   `json:"id"`
+	ID                  int64                    `json:"id"`
+	ItemID              string                   `json:"item_id"`
+	ItemKey             string                   `json:"-"`
 	WorkspaceID         notification.WorkspaceID `json:"workspace_id"`
 	RecipientUserID     notification.UserID      `json:"recipient_user_id"`
 	EventID             string                   `json:"event_id"`
@@ -55,7 +57,7 @@ type Query struct {
 	From             string
 	To               string
 	BeforeUpdatedAt  string
-	BeforeID         string
+	BeforeID         int64
 	Limit            int
 }
 
@@ -81,7 +83,8 @@ type Facets struct {
 // Delegation grants read-only mailbox access. It never grants authority to
 // mutate the owner's mailbox or source business resource.
 type Delegation struct {
-	ID             string                   `json:"id"`
+	ID             int64                    `json:"id"`
+	DelegationID   string                   `json:"delegation_id"`
 	WorkspaceID    notification.WorkspaceID `json:"workspace_id"`
 	OwnerUserID    notification.UserID      `json:"owner_user_id"`
 	DelegateUserID notification.UserID      `json:"delegate_user_id"`

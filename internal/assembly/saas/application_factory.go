@@ -215,7 +215,7 @@ func (d identityRecipientResolver) FindRecipient(ctx context.Context, workspaceI
 	if err != nil || !found {
 		return modulehost.Recipient{}, found, err
 	}
-	return modulehost.Recipient{ID: user.ID, Email: user.Email, Locale: user.Locale, Timezone: user.Timezone}, true, nil
+	return modulehost.Recipient{ID: user.UserID, Email: user.Email, Locale: user.Locale, Timezone: user.Timezone}, true, nil
 }
 
 // Runtime-business audience callbacks are deliberately unavailable in SaaS.

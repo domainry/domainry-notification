@@ -213,7 +213,7 @@ func (s *Store) ReserveBatch(ctx context.Context, workspaceID notification.Works
 	}
 	defer tx.Rollback()
 	for _, reservation := range reservations {
-		if strings.TrimSpace(reservation.ID) == "" || reservation.RecipientKey == "" {
+		if strings.TrimSpace(reservation.ReservationKey) == "" || reservation.RecipientKey == "" {
 			return fmt.Errorf("notification delivery reservation identity is required")
 		}
 		idempotent, err := s.reservationAlreadyRecorded(ctx, tx, workspaceID, reservation)
@@ -228,7 +228,7 @@ func (s *Store) ReserveBatch(ctx context.Context, workspaceID notification.Works
 			return fmt.Errorf("parse notification delivery reservation timestamp: %w", parseErr)
 		}
 		var count int
-		frequency, frequencyArgs, buildErr := query.NewWorkspaceSelectBuilder(s.Renderer, notificationDeliveriesTable, workspaceID.String()).Projections(query.Project(query.CountAll())).Where(query.And(query.Equal("row_kind", deliveryReservationRowKind), query.Equal("recipient_key", reservation.RecipientKey.String()), query.Equal("channel", reservation.Channel), query.GreaterThanOrEqual("created_at", createdAt.Add(-time.Hour).UTC().UnixMilli()))).Build()
+		frequency, frequencyArgs, buildErr := query.NewWorkspaceSelectBuilder(s.Renderer, notificationDeliveryReservationsTable, workspaceID.String()).Projections(query.Project(query.CountAll())).Where(query.And(query.Equal("recipient_key", reservation.RecipientKey.String()), query.Equal("channel", reservation.Channel), query.GreaterThanOrEqual("created_at", createdAt.Add(-time.Hour).UTC().UnixMilli()))).Build()
 		if buildErr != nil {
 			return buildErr
 		}
@@ -239,7 +239,7 @@ func (s *Store) ReserveBatch(ctx context.Context, workspaceID notification.Works
 			return delivery.ErrFrequencyExceeded
 		}
 		if strings.TrimSpace(reservation.DedupeKey) != "" && dedupeWindowSeconds > 0 {
-			dedupe, dedupeArgs, buildErr := query.NewWorkspaceSelectBuilder(s.Renderer, notificationDeliveriesTable, workspaceID.String()).Projections(query.Project(query.CountAll())).Where(query.And(query.Equal("row_kind", deliveryReservationRowKind), query.Equal("recipient_key", reservation.RecipientKey.String()), query.Equal("template_key", reservation.TemplateKey), query.Equal("channel", reservation.Channel), query.Equal("dedupe_key", reservation.DedupeKey), query.GreaterThanOrEqual("created_at", createdAt.Add(-time.Duration(dedupeWindowSeconds)*time.Second).UTC().UnixMilli()))).Build()
+			dedupe, dedupeArgs, buildErr := query.NewWorkspaceSelectBuilder(s.Renderer, notificationDeliveryReservationsTable, workspaceID.String()).Projections(query.Project(query.CountAll())).Where(query.And(query.Equal("recipient_key", reservation.RecipientKey.String()), query.Equal("template_key", reservation.TemplateKey), query.Equal("channel", reservation.Channel), query.Equal("dedupe_key", reservation.DedupeKey), query.GreaterThanOrEqual("created_at", createdAt.Add(-time.Duration(dedupeWindowSeconds)*time.Second).UTC().UnixMilli()))).Build()
 			if buildErr != nil {
 				return buildErr
 			}
@@ -250,8 +250,8 @@ func (s *Store) ReserveBatch(ctx context.Context, workspaceID notification.Works
 				return delivery.ErrDuplicate
 			}
 		}
-		_, err = s.WorkspaceInsert(ctx, tx, workspaceID.String(), notificationDeliveriesTable, []string{"id", "workspace_id", "row_kind", "event_id", "recipient_key", "template_key", "channel", "dedupe_key", "status", "payload_json", "attempt_count", "next_attempt_at", "last_error_code", "outbox_message_id", "lease_owner", "lease_expires_at", "fencing_token", "created_at", "updated_at"},
-			reservation.ID, workspaceID.String(), deliveryReservationRowKind, "", reservation.RecipientKey.String(), reservation.TemplateKey, reservation.Channel, reservation.DedupeKey, "reserved", `{}`, 0, int64(0), "", "", "", int64(0), 0, notification.TimestampMillis(reservation.CreatedAt), notification.TimestampMillis(reservation.CreatedAt))
+		_, err = s.WorkspaceInsert(ctx, tx, workspaceID.String(), notificationDeliveryReservationsTable, []string{"workspace_id", "reservation_key", "recipient_key", "template_key", "channel", "dedupe_key", "created_at"},
+			workspaceID.String(), reservation.ReservationKey, reservation.RecipientKey.String(), reservation.TemplateKey, reservation.Channel, reservation.DedupeKey, notification.TimestampMillis(reservation.CreatedAt))
 		if err != nil {
 			return fmt.Errorf("insert notification delivery reservation: %w", err)
 		}
@@ -260,9 +260,9 @@ func (s *Store) ReserveBatch(ctx context.Context, workspaceID notification.Works
 }
 
 func (s *Store) reservationAlreadyRecorded(ctx context.Context, queryer *sql.Tx, workspaceID notification.WorkspaceID, reservation delivery.Reservation) (bool, error) {
-	lookup, args, err := query.NewWorkspaceSelectBuilder(s.Renderer, notificationDeliveriesTable, workspaceID.String()).
+	lookup, args, err := query.NewWorkspaceSelectBuilder(s.Renderer, notificationDeliveryReservationsTable, workspaceID.String()).
 		Columns("recipient_key", "template_key", "channel", "dedupe_key").
-		Where(query.And(query.Equal("id", reservation.ID), query.Equal("row_kind", deliveryReservationRowKind))).Build()
+		Where(query.Equal("reservation_key", reservation.ReservationKey)).Build()
 	if err != nil {
 		return false, err
 	}

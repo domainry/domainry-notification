@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/domainry/domainry-foundation/entityid"
 	"github.com/domainry/domainry-notification/internal/domain/delivery/service"
 	notification "github.com/domainry/domainry-notification/internal/domain/notification/model"
 	"github.com/domainry/domainry-notification/internal/domain/template/service"
@@ -29,8 +30,13 @@ func NewCompiler(catalog *Catalog, validator *Validator, clock notification.Cloc
 }
 
 // Compile returns a validated event ready for Store.Enqueue or a source-owned
-// transaction writer. Generated plan IDs are stable across retries.
+// transaction writer. Source identity, rather than entity identity, makes a
+// retried publication idempotent.
 func (c *Compiler) Compile(intent Intent) (Event, error) {
+	eventID, err := entityid.New("notevt")
+	if err != nil {
+		return Event{}, err
+	}
 	eventType, found := c.catalog.EventType(strings.TrimSpace(intent.EventType))
 	if !found {
 		return Event{}, invalid("backend.notification.event_type_not_published", "event_type", intent.EventType)
@@ -68,7 +74,7 @@ func (c *Compiler) Compile(intent Intent) (Event, error) {
 		actionState = ActionState(strings.TrimSpace(string(intent.ActionState)))
 	}
 	event := Event{
-		ID: strings.TrimSpace(intent.ID), WorkspaceID: notification.WorkspaceID(strings.TrimSpace(intent.WorkspaceID.String())), Source: eventType.Source,
+		EventID: eventID, WorkspaceID: notification.WorkspaceID(strings.TrimSpace(intent.WorkspaceID.String())), Source: eventType.Source,
 		SourceEventID: strings.TrimSpace(intent.SourceEventID), EventType: eventType.Key, Category: eventType.Category,
 		Severity: severity, RecipientUserIDs: append([]notification.UserID(nil), intent.RecipientUserIDs...), AudienceResolverKeys: resolverKeys,
 		SubjectType: strings.TrimSpace(intent.SubjectType), SubjectID: strings.TrimSpace(intent.SubjectID), SubjectVersion: strings.TrimSpace(intent.SubjectVersion),
@@ -88,8 +94,11 @@ func (c *Compiler) Compile(intent Intent) (Event, error) {
 	event.CreatedAt, event.UpdatedAt = now, now
 	for index := range event.ChannelPlans {
 		plan := &event.ChannelPlans[index]
-		plan.ID = stableID(event.WorkspaceID.String(), event.ID, plan.Channel, plan.ConnectorKey, plan.Operation, fmt.Sprint(plan.EscalationStep))
-		plan.WorkspaceID, plan.EventID, plan.Status = event.WorkspaceID, event.ID, "queued"
+		plan.DeliveryID, err = entityid.New("delivery")
+		if err != nil {
+			return Event{}, err
+		}
+		plan.WorkspaceID, plan.EventID, plan.Status = event.WorkspaceID, event.EventID, "queued"
 		plan.CreatedAt, plan.UpdatedAt = now, now
 	}
 	return event, nil
@@ -219,7 +228,7 @@ func digestKey(intent Intent, channel RuleChannel) string {
 	for _, recipient := range intent.RecipientUserIDs {
 		recipients = append(recipients, recipient.String())
 	}
-	return stableID(intent.WorkspaceID.String(), intent.EventType, channel.Channel, channel.TemplateKey, channel.ConnectionKey, strings.Join(recipients, ","), strings.TrimSpace(intent.Locale))
+	return stableKey(intent.WorkspaceID.String(), intent.EventType, channel.Channel, channel.TemplateKey, channel.ConnectionKey, strings.Join(recipients, ","), strings.TrimSpace(intent.Locale))
 }
 
 func cloneVariables(source map[string]any) map[string]any {
@@ -257,9 +266,9 @@ func normalizeLocale(value string) string {
 	return strings.TrimSpace(strings.ReplaceAll(value, "_", "-"))
 }
 
-func stableID(parts ...string) string {
+func stableKey(parts ...string) string {
 	sum := sha256.Sum256([]byte(strings.Join(parts, "\x00")))
-	return "inbox_" + hex.EncodeToString(sum[:16])
+	return "notifkey_" + hex.EncodeToString(sum[:16])
 }
 
 func snapshotHash(snapshot Snapshot) string {

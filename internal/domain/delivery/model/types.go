@@ -28,12 +28,12 @@ type RecipientPreference struct {
 }
 
 type Reservation struct {
-	ID           string
-	RecipientKey notification.UserID
-	TemplateKey  string
-	Channel      string
-	DedupeKey    string
-	CreatedAt    string
+	ReservationKey string
+	RecipientKey   notification.UserID
+	TemplateKey    string
+	Channel        string
+	DedupeKey      string
+	CreatedAt      string
 }
 
 type Evaluation struct {
@@ -54,7 +54,9 @@ type Decision struct {
 // event. In-app materialization has its own lifecycle and is never rolled back
 // because external dispatch fails.
 type Plan struct {
-	ID                       string                   `json:"id"`
+	ID                       int64                    `json:"id"`
+	DeliveryID               string                   `json:"delivery_id"`
+	DispatchKey              string                   `json:"-"`
 	WorkspaceID              notification.WorkspaceID `json:"workspace_id"`
 	EventID                  string                   `json:"event_id"`
 	Channel                  string                   `json:"channel"`
