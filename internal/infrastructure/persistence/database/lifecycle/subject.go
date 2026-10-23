@@ -139,7 +139,7 @@ func (s *Store) EraseSubject(ctx context.Context, workspaceID, subjectID string,
 			return raw, false, nil
 		}
 		event.Snapshot.Title, event.Snapshot.Body, event.Snapshot.Facts, event.Snapshot.Actions = "[erased]", "[erased]", nil, nil
-		event.LocalizedSnapshots, event.CorrelationID, event.TraceID = nil, "", ""
+		event.LocalizedSnapshots = nil
 		for i := range event.ChannelPlans {
 			replaceRecipients(event.ChannelPlans[i].RecipientUserIDs, subjectID, anonymous)
 			event.ChannelPlans[i].Variables = nil

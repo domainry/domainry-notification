@@ -79,7 +79,7 @@ func (c *Compiler) Compile(intent Intent) (Event, error) {
 		Severity: severity, RecipientUserIDs: append([]notification.UserID(nil), intent.RecipientUserIDs...), AudienceResolverKeys: resolverKeys,
 		SubjectType: strings.TrimSpace(intent.SubjectType), SubjectID: strings.TrimSpace(intent.SubjectID), SubjectVersion: strings.TrimSpace(intent.SubjectVersion),
 		GroupKey: strings.TrimSpace(intent.GroupKey), DedupeKey: strings.TrimSpace(intent.DedupeKey), ActionState: actionState, AlertState: AlertState(strings.TrimSpace(string(intent.AlertState))),
-		ExpiresAt: strings.TrimSpace(intent.ExpiresAt), OccurredAt: strings.TrimSpace(intent.OccurredAt), CorrelationID: strings.TrimSpace(intent.CorrelationID), TraceID: strings.TrimSpace(intent.TraceID),
+		ExpiresAt: strings.TrimSpace(intent.ExpiresAt), OccurredAt: strings.TrimSpace(intent.OccurredAt),
 		Snapshot: snapshot, LocalizedSnapshots: localized,
 	}
 	event.ChannelPlans = c.compilePlans(eventType.Key, intent, snapshot)

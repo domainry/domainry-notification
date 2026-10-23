@@ -27,8 +27,6 @@ type Intent struct {
 	OccurredAt           string                   `json:"occurred_at"`
 	Locale               string                   `json:"locale,omitempty"`
 	Variables            map[string]any           `json:"variables,omitempty"`
-	CorrelationID        string                   `json:"correlation_id,omitempty"`
-	TraceID              string                   `json:"trace_id,omitempty"`
 }
 
 // Snapshot is immutable, sanitized in-app content. Template evidence prevents
@@ -65,8 +63,6 @@ type Event struct {
 	AlertState           AlertState               `json:"alert_state,omitempty"`
 	ExpiresAt            string                   `json:"expires_at,omitempty"`
 	OccurredAt           string                   `json:"occurred_at"`
-	CorrelationID        string                   `json:"correlation_id,omitempty"`
-	TraceID              string                   `json:"trace_id,omitempty"`
 	Snapshot             Snapshot                 `json:"snapshot"`
 	LocalizedSnapshots   map[string]Snapshot      `json:"localized_snapshots,omitempty"`
 	ChannelPlans         []delivery.Plan          `json:"channel_plans,omitempty"`
