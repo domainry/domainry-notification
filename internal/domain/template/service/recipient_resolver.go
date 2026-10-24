@@ -12,3 +12,9 @@ import (
 type RecipientResolver interface {
 	FindRecipient(context.Context, notification.WorkspaceID, notification.UserID) (notification.Recipient, bool, error)
 }
+
+// NativePushRecipientResolver resolves the current delivery token at dispatch
+// time so rotated credentials are never frozen into a notification plan.
+type NativePushRecipientResolver interface {
+	FindNativePushToken(context.Context, notification.WorkspaceID, notification.UserID, string) (string, bool, error)
+}

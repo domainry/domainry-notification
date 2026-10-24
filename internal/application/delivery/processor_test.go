@@ -155,6 +155,18 @@ func TestProcessorRetriesDispatchFailureAndCancelsTerminalAction(t *testing.T) {
 	}
 }
 
+func TestProcessorCancelsNativePushPlanWhenRecipientHasNoPlatformTarget(t *testing.T) {
+	plan := immediatePlan("plan-no-target")
+	plan.Channel = "native_push"
+	plans := &planStore{plans: []delivery.Plan{plan}}
+	missing := notification.NewError(notification.ErrorInvalid, "backend.notification.recipient_push_target_missing", nil, nil)
+	processor, _ := delivery.NewProcessor(delivery.ProcessorDependencies{Plans: plans, Renderer: &renderer{err: missing}, Dispatcher: &dispatcher{}, Policy: allowPolicy{}, Clock: clock{now: time.Now()}, WorkerID: "worker-1"})
+	done, err := processor.Process(t.Context(), plan.WorkspaceID, plan.DeliveryID)
+	if err != nil || !done || len(plans.cancelled) != 1 || len(plans.retried) != 0 {
+		t.Fatalf("done=%v cancelled=%+v retried=%+v err=%v", done, plans.cancelled, plans.retried, err)
+	}
+}
+
 func TestProcessorLogsDeadLetterAfterDurableTransition(t *testing.T) {
 	core, observed := observer.New(zap.WarnLevel)
 	previous := zap.L()

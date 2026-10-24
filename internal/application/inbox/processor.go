@@ -12,6 +12,7 @@ import (
 	"github.com/domainry/domainry-foundation/entityid"
 	"github.com/domainry/domainry-foundation/logging"
 	"github.com/domainry/domainry-foundation/worker"
+	delivery "github.com/domainry/domainry-notification/internal/domain/delivery/service"
 	notification "github.com/domainry/domainry-notification/internal/domain/notification/model"
 	"github.com/domainry/domainry-notification/internal/domain/template/service"
 	"go.uber.org/zap"
@@ -118,9 +119,11 @@ func (p *Processor) materialize(ctx context.Context, event Event) error {
 		return unavailable("backend.notification.inbox_audience_resolution_empty", nil)
 	}
 	event.RecipientUserIDs = recipients
-	for index := range event.ChannelPlans {
-		event.ChannelPlans[index].RecipientUserIDs = append([]notification.UserID(nil), recipients...)
+	plans, err := expandRecipientPlans(event.ChannelPlans, recipients)
+	if err != nil {
+		return err
 	}
+	event.ChannelPlans = plans
 	items := make([]Item, 0, len(recipients))
 	for _, recipient := range recipients {
 		locale := ""
@@ -146,6 +149,30 @@ func (p *Processor) materialize(ctx context.Context, event Event) error {
 		}
 	}
 	return nil
+}
+
+func expandRecipientPlans(plans []delivery.Plan, recipients []notification.UserID) ([]delivery.Plan, error) {
+	result := make([]delivery.Plan, 0, len(plans))
+	for _, plan := range plans {
+		if strings.TrimSpace(plan.Channel) != "native_push" {
+			plan.RecipientUserIDs = append([]notification.UserID(nil), recipients...)
+			result = append(result, plan)
+			continue
+		}
+		for index, recipient := range recipients {
+			copy := plan
+			copy.RecipientUserIDs = []notification.UserID{recipient}
+			if index > 0 {
+				var err error
+				copy.DeliveryID, err = entityid.New("delivery")
+				if err != nil {
+					return nil, err
+				}
+			}
+			result = append(result, copy)
+		}
+	}
+	return result, nil
 }
 
 func (p *Processor) recordFailure(ctx context.Context, event Event, cause error, now time.Time) error {

@@ -30,7 +30,7 @@ func (v *Validator) ValidateCatalog(values []EventType, rules []Rule) error {
 		seenChannels := map[string]bool{}
 		for _, channel := range rule.Channels {
 			channelKey := strings.TrimSpace(channel.Channel)
-			identity := fmt.Sprintf("%s:%d", channelKey, channel.EscalationStep)
+			identity := fmt.Sprintf("%s:%s:%s:%d", channelKey, strings.TrimSpace(channel.TemplateKey), strings.TrimSpace(channel.ConnectionKey), channel.EscalationStep)
 			if seenChannels[identity] || channel.DelaySeconds < 0 || channel.EscalationStep < 0 || channel.DigestWindowSeconds < 0 || channel.DigestMaximumItems < 0 {
 				return invalid("backend.notification.rule_channel_duplicate", "event_type", key, "channel", channelKey)
 			}

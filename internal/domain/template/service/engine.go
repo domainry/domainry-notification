@@ -174,7 +174,20 @@ func (e *Engine) resolveRecipients(ctx context.Context, workspaceID notification
 			continue
 		}
 		address := userID.String()
-		if channel == "email" || channel == "collaboration" && provider == "feishu" {
+		if channel == "native_push" {
+			resolver, ok := e.recipients.(NativePushRecipientResolver)
+			if !ok {
+				return nil, invalid("backend.notification.recipient_push_resolver_unavailable", "recipient", userID.String(), "provider", provider)
+			}
+			token, found, err := resolver.FindNativePushToken(ctx, workspaceID, userID, provider)
+			if err != nil {
+				return nil, err
+			}
+			if !found || strings.TrimSpace(token) == "" {
+				return nil, invalid("backend.notification.recipient_push_target_missing", "recipient", userID.String(), "provider", provider)
+			}
+			address = strings.TrimSpace(token)
+		} else if channel == "email" || channel == "collaboration" && provider == "feishu" {
 			if e.recipients == nil {
 				return nil, invalid("backend.notification.recipient_resolver_unavailable", "recipient", userID.String())
 			}

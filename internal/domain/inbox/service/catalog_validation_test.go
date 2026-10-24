@@ -32,6 +32,23 @@ func TestCatalogValidationUsesComposedExternalChannels(t *testing.T) {
 	}
 }
 
+func TestCatalogValidationAllowsDistinctNativePushProviderRoutes(t *testing.T) {
+	validator := inboxValidator(t)
+	eventType := validEventType()
+	rule := inbox.Rule{EventTypeKey: eventType.Key, Enabled: true, MandatoryInApp: true, Channels: []inbox.RuleChannel{
+		{Channel: "native_push", TemplateKey: "workflow.task.opened.fcm", ConnectorKey: "notification", ConnectionKey: "facility_fcm", Operation: "send_native"},
+		{Channel: "native_push", TemplateKey: "workflow.task.opened.apns", ConnectorKey: "notification", ConnectionKey: "facility_apns", Operation: "send_native"},
+	}}
+	if err := validator.ValidateCatalog([]inbox.EventType{eventType}, []inbox.Rule{rule}); err != nil {
+		t.Fatal(err)
+	}
+	rule.Channels[1].TemplateKey = rule.Channels[0].TemplateKey
+	rule.Channels[1].ConnectionKey = rule.Channels[0].ConnectionKey
+	if code := notification.ErrorCode(validator.ValidateCatalog([]inbox.EventType{eventType}, []inbox.Rule{rule})); code != "backend.notification.rule_channel_duplicate" {
+		t.Fatalf("duplicate code=%q", code)
+	}
+}
+
 func TestEventTypeRejectsSensitiveVariables(t *testing.T) {
 	value := validEventType()
 	value.Variables = append(value.Variables, template.Variable{Key: "access_token", Type: "text"})

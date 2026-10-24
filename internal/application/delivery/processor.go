@@ -109,6 +109,12 @@ func (p *Processor) processImmediate(ctx context.Context, candidate Plan, now ti
 	}
 	receipt, err := p.dispatch(ctx, claimed, now)
 	if err != nil {
+		if notification.ErrorCode(err) == "backend.notification.recipient_push_target_missing" {
+			if cancelErr := p.plans.CancelPlan(ctx, claimed, "backend.notification.recipient_push_target_missing", notification.Timestamp(now)); cancelErr != nil {
+				return false, errors.Join(err, cancelErr)
+			}
+			return true, nil
+		}
 		if failureErr := p.recordFailure(ctx, claimed, err, now); failureErr != nil {
 			return false, failureErr
 		}

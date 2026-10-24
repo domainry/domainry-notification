@@ -57,7 +57,14 @@ func (a workNotifierAdapter) Notify(ctx context.Context, work notification.Work)
 	}
 }
 
-type recipientResolverAdapter struct{ delegate modulehost.RecipientResolver }
+type nativePushRecipientResolver interface {
+	FindNativePushToken(context.Context, string, string, string) (string, bool, error)
+}
+
+type recipientResolverAdapter struct {
+	delegate   modulehost.RecipientResolver
+	nativePush nativePushRecipientResolver
+}
 
 func (a recipientResolverAdapter) FindRecipient(ctx context.Context, workspaceID notification.WorkspaceID, userID notification.UserID) (notification.Recipient, bool, error) {
 	if a.delegate == nil {
@@ -65,6 +72,13 @@ func (a recipientResolverAdapter) FindRecipient(ctx context.Context, workspaceID
 	}
 	value, found, err := a.delegate.FindRecipient(ctx, workspaceID.String(), userID.String())
 	return notification.Recipient{ID: userID, Email: value.Email, Locale: value.Locale, Timezone: value.Timezone}, found, err
+}
+
+func (a recipientResolverAdapter) FindNativePushToken(ctx context.Context, workspaceID notification.WorkspaceID, userID notification.UserID, provider string) (string, bool, error) {
+	if a.nativePush == nil {
+		return "", false, nil
+	}
+	return a.nativePush.FindNativePushToken(ctx, workspaceID.String(), userID.String(), provider)
 }
 
 type recipientLocaleAdapter struct{ delegate modulehost.RecipientResolver }
@@ -125,6 +139,7 @@ var _ sqlstore.QueueScopeIndex = queueScopeAdapter{}
 var _ inbox.WorkNotifier = workNotifierAdapter{}
 var _ apptemplate.PublicationWorkNotifier = workNotifierAdapter{}
 var _ template.RecipientResolver = recipientResolverAdapter{}
+var _ template.NativePushRecipientResolver = recipientResolverAdapter{}
 var _ appinbox.RecipientLocaleResolver = recipientLocaleAdapter{}
 var _ appinbox.AudienceResolver = audienceAdapter{}
 var _ delivery.Dispatcher = deliveryGatewayAdapter{}

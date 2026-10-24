@@ -134,7 +134,8 @@ func (f *Factory) openHosted(ctx context.Context, application notificationsdk.Ap
 	if err != nil {
 		return nil, err
 	}
-	templateEngine, err := template.NewEngine(catalog.DefaultLocale, installedTemplates, templateValidator, recipientResolverAdapter{host.RecipientResolver()})
+	nativePushResolver, _ := host.(nativePushRecipientResolver)
+	templateEngine, err := template.NewEngine(catalog.DefaultLocale, installedTemplates, templateValidator, recipientResolverAdapter{delegate: host.RecipientResolver(), nativePush: nativePushResolver})
 	if err != nil {
 		return nil, err
 	}

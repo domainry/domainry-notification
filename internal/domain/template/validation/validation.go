@@ -164,6 +164,9 @@ func validateContent(value templatemodel.Template, locale string, content templa
 	if capability.Channel == "email" && strings.TrimSpace(content.Subject) == "" {
 		return invalid("backend.notification.template_subject_required", "template_key", value.Key, "locale", locale)
 	}
+	if capability.Channel == "native_push" && strings.TrimSpace(content.Title) == "" {
+		return invalid("backend.notification.template_title_required", "template_key", value.Key, "locale", locale)
+	}
 	if strings.ContainsAny(content.Subject+content.Title, "\r\n") {
 		return invalid("backend.notification.template_subject_invalid", "template_key", value.Key, "locale", locale)
 	}

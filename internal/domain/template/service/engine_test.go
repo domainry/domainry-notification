@@ -16,6 +16,16 @@ func (d recipientResolver) FindRecipient(_ context.Context, _ notification.Works
 	return value, found, nil
 }
 
+type nativePushResolver struct {
+	recipientResolver
+	tokens map[string]string
+}
+
+func (r nativePushResolver) FindNativePushToken(_ context.Context, _ notification.WorkspaceID, userID notification.UserID, provider string) (string, bool, error) {
+	token, found := r.tokens[userID.String()+"/"+provider]
+	return token, found, nil
+}
+
 func TestEngineRendersPortableSnapshotAndResolvesRecipients(t *testing.T) {
 	value := validEmailTemplate()
 	content := value.Locales["en-US"]
@@ -65,6 +75,34 @@ func TestEngineResolvesFeishuCollaborationRecipientByIdentityEmail(t *testing.T)
 	}
 	if len(rendered.Recipients) != 1 || rendered.Recipients[0] != "sales.user@example.test" || rendered.Provider != "feishu" {
 		t.Fatalf("rendered=%+v", rendered)
+	}
+}
+
+func TestEngineResolvesNativePushTokenAtRenderTime(t *testing.T) {
+	value := template.Template{
+		Key: "safety.alert.fcm", Name: "Safety alert FCM", Channel: "native_push", Provider: "fcm",
+		Status: "published", Version: 1, DefaultLocale: "ja-JP",
+		Variables: []template.Variable{{Key: "site", Type: "text", Required: true}},
+		Locales:   map[string]template.Content{"ja-JP": {Title: "安否確認", Text: "{{site}}で応答してください"}},
+	}
+	capabilities, err := template.NewCapabilities([]template.Provider{{Capability: template.Capability{Channel: "native_push", Provider: "fcm"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	validator, _ := template.NewValidator(capabilities)
+	resolver := nativePushResolver{recipientResolver: recipientResolver{"user-1": {ID: "user-1"}}, tokens: map[string]string{"user-1/fcm": "current-token"}}
+	engine, err := template.NewEngine("ja-JP", []template.Template{value}, validator, resolver)
+	if err != nil {
+		t.Fatal(err)
+	}
+	workspace, _ := notification.NewWorkspaceID("workspace-1")
+	rendered, err := engine.Render(t.Context(), template.RenderRequest{WorkspaceID: workspace, TemplateKey: value.Key, Recipients: []notification.UserID{"user-1"}, Variables: map[string]any{"site": "地下機械室"}})
+	if err != nil || len(rendered.Recipients) != 1 || rendered.Recipients[0] != "current-token" || rendered.Title != "安否確認" {
+		t.Fatalf("rendered=%+v err=%v", rendered, err)
+	}
+	delete(resolver.tokens, "user-1/fcm")
+	if _, err := engine.Render(t.Context(), template.RenderRequest{WorkspaceID: workspace, TemplateKey: value.Key, Recipients: []notification.UserID{"user-1"}, Variables: map[string]any{"site": "地下機械室"}}); notification.ErrorCode(err) != "backend.notification.recipient_push_target_missing" {
+		t.Fatalf("missing target code=%q err=%v", notification.ErrorCode(err), err)
 	}
 }
 

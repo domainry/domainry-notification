@@ -10,7 +10,7 @@ import (
 
 func inboxValidator(t *testing.T) *inbox.Validator {
 	t.Helper()
-	configuration, err := inbox.NewConfiguration([]string{"email", "collaboration"})
+	configuration, err := inbox.NewConfiguration([]string{"email", "collaboration", "native_push"})
 	if err != nil {
 		t.Fatal(err)
 	}
