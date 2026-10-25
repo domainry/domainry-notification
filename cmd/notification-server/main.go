@@ -216,7 +216,7 @@ func openOwnedDatabase(ctx context.Context, config configuration) (*sql.DB, erro
 		}
 		dsn = resolved
 	}
-	database, err := sql.Open(config.sqlDriver, dsn)
+	database, err := telemetry.OpenObservedSQL(config.sqlDriver, dsn, "runtime", nil)
 	if err != nil {
 		return nil, fmt.Errorf("open Notification SaaS database: %w", err)
 	}

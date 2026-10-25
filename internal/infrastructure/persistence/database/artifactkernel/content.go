@@ -11,8 +11,10 @@ import (
 	"os"
 	"regexp"
 	"strings"
+	"time"
 
 	sharedartifact "github.com/domainry/domainry-foundation/artifact"
+	"github.com/domainry/domainry-foundation/telemetry"
 )
 
 const maxArtifactContentBytes = int64(100 << 20)
@@ -49,7 +51,11 @@ func (f *ContentFiles) Close() error {
 	return f.root.Close()
 }
 
-func (f *ContentFiles) PutImmutable(ctx context.Context, workspaceID, identity string, content []byte) (sharedartifact.ContentInfo, error) {
+func (f *ContentFiles) PutImmutable(ctx context.Context, workspaceID, identity string, content []byte) (result sharedartifact.ContentInfo, returnErr error) {
+	started := time.Now()
+	defer func() {
+		recordContentCall(ctx, "put_immutable", map[string]any{"content_bytes": len(content)}, result, started, returnErr)
+	}()
 	if err := ctx.Err(); err != nil {
 		return sharedartifact.ContentInfo{}, err
 	}
@@ -106,7 +112,14 @@ func (f *ContentFiles) PutImmutable(ctx context.Context, workspaceID, identity s
 	return sharedartifact.ContentInfo{Reference: reference, SHA256: hex.EncodeToString(contentDigest[:]), Size: int64(len(content))}, nil
 }
 
-func (f *ContentFiles) Open(ctx context.Context, workspaceID, reference string) (io.ReadCloser, error) {
+func (f *ContentFiles) Open(ctx context.Context, workspaceID, reference string) (reader io.ReadCloser, returnErr error) {
+	started := time.Now()
+	defer func() {
+		telemetry.RecordDependencyCall(ctx, telemetry.DependencyCall{
+			Feature: telemetry.DiagnosticFeatureObjectStore, Dependency: "notification.artifact_content", Operation: "open",
+			Input: map[string]any{"reference": reference},
+		}, telemetry.DependencyResult{Output: map[string]any{"opened": reader != nil}, Err: returnErr}, time.Since(started))
+	}()
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -133,7 +146,11 @@ func (f *ContentFiles) Open(ctx context.Context, workspaceID, reference string) 
 	return file, nil
 }
 
-func (f *ContentFiles) Stat(ctx context.Context, workspaceID, reference string) (sharedartifact.ContentInfo, error) {
+func (f *ContentFiles) Stat(ctx context.Context, workspaceID, reference string) (result sharedartifact.ContentInfo, returnErr error) {
+	started := time.Now()
+	defer func() {
+		recordContentCall(ctx, "stat", map[string]any{"reference": reference}, result, started, returnErr)
+	}()
 	if err := ctx.Err(); err != nil {
 		return sharedartifact.ContentInfo{}, err
 	}
@@ -155,7 +172,14 @@ func (f *ContentFiles) Stat(ctx context.Context, workspaceID, reference string) 
 	return info, nil
 }
 
-func (f *ContentFiles) Delete(ctx context.Context, workspaceID, reference string) error {
+func (f *ContentFiles) Delete(ctx context.Context, workspaceID, reference string) (returnErr error) {
+	started := time.Now()
+	defer func() {
+		telemetry.RecordDependencyCall(ctx, telemetry.DependencyCall{
+			Feature: telemetry.DiagnosticFeatureObjectStore, Dependency: "notification.artifact_content", Operation: "delete",
+			Input: map[string]any{"reference": reference},
+		}, telemetry.DependencyResult{Err: returnErr}, time.Since(started))
+	}()
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -229,6 +253,14 @@ func syncRoot(root *os.Root) error {
 		return err
 	}
 	return closeErr
+}
+
+func recordContentCall(ctx context.Context, operation string, input map[string]any, result sharedartifact.ContentInfo, started time.Time, err error) {
+	telemetry.RecordDependencyCall(ctx, telemetry.DependencyCall{
+		Feature: telemetry.DiagnosticFeatureObjectStore, Dependency: "notification.artifact_content", Operation: operation, Input: input,
+	}, telemetry.DependencyResult{Output: map[string]any{
+		"reference": result.Reference, "size": result.Size, "content_sha256": result.SHA256,
+	}, Err: err}, time.Since(started))
 }
 
 var _ sharedartifact.ContentStore = (*ContentFiles)(nil)
