@@ -10,6 +10,7 @@ import (
 	"reflect"
 	"strings"
 
+	actioncontract "github.com/domainry/domainry-foundation/action"
 	identitysdk "github.com/domainry/domainry-identity-sdk"
 	identityremote "github.com/domainry/domainry-identity-sdk/remote"
 	notificationapplication "github.com/domainry/domainry-notification/internal/application"
@@ -82,7 +83,7 @@ func Open(ctx context.Context, options Options) (identitysdk.Binding, error) {
 		_ = binding.Close(ctx)
 		return nil, fmt.Errorf("Notification SaaS Identity permission snapshot reader is unavailable")
 	}
-	snapshotRequest := identitysdk.PermissionSourceSnapshotRequest{Application: application, SourceOwner: notificationapplication.NotificationAuthorizationOwner}
+	snapshotRequest := identitysdk.PermissionSourceSnapshotRequest{SourceOwner: notificationapplication.NotificationAuthorizationOwner}
 	snapshot, err := reader.CurrentSourceSnapshot(ctx, snapshotRequest)
 	if err != nil {
 		_ = binding.Close(ctx)
@@ -92,7 +93,7 @@ func Open(ctx context.Context, options Options) (identitysdk.Binding, error) {
 		_ = binding.Close(ctx)
 		return nil, fmt.Errorf("validate Notification Identity permission snapshot: %w", err)
 	}
-	request, err := identitysdk.NewPermissionReconcileRequest(application, notificationapplication.NotificationAuthorizationOwner, snapshot.SnapshotHash, definitions)
+	request, err := identitysdk.NewPermissionReconcileRequest(notificationapplication.NotificationAuthorizationOwner, snapshot.SnapshotHash, definitions)
 	if err != nil {
 		_ = binding.Close(ctx)
 		return nil, fmt.Errorf("build Notification Identity permission snapshot: %w", err)
@@ -134,9 +135,23 @@ func PermissionDefinitions() ([]identitysdk.PermissionDefinition, error) {
 		}
 		permission := action.Permission
 		definitions = append(definitions, identitysdk.PermissionDefinition{
-			PermissionKey: permission.Key, ResourceKey: permission.ResourceKey, OperationKey: permission.OperationKey,
+			PermissionKey: permission.Key, ModuleKey: permission.ModuleKey, GroupKey: permission.GroupKey,
+			ResourceKey: permission.ResourceKey, OperationKey: permission.OperationKey, ObjectKey: permission.ObjectKey,
 			Label: permission.Label, Description: permission.Description, Category: permission.Category, SourceKind: action.SourceKind,
+			GrantMode: string(permission.GrantMode), ScopeKind: string(permission.ScopeKind), DefaultLocale: permission.DefaultLocale,
+			I18n: permissionDefinitionI18n(permission.I18n),
 		})
 	}
 	return definitions, nil
+}
+
+func permissionDefinitionI18n(source map[string]actioncontract.PermissionText) identitysdk.PermissionLocalizedText {
+	result := make(identitysdk.PermissionLocalizedText, len(source))
+	for locale, text := range source {
+		result[locale] = identitysdk.PermissionText{
+			ModuleLabel: text.ModuleLabel, GroupLabel: text.GroupLabel, ResourceLabel: text.ResourceLabel,
+			OperationLabel: text.OperationLabel, Label: text.Label, Description: text.Description,
+		}
+	}
+	return result
 }

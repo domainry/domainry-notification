@@ -112,8 +112,11 @@ func notificationHTTPAction(spec notificationHTTPActionSpec, permission bool, ca
 	if permission {
 		definition.Authorization = actioncontract.Authorization{Strategy: actioncontract.AuthorizationAuthenticated}
 		definition.Permission = &actioncontract.PermissionDefinition{
-			Key: spec.Key, Owner: NotificationAuthorizationOwner, ResourceKey: resourceKey, OperationKey: operationKey,
-			Label: spec.Label, Category: capabilityLabel, LifecycleStatus: actioncontract.LifecycleActive,
+			Key: spec.Key, Owner: NotificationAuthorizationOwner, ModuleKey: "notification", GroupKey: capabilityKey,
+			ResourceKey: resourceKey, OperationKey: operationKey, Label: spec.Label, Category: capabilityLabel,
+			GrantMode: actioncontract.PermissionGrantInternal, ScopeKind: actioncontract.PermissionScopeNone,
+			DefaultLocale: "en", I18n: notificationPermissionText(capabilityKey, resourceKey, operationKey, spec.Label),
+			LifecycleStatus: actioncontract.LifecycleActive,
 		}
 	} else {
 		definition.Authorization = actioncontract.Authorization{Strategy: actioncontract.AuthorizationAuthenticated}
@@ -123,6 +126,53 @@ func notificationHTTPAction(spec notificationHTTPActionSpec, permission bool, ca
 		return actioncontract.ActionDefinition{}, fmt.Errorf("Notification Action %q: %w", spec.Key, err)
 	}
 	return definition, nil
+}
+
+func notificationPermissionText(capabilityKey, resourceKey, operationKey, englishLabel string) actioncontract.PermissionLocalizedText {
+	groupEnglish := map[string]string{"notification.management": "Notification management", "notification.inbox": "Personal Inbox"}[capabilityKey]
+	groupChinese := map[string]string{"notification.management": "通知管理", "notification.inbox": "个人收件箱"}[capabilityKey]
+	resourceEnglish := map[string]string{
+		"notification.capabilities": "Notification capabilities", "notification.templates": "Notification templates",
+		"notification.publications": "Publication requests", "notification.templates.draft": "Template drafts",
+		"notification.templates.versions": "Template versions", "notification.delivery_policy": "Delivery policy",
+		"notification.recipient_preferences": "Recipient preferences", "notification.delivery_metrics": "Delivery metrics",
+		"notification.governance.catalog": "Governance catalog", "notification.governance.inbox_metrics": "Inbox governance metrics",
+		"notification.governance.dead_letters": "Failed notification events", "notification.inbox": "Inbox notifications",
+		"notification.inbox.preference": "Personal notification preference", "notification.inbox.saved_views": "Saved Inbox views",
+		"notification.inbox.delegations": "Inbox delegations", "notification.inbox.delegated_owners": "Delegated Inbox owners",
+		"notification.inbox.item": "Inbox notification",
+	}[resourceKey]
+	resourceChinese := map[string]string{
+		"notification.capabilities": "通知能力", "notification.templates": "通知模板",
+		"notification.publications": "发布申请", "notification.templates.draft": "模板草稿",
+		"notification.templates.versions": "模板版本", "notification.delivery_policy": "投递策略",
+		"notification.recipient_preferences": "收件人偏好", "notification.delivery_metrics": "投递指标",
+		"notification.governance.catalog": "治理目录", "notification.governance.inbox_metrics": "收件箱治理指标",
+		"notification.governance.dead_letters": "失败通知事件", "notification.inbox": "收件箱通知",
+		"notification.inbox.preference": "个人通知偏好", "notification.inbox.saved_views": "收件箱保存视图",
+		"notification.inbox.delegations": "收件箱委派", "notification.inbox.delegated_owners": "受委派的收件箱所有者",
+		"notification.inbox.item": "收件箱通知",
+	}[resourceKey]
+	operationEnglish := map[string]string{
+		"read": "View", "list": "List", "get": "View details", "approve": "Approve", "reject": "Reject", "cancel": "Cancel",
+		"preview_draft": "Preview draft", "save": "Save", "request": "Request publication", "disable": "Disable", "preview": "Preview",
+		"restore_draft": "Restore as draft", "update": "Update", "redrive": "Redeliver", "facets": "View filters",
+		"unread_count": "View unread count", "stream": "Synchronize", "delete": "Delete", "mark_read": "Mark read",
+		"mark_unread": "Mark unread", "archive": "Archive", "restore": "Restore", "acknowledge": "Acknowledge",
+		"mark_all_read": "Mark all read",
+	}[operationKey]
+	operationChinese := map[string]string{
+		"read": "查看", "list": "查看列表", "get": "查看详情", "approve": "批准", "reject": "拒绝", "cancel": "取消",
+		"preview_draft": "预览草稿", "save": "保存", "request": "申请发布", "disable": "停用", "preview": "预览",
+		"restore_draft": "恢复为草稿", "update": "更新", "redrive": "重新投递", "facets": "查看筛选项",
+		"unread_count": "查看未读数", "stream": "同步", "delete": "删除", "mark_read": "标为已读",
+		"mark_unread": "标为未读", "archive": "归档", "restore": "恢复", "acknowledge": "确认收到",
+		"mark_all_read": "全部标为已读",
+	}[operationKey]
+	return actioncontract.PermissionLocalizedText{
+		"en":    {ModuleLabel: "Notifications", GroupLabel: groupEnglish, ResourceLabel: resourceEnglish, OperationLabel: operationEnglish, Label: englishLabel, Description: "Provides access to " + resourceEnglish + " for the “" + operationEnglish + "” operation."},
+		"zh-CN": {ModuleLabel: "通知", GroupLabel: groupChinese, ResourceLabel: resourceChinese, OperationLabel: operationChinese, Label: resourceChinese + " · " + operationChinese, Description: "允许对“" + resourceChinese + "”执行“" + operationChinese + "”操作。"},
+	}
 }
 
 func notificationInboxActionSpecs() []notificationHTTPActionSpec {
